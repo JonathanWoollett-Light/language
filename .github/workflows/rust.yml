@@ -54,6 +54,7 @@ jobs:
         fail_ci_if_error: true
 
 
-    - name: Benchmark with Bencher
+    - name: Install Bencher
       uses: bencherdev/bencher@main
+    - name: Benchmark with Bencher
       run: bencher run --adapter libtest --project language
