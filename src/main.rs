@@ -262,7 +262,7 @@ mod tests {
     fn parse(text: &str) -> (SimpleAllocator, Node) {
         let mut allocator = SimpleAllocator::new();
         let node = node_from_bytes(text.as_bytes(), &mut allocator);
-        (allocator,node)
+        (allocator, node)
     }
 
     const ONE: &str = "exit 0";
@@ -308,7 +308,7 @@ mod tests {
                 successor: None,
             }
         );
-        assert_eq!(allocator,SimpleAllocator::new());
+        assert_eq!(allocator, SimpleAllocator::new());
     }
 
     const THREE: &str = "exit 12";
@@ -367,7 +367,6 @@ mod tests {
             }
         );
     }
-
 
     const FIVE: &str = "exit 1\n    exit 2";
 
@@ -450,9 +449,9 @@ mod tests {
             }
         );
     }
-    
+
     const SEVEN: &str = "assign x 1\nexit x";
-    
+
     #[bench]
     fn bench_seven(b: &mut Bencher) {
         b.iter(|| parse(SEVEN));
@@ -498,7 +497,7 @@ mod tests {
             }
         );
     }
-    
+
     const EIGHT: &str = "assign x 1\nadd x 1\nexit x";
 
     #[bench]
