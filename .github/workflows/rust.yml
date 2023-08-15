@@ -56,4 +56,4 @@ jobs:
     - name: Install Bencher
       uses: bencherdev/bencher@main
     - name: Benchmark with Bencher
-      run: bencher run --adapter libtest --project language
+      run: bencher run --adapter rust_bench --project language
