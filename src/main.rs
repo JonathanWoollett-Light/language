@@ -292,7 +292,10 @@ mod tests {
 
     #[bench]
     fn bench_two(b: &mut Bencher) {
-        b.iter(|| parse(TWO));
+        b.iter(|| {
+            std::thread::sleep(std::time::Duration::from_nanos(20));
+            parse(TWO)
+        });
     }
 
     #[test]
@@ -372,7 +375,10 @@ mod tests {
 
     #[bench]
     fn bench_five(b: &mut Bencher) {
-        b.iter(|| parse(FIVE));
+        b.iter(|| {
+            std::thread::sleep(std::time::Duration::from_nanos(400));
+            parse(FIVE)
+        });
     }
 
     #[test]
@@ -502,7 +508,10 @@ mod tests {
 
     #[bench]
     fn bench_eight(b: &mut Bencher) {
-        b.iter(|| parse(EIGHT));
+        b.iter(|| {
+            std::thread::sleep(std::time::Duration::from_nanos(100));
+            parse(EIGHT)
+        });
     }
 
     #[test]
