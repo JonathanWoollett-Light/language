@@ -3,7 +3,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  BENCHER_PROJECT: language
   BENCHER_API_TOKEN: ${{ secrets.BENCHER_API_TOKEN }}
+  BENCHER_ADAPTER: rust_bench
 
 jobs:
   rust:
@@ -56,4 +58,11 @@ jobs:
     - name: Install Bencher
       uses: bencherdev/bencher@main
     - name: Benchmark with Bencher
-      run: bencher run --adapter rust_bench --project language "cargo bench" 
+      run: |
+        bencher run \
+        --if-branch "$GITHUB_REF_NAME" \
+        --else-if-branch "$GITHUB_BASE_REF" \
+        --else-if-branch main \
+        --err \
+        --github-actions ${{ secrets.GITHUB_TOKEN }} \
+        "cargo bench" 
