@@ -60,9 +60,6 @@ jobs:
     - name: Benchmark with Bencher
       run: |
         bencher run \
-        --if-branch "$GITHUB_REF_NAME" \
-        --else-if-branch "$GITHUB_BASE_REF" \
-        --else-if-branch master \
         --err \
         --github-actions ${{ secrets.GITHUB_TOKEN }} \
         "cargo bench" 
