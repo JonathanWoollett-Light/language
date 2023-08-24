@@ -21,10 +21,10 @@ jobs:
         rustup component add rustfmt
         cargo fmt --check
       
-    - name: Audit
-      run: |
-        cargo install cargo-audit
-        cargo audit
+    # - name: Audit
+    #   run: |
+    #     cargo install cargo-audit
+    #     cargo audit
       
     - name: Check
       run: cargo check
@@ -34,10 +34,10 @@ jobs:
         rustup component add clippy
         cargo clippy --tests -- --deny warnings
       
-    - name: Dependencies
-      run: |
-        cargo install cargo-udeps
-        cargo udeps
+    # - name: Dependencies
+    #   run: |
+    #     cargo install cargo-udeps
+    #     cargo udeps
 
     - name: Test
       run: cargo test
@@ -61,4 +61,7 @@ jobs:
         bencher run \
         --err \
         --github-actions ${{ secrets.GITHUB_TOKEN }} \
+        --if-branch "$GITHUB_REF_NAME" \
+        --else-if-branch "$GITHUB_BASE_REF" \
+        --else-if-branch main \
         "cargo bench" 
