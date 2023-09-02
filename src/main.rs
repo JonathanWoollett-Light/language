@@ -4,7 +4,8 @@ extern crate test;
 #[allow(unreachable_code)]
 fn main() {
     let mut allocator = SimpleAllocator::new();
-    let _ = node_from_bytes(b"", &mut allocator, 0);
+    let (node, _) = node_from_bytes(b"", &mut allocator, 0);
+    let _assembly = assembly_from_node(&node.unwrap(), &allocator);
     todo!()
 }
 
