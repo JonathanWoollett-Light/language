@@ -268,6 +268,15 @@ fn node_from_bytes(
             allocator,
             depth,
         ),
+        (head, [b' ', b':', b'=', b' ', b'r', b'e', b'a', b'd', b' ', tail @ ..]) => {
+            call_from_bytes(
+                Op::Syscall(Syscall::Read),
+                vec![Value::Variable(Variable(Vec::from(*head)))],
+                tail,
+                allocator,
+                depth,
+            )
+        }
         (head, [b' ', b':', b'=', b' ', tail @ ..]) => call_from_bytes(
             Op::Intrinsic(Intrinsic::Assign),
             vec![Value::Variable(Variable(Vec::from(*head)))],
@@ -299,13 +308,19 @@ use std::fmt::Write;
 
 fn assembly_from_node(node: &Node, allocator: &SimpleAllocator) -> String {
     let mut data = String::new();
+    let mut bss = String::new();
     let mut block_counter = 0;
-    let assembly = instruction_from_node(node, allocator, &mut data, &mut block_counter);
+    let assembly = instruction_from_node(node, allocator, &mut data, &mut bss, &mut block_counter);
 
     let data_str = if data.is_empty() {
         String::new()
     } else {
         format!(".data\n{data}")
+    };
+    let bss_str = if bss.is_empty() {
+        String::new()
+    } else {
+        format!(".bss\n{bss}")
     };
 
     format!(
@@ -314,6 +329,7 @@ fn assembly_from_node(node: &Node, allocator: &SimpleAllocator) -> String {
         _start:\n\
         {assembly}\
         {data_str}\
+        {bss_str}\
     ",
     )
 }
@@ -322,6 +338,7 @@ fn instruction_from_node(
     node: &Node,
     allocator: &SimpleAllocator,
     data: &mut String,
+    bss: &mut String,
     block_counter: &mut usize,
 ) -> String {
     let mut assembly = String::new();
@@ -398,6 +415,7 @@ fn instruction_from_node(
                                 allocator.get(child).unwrap(),
                                 allocator,
                                 data,
+                                bss,
                                 block_counter,
                             )
                         } else {
@@ -406,6 +424,33 @@ fn instruction_from_node(
                     )
                     .unwrap();
                     *block_counter += 1;
+                }
+                _ => todo!(),
+            },
+            Op::Syscall(Syscall::Read) => match current.statement.arg.get(..) {
+                Some([Value::Variable(Variable(x)), Value::Literal(Literal(fd))]) => {
+                    write!(
+                        &mut assembly,
+                        "\
+                        mov x8, #{}\n\
+                        mov x0, #{fd}\n\
+                        ldr x1, ={}\n\
+                        mov x2, 4\n\
+                        svc #0\n\
+                    ",
+                        libc::SYS_read,
+                        std::str::from_utf8(x).unwrap()
+                    )
+                    .unwrap();
+                    write!(
+                        bss,
+                        "\
+                        {}:\n\
+                        .skip 4\n\
+                    ",
+                        std::str::from_utf8(x).unwrap()
+                    )
+                    .unwrap();
                 }
                 _ => todo!(),
             },
@@ -494,6 +539,7 @@ enum Intrinsic {
 enum Syscall {
     #[default]
     Exit,
+    Read,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -1064,5 +1110,73 @@ mod tests {
             .word 2\n\
         ";
         assemble(&node.unwrap(), &allocator, expected_assembly, 1);
+    }
+
+    use std::mem::size_of;
+    #[test]
+    fn test_eleven() {
+        // Create pipe and write an i32 to it.
+        let mut pipe_out = [0, 0];
+        let res = unsafe { libc::pipe(pipe_out.as_mut_ptr()) };
+        assert_eq!(res, 0);
+        let [read, write] = pipe_out;
+        let data = 27i32;
+        let bytes = data.to_ne_bytes();
+        let res = unsafe { libc::write(write, bytes.as_ptr().cast(), size_of::<i32>() as _) };
+        assert_eq!(res, size_of::<i32>() as _);
+
+        // Format code
+        let eleven = format!("x := read {read}\nexit x");
+
+        // Parse code to AST
+        let (allocator, node) = parse(&eleven);
+        assert_eq!(
+            node,
+            Some(Node {
+                statement: Statement {
+                    op: Op::Syscall(Syscall::Read),
+                    arg: vec![
+                        Value::Variable(Variable(Vec::from([b'x']))),
+                        Value::Literal(Literal(read as _))
+                    ]
+                },
+                child: None,
+                next: Some(0),
+            })
+        );
+        assert_eq!(
+            allocator,
+            SimpleAllocator {
+                buffer: vec![Node {
+                    statement: Statement {
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Variable(Variable(Vec::from([b'x'])))]
+                    },
+                    child: None,
+                    next: None,
+                },]
+            }
+        );
+
+        // Parse AST to assembly
+        let expected_assembly = format!(
+            "\
+            .global _start\n\
+            _start:\n\
+            mov x8, #63\n\
+            mov x0, #{read}\n\
+            ldr x1, =x\n\
+            mov x2, 4\n\
+            svc #0\n\
+            mov x8, #93\n\
+            ldr x0, =x\n\
+            ldr x0, [x0]\n\
+            svc #0\n\
+            .bss\n\
+            x:\n\
+            .skip 4\n\
+        "
+        );
+        assemble(&node.unwrap(), &allocator, &expected_assembly, data);
     }
 }
