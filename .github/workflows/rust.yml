@@ -8,7 +8,7 @@ env:
 
 jobs:
   rust:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-2vcpu-ubuntu-2204-arm
 
     steps:
     - uses: actions/checkout@v3
@@ -53,15 +53,14 @@ jobs:
         files: lcov.info
         fail_ci_if_error: true
 
-
-    - name: Install Bencher
-      uses: bencherdev/bencher@main
-    - name: Benchmark with Bencher
-      run: |
-        bencher run \
-        --err \
-        --github-actions ${{ secrets.GITHUB_TOKEN }} \
-        --if-branch "$GITHUB_REF_NAME" \
-        --else-if-branch "$GITHUB_BASE_REF" \
-        --else-if-branch main \
-        "cargo bench" 
+    # - name: Install Bencher
+    #   uses: bencherdev/bencher@main
+    # - name: Benchmark with Bencher
+    #   run: |
+    #     bencher run \
+    #     --err \
+    #     --github-actions ${{ secrets.GITHUB_TOKEN }} \
+    #     --if-branch "$GITHUB_REF_NAME" \
+    #     --else-if-branch "$GITHUB_BASE_REF" \
+    #     --else-if-branch main \
+    #     "cargo bench" 
