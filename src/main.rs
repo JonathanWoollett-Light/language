@@ -1,332 +1,290 @@
 #![feature(test)]
+#![feature(let_chains)]
+
 extern crate test;
+
+use std::io::Bytes;
+use std::io::Read;
+use std::iter::once;
+use std::iter::Peekable;
+
+#[cfg(debug_assertions)]
+const LOOP_LIMIT: usize = 20;
 
 #[allow(unreachable_code)]
 fn main() {
-    let mut allocator = SimpleAllocator::new();
-    let (node, _) = node_from_bytes(b"", &mut allocator, 0);
-    let _assembly = assembly_from_node(&node.unwrap(), &allocator);
+    let empty = std::io::empty();
+    let reader = std::io::BufReader::new(empty);
+    let mut iter = reader.bytes().peekable();
+    let nodes = get_nodes(&mut iter);
+    let _assembly = assembly_from_node(&nodes);
     todo!()
 }
 
-fn next_from_bytes(
-    bytes: &[u8],
-    allocator: &mut SimpleAllocator,
-    depth: u8,
-) -> (Option<AllocatorKey>, usize) {
-    let (node_opt, distance) = node_from_bytes(bytes, allocator, depth);
-    let key_opt = node_opt.map(|node| allocator.alloc(node));
-    (key_opt, distance)
+enum GetValue {
+    Value(Value),
+    NewLine,
+    Space,
+    None,
 }
 
-fn call_from_bytes(
-    op: Op,
-    head: Vec<Value>,
-    bytes: &[u8],
-    allocator: &mut SimpleAllocator,
-    depth: u8,
-) -> (Node, usize) {
+fn get_identifier<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<u8> {
+    let mut variable = Vec::new();
+    #[cfg(debug_assertions)]
     let mut i = 0;
-
-    let mut node = Node {
-        statement: Statement { op, arg: head },
-        child: None,
-        next: None,
-    };
-    let arg = &mut node.statement.arg;
-    'outer: loop {
-        let x = match bytes[i] {
-            b'0' => {
-                i += 1;
-                match bytes.get(i) {
-                    Some(b'\n') => {
-                        arg.push(Value::Literal(Literal(0)));
-                        i += 1; // Skip newline
-                        let (key, distance) = next_from_bytes(&bytes[i + 1..], allocator, depth);
-                        node.next = key;
-                        i += distance;
-                        break 'outer;
-                    }
-                    None => {
-                        arg.push(Value::Literal(Literal(0)));
-                        break 'outer;
-                    }
-                    Some(b' ') => {
-                        i += 1;
-                        Value::Literal(Literal(0))
-                    }
-                    Some(_) => panic!(),
-                }
-            }
-            b'1'..=b'9' => {
-                let mut literal = (bytes[i] - b'0') as u64;
-                i += 1;
-                loop {
-                    match bytes.get(i) {
-                        Some(b'0'..=b'9') => {
-                            literal *= 10;
-                            literal += (bytes[i] - b'0') as u64;
-                            i += 1;
-                        }
-                        Some(b'\n') => {
-                            arg.push(Value::Literal(Literal(literal)));
-                            i += 1; // Skip newline
-                            let (key, distance) = next_from_bytes(&bytes[i..], allocator, depth);
-                            node.next = key;
-                            i += distance;
-                            break 'outer;
-                        }
-                        None => {
-                            arg.push(Value::Literal(Literal(literal)));
-                            break 'outer;
-                        }
-                        Some(b' ') => {
-                            i += 1;
-                            break Value::Literal(Literal(literal));
-                        }
-                        _ => panic!(),
-                    }
-                }
-            }
-            b'a'..=b'z' => {
-                let j = i;
-
-                loop {
-                    i += 1;
-                    match bytes.get(i) {
-                        Some(b'a'..=b'z' | b'_') => continue,
-                        Some(b'\n') => {
-                            arg.push(Value::Variable(Variable(Vec::from(&bytes[j..i]))));
-                            i += 1; // Skip newline
-                            let (key, distance) = next_from_bytes(&bytes[i..], allocator, depth);
-                            node.next = key;
-                            i += distance;
-                            break 'outer;
-                        }
-                        None => {
-                            arg.push(Value::Variable(Variable(Vec::from(&bytes[j..i]))));
-                            break 'outer;
-                        }
-                        Some(b' ') => {
-                            i += 1;
-                            break Value::Variable(Variable(Vec::from(&bytes[j..i - 1])));
-                        }
-                        _ => panic!(),
-                    }
-                }
-            }
-            _ => panic!(),
-        };
-        arg.push(x);
-    }
-    (node, i)
-}
-
-fn if_from_bytes(bytes: &[u8], allocator: &mut SimpleAllocator, depth: u8) -> (Node, usize) {
-    let mut node = Node::default();
-
-    let mut i = 0;
-    let first = match bytes[i] {
-        b'1'..=b'9' => {
-            let mut x = (bytes[i] - b'0') as u64;
-            i += 1;
-            loop {
-                match bytes[i] {
-                    b'0'..=b'9' => {
-                        x *= 10;
-                        x += (bytes[i] - b'0') as u64;
-                        i += 1;
-                    }
-                    b' ' => break Value::Literal(Literal(x)),
-                    _ => panic!(),
-                }
-            }
-        }
-        b'a'..=b'z' | b'_' => {
-            let j = i;
-            i += 1;
-            loop {
-                match bytes[i] {
-                    b'a'..=b'z' | b'_' => {
-                        i += 1;
-                    }
-                    b' ' => break Value::Variable(Variable(Vec::from(&bytes[j..i]))),
-                    _ => panic!(),
-                }
-            }
-        }
-        _ => panic!(),
-    };
-    node.statement.arg.push(first);
-
-    // Skip the space
-    i += 1;
-
-    node.statement.op = match &bytes[i] {
-        b'=' => Op::Intrinsic(Intrinsic::IfEq),
-        b'>' => Op::Intrinsic(Intrinsic::IfLt),
-        b'<' => Op::Intrinsic(Intrinsic::IfGt),
-        _ => panic!(),
-    };
-
-    // Skip symbol
-    i += 1;
-
-    // Skip space
-    i += 1;
-
-    let second = match bytes[i] {
-        b'1'..=b'9' => {
-            let mut x = (bytes[i] - b'0') as u64;
-            i += 1;
-            loop {
-                match bytes[i] {
-                    b'0'..=b'9' => {
-                        x *= 10;
-                        x += (bytes[i] - b'0') as u64;
-                        i += 1;
-                    }
-                    b'\n' => break Value::Literal(Literal(x)),
-                    _ => panic!(),
-                }
-            }
-        }
-        b'a'..=b'z' | b'_' => {
-            let j = i;
-            i += 1;
-            loop {
-                match bytes[i] {
-                    b'a'..=b'z' | b'_' => {
-                        i += 1;
-                    }
-                    b'\n' => break Value::Variable(Variable(Vec::from(&bytes[j..i]))),
-                    _ => panic!(),
-                }
-            }
-        }
-        _ => panic!(),
-    };
-    node.statement.arg.push(second);
-
-    // Skip newline
-    i += 1;
-
-    let (child, child_distance) = next_from_bytes(&bytes[i..], allocator, depth + 1);
-    node.child = child;
-    let (next, next_distance) = next_from_bytes(&bytes[i + 1 + child_distance..], allocator, depth);
-    node.next = next;
-
-    (node, i + 1 + child_distance + next_distance)
-}
-
-fn node_from_bytes(
-    bytes: &[u8],
-    allocator: &mut SimpleAllocator,
-    depth: u8,
-) -> (Option<Node>, usize) {
-    let mut i = 0;
-    for _ in 0..depth {
-        match &bytes[i..i + 4] {
-            b"    " => {
-                i += 4;
-            }
-            _ => return (None, i),
-        }
-    }
-    let j = i;
-
     loop {
-        match bytes[i] {
-            b'a'..=b'z' | b'_' => {
-                i += 1;
+        #[cfg(debug_assertions)]
+        {
+            assert!(i < LOOP_LIMIT);
+            i += 1;
+        }
+
+        match bytes.peek().map(|r| r.as_ref().unwrap()) {
+            Some(b'a'..=b'z' | b'_') => {
+                let b = bytes.next().unwrap().unwrap();
+                variable.push(b);
             }
-            b' ' => break,
+            Some(b' ') | Some(b'\n') | None => break,
             _ => panic!(),
         }
     }
+    variable
+}
 
-    let (node, distance) = match &bytes[j..].split_at(i - j) {
-        (head, [b' ', b'+', b'=', b' ', tail @ ..]) => call_from_bytes(
-            Op::Intrinsic(Intrinsic::Add),
-            vec![Value::Variable(Variable(Vec::from(*head)))],
-            tail,
-            allocator,
-            depth,
-        ),
-        (head, [b' ', b'-', b'=', b' ', tail @ ..]) => call_from_bytes(
-            Op::Intrinsic(Intrinsic::Sub),
-            vec![Value::Variable(Variable(Vec::from(*head)))],
-            tail,
-            allocator,
-            depth,
-        ),
-        (head, [b' ', b'/', b'=', b' ', tail @ ..]) => call_from_bytes(
-            Op::Intrinsic(Intrinsic::Div),
-            vec![Value::Variable(Variable(Vec::from(*head)))],
-            tail,
-            allocator,
-            depth,
-        ),
-        (head, [b' ', b'*', b'=', b' ', tail @ ..]) => call_from_bytes(
-            Op::Intrinsic(Intrinsic::Mul),
-            vec![Value::Variable(Variable(Vec::from(*head)))],
-            tail,
-            allocator,
-            depth,
-        ),
-        (head, [b' ', b':', b'=', b' ', b'r', b'e', b'a', b'd', b' ', tail @ ..]) => {
-            call_from_bytes(
-                Op::Syscall(Syscall::Read),
-                vec![Value::Variable(Variable(Vec::from(*head)))],
-                tail,
-                allocator,
-                depth,
-            )
+fn get_value<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> GetValue {
+    match bytes.peek().map(|r| r.as_ref().unwrap()) {
+        Some(b'0') => {
+            bytes.next().unwrap().unwrap();
+            GetValue::Value(Value::Literal(Literal(0)))
         }
-        (head, [b' ', b':', b'=', b' ', tail @ ..]) => call_from_bytes(
-            Op::Intrinsic(Intrinsic::Assign),
-            vec![Value::Variable(Variable(Vec::from(*head)))],
-            tail,
-            allocator,
-            depth,
-        ),
-        ([b'e', b'x', b'i', b't'], [b' ', tail @ ..]) => call_from_bytes(
-            Op::Syscall(Syscall::Exit),
-            Vec::new(),
-            tail,
-            allocator,
-            depth,
-        ),
-        ([b'i', b'f'], [b' ', tail @ ..]) => if_from_bytes(tail, allocator, depth),
-        ([b'w', b'r', b'i', b't', b'e'], [b' ', tail @ ..]) => {
-            // panic!("hit this: {:?}", std::str::from_utf8(tail).unwrap());
-            call_from_bytes(
-                Op::Syscall(Syscall::Write),
-                Vec::new(),
-                tail,
-                allocator,
-                depth,
-            )
-        }
-        (head, tail) => {
-            panic!(
-                "Unknown {:?} and {:?}",
-                std::str::from_utf8(head).unwrap(),
-                std::str::from_utf8(&tail[0..8]).unwrap()
-            )
-        }
-    };
+        Some(b'1'..=b'9') => {
+            let b = bytes.next().unwrap().unwrap();
+            let mut literal = (b - b'0') as u64;
+            #[cfg(debug_assertions)]
+            let mut i = 0;
+            loop {
+                #[cfg(debug_assertions)]
+                {
+                    assert!(i < LOOP_LIMIT);
+                    i += 1;
+                }
 
-    (Some(node), distance + i)
+                match bytes.peek().map(|r| r.as_ref().unwrap()) {
+                    Some(b'0'..=b'9') => {
+                        let b = bytes.next().unwrap().unwrap();
+                        literal *= 10;
+                        literal += (b - b'0') as u64;
+                    }
+                    Some(b' ') | Some(b'\n') | None => break,
+                    _ => panic!(),
+                }
+            }
+            GetValue::Value(Value::Literal(Literal(literal)))
+        }
+        Some(b'a'..=b'z' | b'_') => {
+            GetValue::Value(Value::Variable(Variable(get_identifier(bytes))))
+        }
+        Some(b' ') => GetValue::Space,
+        Some(b'\n') => GetValue::NewLine,
+        None => GetValue::None,
+        _ => panic!(),
+    }
+}
+
+fn get_values<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Value> {
+    let mut values = Vec::new();
+
+    #[cfg(debug_assertions)]
+    let mut i = 0;
+    loop {
+        #[cfg(debug_assertions)]
+        {
+            assert!(i < LOOP_LIMIT);
+            i += 1;
+        }
+
+        match get_value(bytes) {
+            GetValue::Value(value) => values.push(value),
+            GetValue::Space => {
+                bytes.next().unwrap().unwrap();
+            }
+            GetValue::NewLine | GetValue::None => break,
+        }
+    }
+    values
+}
+
+fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Node> {
+    let mut stack: Vec<Node> = Vec::new();
+    let mut parent_stack: Vec<usize> = Vec::new();
+    let mut indent = 0;
+
+    // Due to how we handle parsing, variable identifiers cannot be defined with the starting
+    // character `e` or `i` as these lead to the parsing trying to evaluate `exit` or `if`.
+    // This is a weird quirk that should be fixed in the future.
+
+    #[cfg(debug_assertions)]
+    let mut i = 0;
+    loop {
+        #[cfg(debug_assertions)]
+        {
+            assert!(i < LOOP_LIMIT);
+            i += 1;
+        }
+
+        let byte = bytes.peek().map(|r| r.as_ref().unwrap());
+        let statement = match byte {
+            // Indent
+            Some(b' ') => {
+                bytes.next().unwrap().unwrap();
+                let remaining = bytes
+                    .by_ref()
+                    .take(3)
+                    .map(Result::unwrap)
+                    .collect::<Vec<_>>();
+                debug_assert_eq!(remaining.len(), b"   ".len());
+                match remaining.as_slice() {
+                    b"   " => {
+                        indent += 1;
+                        continue;
+                    }
+                    _ => panic!(),
+                }
+            }
+            // Newline
+            Some(b'\n') => {
+                bytes.next().unwrap().unwrap();
+                continue;
+            }
+            // Op with assignment
+            Some(_) => {
+                let identifier = get_identifier(bytes);
+                match identifier.as_slice() {
+                    // Exit
+                    b"exit" => Statement {
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: get_values(bytes),
+                    },
+                    // If
+                    b"if" => {
+                        assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+                        let GetValue::Value(lhs) = get_value(bytes) else {
+                            panic!()
+                        };
+                        assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+                        let op = match bytes.next().map(Result::unwrap) {
+                            Some(b'=') => Op::Intrinsic(Intrinsic::IfEq),
+                            Some(b'>') => Op::Intrinsic(Intrinsic::IfLt),
+                            Some(b'<') => Op::Intrinsic(Intrinsic::IfGt),
+                            _ => panic!(),
+                        };
+                        assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+                        let GetValue::Value(rhs) = get_value(bytes) else {
+                            panic!()
+                        };
+                        Statement {
+                            op,
+                            arg: vec![lhs, rhs],
+                        }
+                    }
+                    _ => {
+                        let lhs = Value::Variable(Variable(identifier));
+                        assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+                        match bytes.next().map(Result::unwrap) {
+                            // Add, Sub, Mul, Div
+                            Some(part @ b'+' | part @ b'-' | part @ b'*' | part @ b'/') => {
+                                assert_eq!(Some(b'='), bytes.next().map(Result::unwrap));
+                                assert_eq!(Some(b' '), bytes.next().map(Result::unwrap));
+                                let GetValue::Value(arg) = get_value(bytes) else {
+                                    panic!()
+                                };
+                                Statement {
+                                    op: Op::Intrinsic(match part {
+                                        b'+' => Intrinsic::Add,
+                                        b'-' => Intrinsic::Sub,
+                                        b'/' => Intrinsic::Div,
+                                        b'*' => Intrinsic::Mul,
+                                        _ => panic!(),
+                                    }),
+                                    arg: vec![lhs, arg],
+                                }
+                            }
+                            Some(b':') => {
+                                assert_eq!(Some(b'='), bytes.next().map(Result::unwrap));
+                                assert_eq!(Some(b' '), bytes.next().map(Result::unwrap));
+                                let GetValue::Value(value) = get_value(bytes) else {
+                                    panic!()
+                                };
+                                match value {
+                                    Value::Literal(_) => Statement {
+                                        op: Op::Intrinsic(Intrinsic::Assign),
+                                        arg: vec![lhs, value],
+                                    },
+                                    Value::Variable(Variable(variable)) => {
+                                        match variable.as_slice() {
+                                            b"write" => Statement {
+                                                op: Op::Syscall(Syscall::Write),
+                                                arg: once(lhs).chain(get_values(bytes)).collect(),
+                                            },
+                                            b"read" => Statement {
+                                                op: Op::Syscall(Syscall::Read),
+                                                arg: once(lhs).chain(get_values(bytes)).collect(),
+                                            },
+                                            b"memfd_create" => Statement {
+                                                op: Op::Syscall(Syscall::MemfdCreate),
+                                                arg: once(lhs).chain(get_values(bytes)).collect(),
+                                            },
+                                            _ => panic!(),
+                                        }
+                                    }
+                                }
+                            }
+                            _ => panic!(),
+                        }
+                    }
+                }
+            }
+            // End of file
+            None => break,
+        };
+
+        // Wrap the statement in a node.
+        let node = Node::new(statement);
+
+        // Links node
+        let after = parent_stack.split_off(indent);
+        if let Some(previous) = after.first() {
+            stack[*previous].next = Some(stack.len());
+        } else if let Some(parent) = parent_stack.last() {
+            stack[*parent].child = Some(stack.len());
+        }
+        parent_stack.push(stack.len());
+
+        // Add node
+        stack.push(node);
+
+        // Reset the indent for the next line.
+        indent = 0;
+    }
+    stack
 }
 
 use std::fmt::Write;
 
-fn assembly_from_node(node: &Node, allocator: &SimpleAllocator) -> String {
+fn assembly_from_node(nodes: &[Node]) -> String {
     let mut data = String::new();
     let mut bss = String::new();
     let mut block_counter = 0;
-    let assembly = instruction_from_node(node, allocator, &mut data, &mut bss, &mut block_counter);
+    // Have we defined an empty string in the data section to use for anonymous `memfd_create`.
+    let mut empty = false;
+    let assembly = instruction_from_node(
+        nodes,
+        0,
+        &mut data,
+        &mut bss,
+        &mut block_counter,
+        &mut empty,
+    );
 
     let data_str = if data.is_empty() {
         String::new()
@@ -351,16 +309,25 @@ fn assembly_from_node(node: &Node, allocator: &SimpleAllocator) -> String {
 }
 
 fn instruction_from_node(
-    node: &Node,
-    allocator: &SimpleAllocator,
+    nodes: &[Node],
+    index: usize,
     data: &mut String,
     bss: &mut String,
     block_counter: &mut usize,
+    empty: &mut bool,
 ) -> String {
     let mut assembly = String::new();
-    let mut current = node;
+    let mut current = &nodes[index];
 
+    #[cfg(debug_assertions)]
+    let mut i = 0;
     loop {
+        #[cfg(debug_assertions)]
+        {
+            assert!(i < LOOP_LIMIT);
+            i += 1;
+        }
+
         match current.statement.op {
             Op::Syscall(Syscall::Exit) => match current.statement.arg.get(0) {
                 Some(Value::Literal(Literal(x))) => write!(
@@ -427,13 +394,7 @@ fn instruction_from_node(
                     ",
                         std::str::from_utf8(x).unwrap(),
                         if let Some(child) = current.child {
-                            instruction_from_node(
-                                allocator.get(child).unwrap(),
-                                allocator,
-                                data,
-                                bss,
-                                block_counter,
-                            )
+                            instruction_from_node(nodes, child, data, bss, block_counter, empty)
                         } else {
                             String::new()
                         }
@@ -471,7 +432,9 @@ fn instruction_from_node(
                 _ => todo!(),
             },
             Op::Syscall(Syscall::Write) => match current.statement.arg.get(..) {
-                Some([Value::Literal(Literal(fd)), Value::Variable(Variable(x))]) => {
+                Some(
+                    [Value::Variable(Variable(v)), Value::Literal(Literal(fd)), Value::Variable(Variable(x))],
+                ) if v == b"_" => {
                     write!(
                         &mut assembly,
                         "\
@@ -488,36 +451,52 @@ fn instruction_from_node(
                 }
                 _ => todo!(),
             },
+            Op::Syscall(Syscall::MemfdCreate) => match current.statement.arg.get(..) {
+                Some([Value::Variable(Variable(x))]) => {
+                    write!(
+                        &mut assembly,
+                        "\
+                        mov x8, #{}\n\
+                        ldr x0, =empty\n\
+                        mov x1, #0\n\
+                        svc #0\n\
+                        ldr x1, ={}\n\
+                        str x0, [x1]\n\
+                    ",
+                        libc::SYS_memfd_create,
+                        std::str::from_utf8(x).unwrap()
+                    )
+                    .unwrap();
+                    if !*empty {
+                        write!(
+                            data,
+                            "\
+                            empty:\n\
+                            .word 0\n\
+                        "
+                        )
+                        .unwrap();
+                        *empty = true;
+                    }
+                    write!(
+                        bss,
+                        "\
+                        {}:\n\
+                        .skip 4\n\
+                    ",
+                        std::str::from_utf8(x).unwrap()
+                    )
+                    .unwrap();
+                }
+                _ => todo!(),
+            },
             _ => todo!(),
         }
         if let Some(next) = current.next {
-            current = allocator.get(next).unwrap();
+            current = &nodes[next];
         } else {
             break assembly;
         }
-    }
-}
-
-// Like `*mut Node`
-type AllocatorKey = usize;
-
-// An allocator is such a wonky hashmap after all.
-// A very CPU performant but memory inefficient allocator.
-#[derive(Debug, PartialEq, Eq)]
-struct SimpleAllocator {
-    buffer: Vec<Node>,
-}
-impl SimpleAllocator {
-    fn get(&self, key: AllocatorKey) -> Option<&Node> {
-        self.buffer.get(key)
-    }
-    fn alloc(&mut self, value: Node) -> AllocatorKey {
-        let key = self.buffer.len();
-        self.buffer.push(value);
-        key
-    }
-    fn new() -> Self {
-        Self { buffer: Vec::new() }
     }
 }
 
@@ -525,8 +504,17 @@ impl SimpleAllocator {
 #[derive(Debug, Eq, PartialEq, Default)]
 struct Node {
     statement: Statement,
-    child: Option<AllocatorKey>,
-    next: Option<AllocatorKey>,
+    child: Option<usize>,
+    next: Option<usize>,
+}
+impl Node {
+    fn new(statement: Statement) -> Self {
+        Self {
+            statement,
+            child: None,
+            next: None,
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -575,6 +563,7 @@ enum Syscall {
     Exit,
     Read,
     Write,
+    MemfdCreate,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -599,19 +588,14 @@ mod tests {
     use test::Bencher;
     use uuid::Uuid;
 
-    fn parse(text: &str) -> (SimpleAllocator, Option<Node>) {
-        let mut allocator = SimpleAllocator::new();
-        let (node, _distance) = node_from_bytes(text.as_bytes(), &mut allocator, 0);
-        (allocator, node)
+    fn parse(text: &str) -> Vec<Node> {
+        let reader = std::io::BufReader::new(text.as_bytes());
+        let mut iter = reader.bytes().peekable();
+        get_nodes(&mut iter)
     }
 
-    fn assemble(
-        node: &Node,
-        allocator: &SimpleAllocator,
-        expected_assembly: &str,
-        expected_exitcode: i32,
-    ) {
-        let assembly = assembly_from_node(node, allocator);
+    fn assemble(nodes: &[Node], expected_assembly: &str, expected_exitcode: i32) {
+        let assembly = assembly_from_node(nodes);
         assert_eq!(assembly, expected_assembly);
         let path = format!("/tmp/{}", Uuid::new_v4());
         let assembly_path = format!("{path}.s");
@@ -686,19 +670,18 @@ mod tests {
 
     #[test]
     fn test_one() {
-        let (allocator, node) = parse(ONE);
+        let nodes = parse(ONE);
         assert_eq!(
-            node,
-            Some(Node {
+            nodes,
+            [Node {
                 statement: Statement {
                     op: Op::Syscall(Syscall::Exit),
                     arg: vec![Value::Literal(Literal(0))]
                 },
                 child: None,
                 next: None,
-            })
+            }]
         );
-        assert_eq!(allocator, SimpleAllocator::new());
         let expected_assembly = "\
             .global _start\n\
             _start:\n\
@@ -706,7 +689,7 @@ mod tests {
             mov x0, #0\n\
             svc #0\n\
         ";
-        assemble(&node.unwrap(), &allocator, expected_assembly, 0);
+        assemble(&nodes, expected_assembly, 0);
     }
 
     const TWO: &str = "exit 1";
@@ -718,19 +701,18 @@ mod tests {
 
     #[test]
     fn test_two() {
-        let (allocator, node) = parse(TWO);
+        let nodes = parse(TWO);
         assert_eq!(
-            node,
-            Some(Node {
+            nodes,
+            [Node {
                 statement: Statement {
                     op: Op::Syscall(Syscall::Exit),
                     arg: vec![Value::Literal(Literal(1))]
                 },
                 child: None,
                 next: None,
-            })
+            }]
         );
-        assert_eq!(allocator, SimpleAllocator::new());
         let expected_assembly = "\
             .global _start\n\
             _start:\n\
@@ -738,7 +720,7 @@ mod tests {
             mov x0, #1\n\
             svc #0\n\
         ";
-        assemble(&node.unwrap(), &allocator, expected_assembly, 1);
+        assemble(&nodes, expected_assembly, 1);
     }
 
     const THREE: &str = "exit 12";
@@ -750,19 +732,18 @@ mod tests {
 
     #[test]
     fn test_three() {
-        let (allocator, node) = parse(THREE);
+        let nodes = parse(THREE);
         assert_eq!(
-            node,
-            Some(Node {
+            nodes,
+            [Node {
                 statement: Statement {
                     op: Op::Syscall(Syscall::Exit),
                     arg: vec![Value::Literal(Literal(12))]
                 },
                 child: None,
                 next: None,
-            })
+            }]
         );
-        assert_eq!(allocator, SimpleAllocator::new());
         let expected_assembly = "\
             .global _start\n\
             _start:\n\
@@ -770,7 +751,7 @@ mod tests {
             mov x0, #12\n\
             svc #0\n\
         ";
-        assemble(&node.unwrap(), &allocator, expected_assembly, 12);
+        assemble(&nodes, expected_assembly, 12);
     }
 
     const FOUR: &str = "exit 1\nexit 2";
@@ -782,30 +763,27 @@ mod tests {
 
     #[test]
     fn test_four() {
-        let (allocator, node) = parse(FOUR);
+        let nodes = parse(FOUR);
         assert_eq!(
-            node,
-            Some(Node {
-                statement: Statement {
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal(1))]
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(1))]
+                    },
+                    child: None,
+                    next: Some(1),
                 },
-                child: None,
-                next: Some(0),
-            })
-        );
-        assert_eq!(
-            allocator,
-            SimpleAllocator {
-                buffer: vec![Node {
+                Node {
                     statement: Statement {
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal(2))]
                     },
                     child: None,
                     next: None,
-                }]
-            }
+                }
+            ]
         );
         let expected_assembly = "\
             .global _start\n\
@@ -817,7 +795,7 @@ mod tests {
             mov x0, #2\n\
             svc #0\n\
         ";
-        assemble(&node.unwrap(), &allocator, expected_assembly, 1);
+        assemble(&nodes, expected_assembly, 1);
     }
 
     const SIX: &str = "x := 1\nexit 0";
@@ -829,33 +807,30 @@ mod tests {
 
     #[test]
     fn test_six() {
-        let (allocator, node) = parse(SIX);
+        let nodes = parse(SIX);
         assert_eq!(
-            node,
-            Some(Node {
-                statement: Statement {
-                    op: Op::Intrinsic(Intrinsic::Assign),
-                    arg: vec![
-                        Value::Variable(Variable(Vec::from([b'x']))),
-                        Value::Literal(Literal(1))
-                    ]
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(1))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
                 },
-                child: None,
-                next: Some(0),
-            })
-        );
-        assert_eq!(
-            allocator,
-            SimpleAllocator {
-                buffer: vec![Node {
+                Node {
                     statement: Statement {
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal(0))]
                     },
                     child: None,
                     next: None,
-                }]
-            }
+                }
+            ]
         );
         let expected_assembly = "\
             .global _start\n\
@@ -867,7 +842,7 @@ mod tests {
             x:\n\
             .word 1\n\
         ";
-        assemble(&node.unwrap(), &allocator, expected_assembly, 0);
+        assemble(&nodes, expected_assembly, 0);
     }
 
     const SEVEN: &str = "x := 1\nexit x";
@@ -879,33 +854,30 @@ mod tests {
 
     #[test]
     fn seven() {
-        let (allocator, node) = parse(SEVEN);
+        let nodes = parse(SEVEN);
         assert_eq!(
-            node,
-            Some(Node {
-                statement: Statement {
-                    op: Op::Intrinsic(Intrinsic::Assign),
-                    arg: vec![
-                        Value::Variable(Variable(Vec::from([b'x']))),
-                        Value::Literal(Literal(1))
-                    ]
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(1))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
                 },
-                child: None,
-                next: Some(0),
-            })
-        );
-        assert_eq!(
-            allocator,
-            SimpleAllocator {
-                buffer: vec![Node {
+                Node {
                     statement: Statement {
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Variable(Variable(Vec::from([b'x'])))]
                     },
                     child: None,
                     next: None,
-                }]
-            }
+                }
+            ]
         );
         let expected_assembly = "\
             .global _start\n\
@@ -918,7 +890,7 @@ mod tests {
             x:\n\
             .word 1\n\
         ";
-        assemble(&node.unwrap(), &allocator, expected_assembly, 1);
+        assemble(&nodes, expected_assembly, 1);
     }
 
     const EIGHT: &str = "x := 1\nx += 1\nexit x";
@@ -930,46 +902,41 @@ mod tests {
 
     #[test]
     fn test_eight() {
-        let (allocator, node) = parse(EIGHT);
+        let nodes = parse(EIGHT);
         assert_eq!(
-            node,
-            Some(Node {
-                statement: Statement {
-                    op: Op::Intrinsic(Intrinsic::Assign),
-                    arg: vec![
-                        Value::Variable(Variable(Vec::from([b'x']))),
-                        Value::Literal(Literal(1))
-                    ]
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(1))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
                 },
-                child: None,
-                next: Some(1),
-            })
-        );
-        assert_eq!(
-            allocator,
-            SimpleAllocator {
-                buffer: vec![
-                    Node {
-                        statement: Statement {
-                            op: Op::Syscall(Syscall::Exit),
-                            arg: vec![Value::Variable(Variable(Vec::from([b'x'])))]
-                        },
-                        child: None,
-                        next: None,
+                Node {
+                    statement: Statement {
+                        op: Op::Intrinsic(Intrinsic::Add),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(1))
+                        ]
                     },
-                    Node {
-                        statement: Statement {
-                            op: Op::Intrinsic(Intrinsic::Add),
-                            arg: vec![
-                                Value::Variable(Variable(Vec::from([b'x']))),
-                                Value::Literal(Literal(1))
-                            ]
-                        },
-                        child: None,
-                        next: Some(0),
+                    child: None,
+                    next: Some(2),
+                },
+                Node {
+                    statement: Statement {
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Variable(Variable(Vec::from([b'x'])))]
                     },
-                ]
-            }
+                    child: None,
+                    next: None,
+                },
+            ]
         );
         let expected_assembly = "\
             .global _start\n\
@@ -986,7 +953,7 @@ mod tests {
             x:\n\
             .word 1\n\
         ";
-        assemble(&node.unwrap(), &allocator, expected_assembly, 2);
+        assemble(&nodes, expected_assembly, 2);
     }
 
     const NINE: &str = "x := 1\nif x = 2\n    exit 1\nexit 0";
@@ -998,54 +965,49 @@ mod tests {
 
     #[test]
     fn test_nine() {
-        let (allocator, node) = parse(NINE);
+        let nodes = parse(NINE);
         assert_eq!(
-            node,
-            Some(Node {
-                statement: Statement {
-                    op: Op::Intrinsic(Intrinsic::Assign),
-                    arg: vec![
-                        Value::Variable(Variable(Vec::from([b'x']))),
-                        Value::Literal(Literal(1))
-                    ]
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(1))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
                 },
-                child: None,
-                next: Some(2),
-            })
-        );
-        assert_eq!(
-            allocator,
-            SimpleAllocator {
-                buffer: vec![
-                    Node {
-                        statement: Statement {
-                            op: Op::Syscall(Syscall::Exit),
-                            arg: vec![Value::Literal(Literal(1))]
-                        },
-                        child: None,
-                        next: None,
+                Node {
+                    statement: Statement {
+                        op: Op::Intrinsic(Intrinsic::IfEq),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(2))
+                        ]
                     },
-                    Node {
-                        statement: Statement {
-                            op: Op::Syscall(Syscall::Exit),
-                            arg: vec![Value::Literal(Literal(0))]
-                        },
-                        child: None,
-                        next: None,
+                    child: Some(2),
+                    next: Some(3),
+                },
+                Node {
+                    statement: Statement {
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(1))]
                     },
-                    Node {
-                        statement: Statement {
-                            op: Op::Intrinsic(Intrinsic::IfEq),
-                            arg: vec![
-                                Value::Variable(Variable(Vec::from([b'x']))),
-                                Value::Literal(Literal(2))
-                            ]
-                        },
-                        child: Some(0),
-                        next: Some(1),
+                    child: None,
+                    next: None,
+                },
+                Node {
+                    statement: Statement {
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(0))]
                     },
-                ]
-            }
+                    child: None,
+                    next: None,
+                },
+            ]
         );
         let expected_assembly = "\
             .global _start\n\
@@ -1065,7 +1027,7 @@ mod tests {
             x:\n\
             .word 1\n\
         ";
-        assemble(&node.unwrap(), &allocator, expected_assembly, 0);
+        assemble(&nodes, expected_assembly, 0);
     }
 
     const TEN: &str = "x := 2\nif x = 2\n    exit 1\nexit 0";
@@ -1077,55 +1039,51 @@ mod tests {
 
     #[test]
     fn test_ten() {
-        let (allocator, node) = parse(TEN);
+        let nodes = parse(TEN);
         assert_eq!(
-            node,
-            Some(Node {
-                statement: Statement {
-                    op: Op::Intrinsic(Intrinsic::Assign),
-                    arg: vec![
-                        Value::Variable(Variable(Vec::from([b'x']))),
-                        Value::Literal(Literal(2))
-                    ]
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(2))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
                 },
-                child: None,
-                next: Some(2),
-            })
+                Node {
+                    statement: Statement {
+                        op: Op::Intrinsic(Intrinsic::IfEq),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(2))
+                        ]
+                    },
+                    child: Some(2),
+                    next: Some(3),
+                },
+                Node {
+                    statement: Statement {
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(1))]
+                    },
+                    child: None,
+                    next: None,
+                },
+                Node {
+                    statement: Statement {
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(0))]
+                    },
+                    child: None,
+                    next: None,
+                },
+            ]
         );
-        assert_eq!(
-            allocator,
-            SimpleAllocator {
-                buffer: vec![
-                    Node {
-                        statement: Statement {
-                            op: Op::Syscall(Syscall::Exit),
-                            arg: vec![Value::Literal(Literal(1))]
-                        },
-                        child: None,
-                        next: None,
-                    },
-                    Node {
-                        statement: Statement {
-                            op: Op::Syscall(Syscall::Exit),
-                            arg: vec![Value::Literal(Literal(0))]
-                        },
-                        child: None,
-                        next: None,
-                    },
-                    Node {
-                        statement: Statement {
-                            op: Op::Intrinsic(Intrinsic::IfEq),
-                            arg: vec![
-                                Value::Variable(Variable(Vec::from([b'x']))),
-                                Value::Literal(Literal(2))
-                            ]
-                        },
-                        child: Some(0),
-                        next: Some(1),
-                    },
-                ]
-            }
-        );
+
         let expected_assembly = "\
             .global _start\n\
             _start:\n\
@@ -1144,7 +1102,7 @@ mod tests {
             x:\n\
             .word 2\n\
         ";
-        assemble(&node.unwrap(), &allocator, expected_assembly, 1);
+        assemble(&nodes, expected_assembly, 1);
     }
 
     use std::mem::size_of;
@@ -1164,33 +1122,30 @@ mod tests {
         let eleven = format!("x := read {read}\nexit x");
 
         // Parse code to AST
-        let (allocator, node) = parse(&eleven);
+        let nodes = parse(&eleven);
         assert_eq!(
-            node,
-            Some(Node {
-                statement: Statement {
-                    op: Op::Syscall(Syscall::Read),
-                    arg: vec![
-                        Value::Variable(Variable(Vec::from([b'x']))),
-                        Value::Literal(Literal(read as _))
-                    ]
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        op: Op::Syscall(Syscall::Read),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(read as _))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
                 },
-                child: None,
-                next: Some(0),
-            })
-        );
-        assert_eq!(
-            allocator,
-            SimpleAllocator {
-                buffer: vec![Node {
+                Node {
                     statement: Statement {
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Variable(Variable(Vec::from([b'x'])))]
                     },
                     child: None,
                     next: None,
-                },]
-            }
+                }
+            ]
         );
 
         // Parse AST to assembly
@@ -1212,7 +1167,7 @@ mod tests {
             .skip 4\n\
         "
         );
-        assemble(&node.unwrap(), &allocator, &expected_assembly, data);
+        assemble(&nodes, &expected_assembly, data);
         unsafe {
             libc::close(read);
             libc::close(write);
@@ -1232,49 +1187,45 @@ mod tests {
         assert_eq!(res, size_of::<i32>() as _);
 
         // Format code
-        let eleven = format!("x := read {read}\nwrite {write} x\nexit 0");
+        let eleven = format!("x := read {read}\n_ := write {write} x\nexit 0");
 
         // Parse code to AST
-        let (allocator, node) = parse(&eleven);
+        let nodes = parse(&eleven);
         assert_eq!(
-            node,
-            Some(Node {
-                statement: Statement {
-                    op: Op::Syscall(Syscall::Read),
-                    arg: vec![
-                        Value::Variable(Variable(Vec::from([b'x']))),
-                        Value::Literal(Literal(read as _))
-                    ]
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        op: Op::Syscall(Syscall::Read),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(read as _))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
                 },
-                child: None,
-                next: Some(1),
-            })
-        );
-        assert_eq!(
-            allocator,
-            SimpleAllocator {
-                buffer: vec![
-                    Node {
-                        statement: Statement {
-                            op: Op::Syscall(Syscall::Exit),
-                            arg: vec![Value::Literal(Literal(0))]
-                        },
-                        child: None,
-                        next: None,
+                Node {
+                    statement: Statement {
+                        op: Op::Syscall(Syscall::Write),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'_']))),
+                            Value::Literal(Literal(write as _)),
+                            Value::Variable(Variable(Vec::from([b'x'])))
+                        ]
                     },
-                    Node {
-                        statement: Statement {
-                            op: Op::Syscall(Syscall::Write),
-                            arg: vec![
-                                Value::Literal(Literal(write as _)),
-                                Value::Variable(Variable(Vec::from([b'x'])))
-                            ]
-                        },
-                        child: None,
-                        next: Some(0),
+                    child: None,
+                    next: Some(2),
+                },
+                Node {
+                    statement: Statement {
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(0))]
                     },
-                ]
-            }
+                    child: None,
+                    next: None,
+                },
+            ]
         );
 
         // Parse AST to assembly
@@ -1300,12 +1251,63 @@ mod tests {
             .skip 4\n\
         "
         );
-        assemble(&node.unwrap(), &allocator, &expected_assembly, 0);
+        assemble(&nodes, &expected_assembly, 0);
 
         // Read the value from pipe
         let mut buffer = [0u8; size_of::<i32>()];
         let res = unsafe { libc::read(read, buffer.as_mut_ptr().cast(), size_of::<i32>() as _) };
         assert_eq!(res, size_of::<i32>() as _);
         assert_eq!(buffer, bytes);
+    }
+
+    const THIRTEEN: &str = "x := memfd_create\nexit 0";
+
+    #[test]
+    fn test_thirteen() {
+        // Parse code to AST
+        let nodes = parse(THIRTEEN);
+        assert_eq!(
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        op: Op::Syscall(Syscall::MemfdCreate),
+                        arg: vec![Value::Variable(Variable(Vec::from([b'x']))),]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(0))]
+                    },
+                    child: None,
+                    next: None,
+                }
+            ]
+        );
+
+        // Parse AST to assembly
+        let expected_assembly = "\
+            .global _start\n\
+            _start:\n\
+            mov x8, #279\n\
+            ldr x0, =empty\n\
+            mov x1, #0\n\
+            svc #0\n\
+            ldr x1, =x\n\
+            str x0, [x1]\n\
+            mov x8, #93\n\
+            mov x0, #0\n\
+            svc #0\n\
+            .data\n\
+            empty:\n\
+            .word 0\n\
+            .bss\n\
+            x:\n\
+            .skip 4\n\
+        ";
+        assemble(&nodes, expected_assembly, 0);
     }
 }
