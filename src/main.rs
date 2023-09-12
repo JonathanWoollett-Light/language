@@ -2,6 +2,7 @@
 #![feature(let_chains)]
 #![feature(int_roundings)]
 #![feature(if_let_guard)]
+#![feature(iter_intersperse)]
 
 extern crate test;
 
@@ -18,7 +19,7 @@ mod backend;
 use backend::*;
 
 #[cfg(debug_assertions)]
-const LOOP_LIMIT: usize = 20;
+const LOOP_LIMIT: usize = 30;
 
 #[allow(unreachable_code)]
 fn main() {
@@ -1009,7 +1010,8 @@ mod tests {
                         arg: vec![
                             Value::Variable(Variable(Vec::from([b'_']))),
                             Value::Literal(Literal(write as _)),
-                            Value::Variable(Variable(Vec::from([b'x'])))
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(4))
                         ]
                     },
                     child: None,
@@ -1057,6 +1059,10 @@ mod tests {
         let res = unsafe { libc::read(read, buffer.as_mut_ptr().cast(), size_of::<i32>() as _) };
         assert_eq!(res, size_of::<i32>() as _);
         assert_eq!(buffer, bytes);
+        unsafe {
+            libc::close(read);
+            libc::close(write);
+        }
     }
 
     const THIRTEEN: &str = "x := memfd_create\nexit 0";
@@ -1134,5 +1140,157 @@ mod tests {
             .skip 4\n\
         ";
         assemble(&optimized_nodes, expected_assembly, 0);
+    }
+
+    #[test]
+    fn test_helloworld() {
+        // Create pipe
+        let mut pipe_out = [0, 0];
+        let res = unsafe { libc::pipe(pipe_out.as_mut_ptr()) };
+        assert_eq!(res, 0);
+        let [read, write] = pipe_out;
+
+        let hello_world = format!(
+            "x := 72 101 108 108 111 44 32 87 111 114 108 100 33 10\n_ := write {write} x\nexit 0"
+        );
+        // Parse code to AST
+        let nodes = parse(&hello_world);
+        assert_eq!(
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(72)),
+                            Value::Literal(Literal(101)),
+                            Value::Literal(Literal(108)),
+                            Value::Literal(Literal(108)),
+                            Value::Literal(Literal(111)),
+                            Value::Literal(Literal(44)),
+                            Value::Literal(Literal(32)),
+                            Value::Literal(Literal(87)),
+                            Value::Literal(Literal(111)),
+                            Value::Literal(Literal(114)),
+                            Value::Literal(Literal(108)),
+                            Value::Literal(Literal(100)),
+                            Value::Literal(Literal(33)),
+                            Value::Literal(Literal(10)),
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Write),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'_']))),
+                            Value::Literal(Literal(write as _)),
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                        ]
+                    },
+                    child: None,
+                    next: Some(2),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(0))]
+                    },
+                    child: None,
+                    next: None,
+                }
+            ]
+        );
+        let optimized_nodes = optimize_nodes(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(72)),
+                            Value::Literal(Literal(101)),
+                            Value::Literal(Literal(108)),
+                            Value::Literal(Literal(108)),
+                            Value::Literal(Literal(111)),
+                            Value::Literal(Literal(44)),
+                            Value::Literal(Literal(32)),
+                            Value::Literal(Literal(87)),
+                            Value::Literal(Literal(111)),
+                            Value::Literal(Literal(114)),
+                            Value::Literal(Literal(108)),
+                            Value::Literal(Literal(100)),
+                            Value::Literal(Literal(33)),
+                            Value::Literal(Literal(10)),
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Write),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'_']))),
+                            Value::Literal(Literal(write as _)),
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(14))
+                        ]
+                    },
+                    child: None,
+                    next: Some(2),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(0))]
+                    },
+                    child: None,
+                    next: None,
+                }
+            ]
+        );
+
+        // Parse AST to assembly
+        let expected_assembly = format!(
+            "\
+            .global _start\n\
+            _start:\n\
+            mov x8, #64\n\
+            mov x0, #{write}\n\
+            ldr x1, =x\n\
+            mov x2, #14\n\
+            svc #0\n\
+            mov x8, #93\n\
+            mov x0, #0\n\
+            svc #0\n\
+            .data\n\
+            x:\n\
+            .byte 72,101,108,108,111,44,32,87,111,114,108,100,33,10\n\
+        "
+        );
+        assemble(&optimized_nodes, &expected_assembly, 0);
+
+        // Read the value from pipe
+        let expected_out = b"Hello, World!\n";
+        let mut buffer = [0u8; 14];
+        let res = unsafe { libc::read(read, buffer.as_mut_ptr().cast(), 14) };
+        assert_eq!(res, 14);
+        assert_eq!(&buffer, expected_out);
+        unsafe {
+            libc::close(read);
+            libc::close(write);
+        }
     }
 }

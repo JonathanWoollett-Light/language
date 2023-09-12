@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <title>Placeholder lang</title>
+  </head>
+  <body>
+    <main class="container">
+        <h1>Placeholder lang</h1>
+        <div class="grid">
+            <div>
+                <h5>Simple</h5>
+                <p>A smaller keyword set than C with Python-like syntax.</p>
+            </div>
+            <div>
+                <h5>Explicit</h5>
+                <p>No hidden memory allocations, not even on the stack, no stack overflow.</p>
+            </div>
+            <div>
+                <h5>Hybrid compiler-interpreter</h5>
+                <p>An interpreter able to perform extensive compile-time analysis and execute syscalls at compile-time.</p>
+                <p>No build scripts, no macros, no generics/templates.</p>
+            </div>
+        </div>
+        <h3>Hello, World!</h3>
+        <div class="grid">
+            <div>
+                <h5>Source</h5>
+                <p style="font-family:consolas">x := 72 101 108 108 111 44 32 87 111 114 108 100 33 10<br>_ := write 1 x<br>exit 0</p>
+                <p>The characters in "Hello, World!\n" are represented with:<br><span style="font-family:consolas">72 101 108 108 111 44 32 87 111 114 108 100 33 10</span><br>I am planning to support writing:<br><span style="font-family:consolas">b"Hello, World!\n"</span><br>instead.</p>
+            </div>
+            <div>
+                <h5>Assembly</h5>
+                <p style="font-family:consolas">
+                    .global _start<br>
+                    _start:<br>
+                    mov x8, #64<br>
+                    mov x0, #1<br>
+                    ldr x1, =x<br>
+                    mov x2, #14<br>
+                    svc #0<br>
+                    mov x8, #93<br>
+                    mov x0, #0<br>
+                    svc #0<br>
+                    .data<br>
+                    x:<br>
+                    .byte 72,101,108,108,111,44,32,87,111,114,108,100,33,10
+                </p>
+                <p>This is aarch64 assembly, the only currently supported backend.<br>I think in the future I might add RISC-V.<br>I do not like x86-64 and it shrinks in market share each year, I do not think I will add it.</p>
+            </div>
+        </div>
+    </main>
+  </body>
+</html>

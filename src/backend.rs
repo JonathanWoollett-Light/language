@@ -95,6 +95,24 @@ pub fn instruction_from_node(
                     std::str::from_utf8(x).unwrap()
                 )
                 .unwrap(),
+                Some([Value::Variable(Variable(x)), rest @ ..]) => write!(
+                    data,
+                    "\
+                    {}:\n\
+                    .byte {}\n\
+                ",
+                    std::str::from_utf8(x).unwrap(),
+                    rest.iter()
+                        .map(|c| {
+                            let Value::Literal(Literal(c)) = c else {
+                                todo!()
+                            };
+                            c.to_string()
+                        })
+                        .intersperse(String::from(","))
+                        .collect::<String>()
+                )
+                .unwrap(),
                 _ => todo!(),
             },
             Op::Intrinsic(Intrinsic::Add) => match current.statement.arg.get(..) {
@@ -166,7 +184,7 @@ pub fn instruction_from_node(
             },
             Op::Syscall(Syscall::Write) => match current.statement.arg.get(..) {
                 Some(
-                    [Value::Variable(Variable(v)), Value::Literal(Literal(fd)), Value::Variable(Variable(x))],
+                    [Value::Variable(Variable(v)), Value::Literal(Literal(fd)), Value::Variable(Variable(x)), Value::Literal(Literal(n))],
                 ) if v == b"_" => {
                     write!(
                         &mut assembly,
@@ -174,7 +192,7 @@ pub fn instruction_from_node(
                         mov x8, #{}\n\
                         mov x0, #{fd}\n\
                         ldr x1, ={}\n\
-                        mov x2, #4\n\
+                        mov x2, #{n}\n\
                         svc #0\n\
                     ",
                         libc::SYS_write,

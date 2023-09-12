@@ -97,6 +97,8 @@ pub fn get_values<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Value> {
             GetValue::NewLine | GetValue::None => break,
         }
     }
+
+    dbg!(&values);
     values
 }
 
@@ -134,7 +136,7 @@ pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Node> {
                         indent += 1;
                         continue;
                     }
-                    _ => panic!(),
+                    _ => panic!("remaining: {:?}", std::str::from_utf8(&remaining).unwrap()),
                 }
             }
             // Newline
@@ -210,35 +212,43 @@ pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Node> {
                             Some(b':') => {
                                 assert_eq!(Some(b'='), bytes.next().map(Result::unwrap));
                                 assert_eq!(Some(b' '), bytes.next().map(Result::unwrap));
-                                let GetValue::Value(value) = get_value(bytes) else {
-                                    panic!()
-                                };
-                                match value {
-                                    Value::Literal(_) => Statement {
+                                let values = get_values(bytes);
+                                match values.as_slice() {
+                                    [first @ Value::Literal(_), tail @ ..] => Statement {
                                         runtime,
                                         op: Op::Intrinsic(Intrinsic::Assign),
-                                        arg: vec![lhs, value],
+                                        arg: once(lhs)
+                                            .chain(once(first.clone()))
+                                            .chain(tail.iter().cloned())
+                                            .collect(),
                                     },
-                                    Value::Variable(Variable(variable)) => {
+                                    [Value::Variable(Variable(variable)), tail @ ..] => {
                                         match variable.as_slice() {
                                             b"write" => Statement {
                                                 runtime,
                                                 op: Op::Syscall(Syscall::Write),
-                                                arg: once(lhs).chain(get_values(bytes)).collect(),
+                                                arg: once(lhs)
+                                                    .chain(tail.iter().cloned())
+                                                    .collect(),
                                             },
                                             b"read" => Statement {
                                                 runtime,
                                                 op: Op::Syscall(Syscall::Read),
-                                                arg: once(lhs).chain(get_values(bytes)).collect(),
+                                                arg: once(lhs)
+                                                    .chain(tail.iter().cloned())
+                                                    .collect(),
                                             },
                                             b"memfd_create" => Statement {
                                                 runtime,
                                                 op: Op::Syscall(Syscall::MemfdCreate),
-                                                arg: once(lhs).chain(get_values(bytes)).collect(),
+                                                arg: once(lhs)
+                                                    .chain(tail.iter().cloned())
+                                                    .collect(),
                                             },
                                             _ => panic!(),
                                         }
                                     }
+                                    _ => todo!(),
                                 }
                             }
                             _ => panic!(),

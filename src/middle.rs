@@ -20,6 +20,19 @@ pub fn optimize_nodes(nodes: &[Node]) -> Vec<Node> {
         }
 
         match &node.statement {
+            Statement {
+                runtime: _,
+                op: Op::Intrinsic(Intrinsic::Assign),
+                arg,
+            } => {
+                let Some([Value::Variable(Variable(identifier)), tail @ ..]) = arg.get(..) else {
+                    todo!()
+                };
+                if tail.len() > 1 {
+                    type_map.insert(identifier, Type::Array(Array(tail.len() as u64)));
+                }
+                output.push(node.clone());
+            }
             // E.g. `x = read 1` which reads from `STDIN` the number of bytes required for the type of `x`, in this case the type isn't specified so we need to figure it (and defaulting to `i32` if we can't).
             Statement {
                 runtime: _,
@@ -46,6 +59,26 @@ pub fn optimize_nodes(nodes: &[Node]) -> Vec<Node> {
                     output.push(new_node);
                 }
             }
+            Statement {
+                runtime: _,
+                op: Op::Syscall(Syscall::Write),
+                arg,
+            } => {
+                if let Some([_result, _fd, x]) = arg.get(..) {
+                    let Value::Variable(Variable(x)) = x else {
+                        todo!()
+                    };
+
+                    let val_type = type_map.get(&x).unwrap();
+                    let n = val_type.bytes();
+
+                    // This is wrong, but it works for now.
+                    let mut new_node = node.clone();
+                    new_node.statement.arg.push(Value::Literal(Literal(n)));
+                    dbg!(&new_node);
+                    output.push(new_node);
+                }
+            }
             // This is wrong, but it works for now.
             _ => output.push(node.clone()),
         }
@@ -56,6 +89,7 @@ pub fn optimize_nodes(nodes: &[Node]) -> Vec<Node> {
 #[derive(Copy, Clone)]
 enum Type {
     Integer(Integer),
+    Array(Array),
     FileDescriptor,
 }
 impl Type {
@@ -65,10 +99,14 @@ impl Type {
     fn bits(&self) -> u64 {
         match self {
             Self::Integer(Integer(n)) => *n,
-            Self::FileDescriptor => 4,
+            Self::FileDescriptor => 32,
+            Self::Array(Array(x)) => 8 * x,
         }
     }
 }
+/// The number of elements in the array
+#[derive(Copy, Clone)]
+struct Array(u64);
 /// The bits in size.
 #[derive(Copy, Clone)]
 struct Integer(u64);
