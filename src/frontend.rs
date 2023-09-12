@@ -5,6 +5,8 @@ use std::io::Read;
 use std::iter::once;
 use std::iter::Peekable;
 
+const RUNTIME_IDENTIFIER: &[u8] = b"rt";
+
 pub enum GetValue {
     Value(Value),
     NewLine,
@@ -142,10 +144,20 @@ pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Node> {
             }
             // Op with assignment
             Some(_) => {
-                let identifier = get_identifier(bytes);
+                let mut identifier = get_identifier(bytes);
+
+                // Check if statement should only be evaluated at runtime.
+                let mut runtime = false;
+                if identifier == RUNTIME_IDENTIFIER {
+                    assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+                    identifier = get_identifier(bytes);
+                    runtime = true
+                }
+
                 match identifier.as_slice() {
                     // Exit
                     b"exit" => Statement {
+                        runtime,
                         op: Op::Syscall(Syscall::Exit),
                         arg: get_values(bytes),
                     },
@@ -167,6 +179,7 @@ pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Node> {
                             panic!()
                         };
                         Statement {
+                            runtime,
                             op,
                             arg: vec![lhs, rhs],
                         }
@@ -183,6 +196,7 @@ pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Node> {
                                     panic!()
                                 };
                                 Statement {
+                                    runtime,
                                     op: Op::Intrinsic(match part {
                                         b'+' => Intrinsic::Add,
                                         b'-' => Intrinsic::Sub,
@@ -201,20 +215,24 @@ pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Node> {
                                 };
                                 match value {
                                     Value::Literal(_) => Statement {
+                                        runtime,
                                         op: Op::Intrinsic(Intrinsic::Assign),
                                         arg: vec![lhs, value],
                                     },
                                     Value::Variable(Variable(variable)) => {
                                         match variable.as_slice() {
                                             b"write" => Statement {
+                                                runtime,
                                                 op: Op::Syscall(Syscall::Write),
                                                 arg: once(lhs).chain(get_values(bytes)).collect(),
                                             },
                                             b"read" => Statement {
+                                                runtime,
                                                 op: Op::Syscall(Syscall::Read),
                                                 arg: once(lhs).chain(get_values(bytes)).collect(),
                                             },
                                             b"memfd_create" => Statement {
+                                                runtime,
                                                 op: Op::Syscall(Syscall::MemfdCreate),
                                                 arg: once(lhs).chain(get_values(bytes)).collect(),
                                             },

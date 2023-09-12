@@ -136,14 +136,16 @@ pub fn instruction_from_node(
                 _ => todo!(),
             },
             Op::Syscall(Syscall::Read) => match current.statement.arg.get(..) {
-                Some([Value::Variable(Variable(x)), Value::Literal(Literal(fd))]) => {
+                Some(
+                    [Value::Variable(Variable(x)), Value::Literal(Literal(fd)), Value::Literal(Literal(n))],
+                ) => {
                     write!(
                         &mut assembly,
                         "\
                         mov x8, #{}\n\
                         mov x0, #{fd}\n\
                         ldr x1, ={}\n\
-                        mov x2, 4\n\
+                        mov x2, #{n}\n\
                         svc #0\n\
                     ",
                         libc::SYS_read,
@@ -154,7 +156,7 @@ pub fn instruction_from_node(
                         bss,
                         "\
                         {}:\n\
-                        .skip 4\n\
+                        .skip {n}\n\
                     ",
                         std::str::from_utf8(x).unwrap()
                     )
@@ -172,7 +174,7 @@ pub fn instruction_from_node(
                         mov x8, #{}\n\
                         mov x0, #{fd}\n\
                         ldr x1, ={}\n\
-                        mov x2, 4\n\
+                        mov x2, #4\n\
                         svc #0\n\
                     ",
                         libc::SYS_write,

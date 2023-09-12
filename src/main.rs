@@ -1,5 +1,7 @@
 #![feature(test)]
 #![feature(let_chains)]
+#![feature(int_roundings)]
+#![feature(if_let_guard)]
 
 extern crate test;
 
@@ -10,6 +12,8 @@ mod ast;
 use ast::*;
 mod frontend;
 use frontend::*;
+mod middle;
+use middle::*;
 mod backend;
 use backend::*;
 
@@ -22,6 +26,7 @@ fn main() {
     let reader = std::io::BufReader::new(empty);
     let mut iter = reader.bytes().peekable();
     let nodes = get_nodes(&mut iter);
+    let nodes = optimize_nodes(&nodes);
     let _assembly = assembly_from_node(&nodes);
     todo!()
 }
@@ -123,6 +128,20 @@ mod tests {
             nodes,
             [Node {
                 statement: Statement {
+                    runtime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal(0))]
+                },
+                child: None,
+                next: None,
+            }]
+        );
+        let optimized_nodes = optimize_nodes(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [Node {
+                statement: Statement {
+                    runtime: false,
                     op: Op::Syscall(Syscall::Exit),
                     arg: vec![Value::Literal(Literal(0))]
                 },
@@ -137,7 +156,7 @@ mod tests {
             mov x0, #0\n\
             svc #0\n\
         ";
-        assemble(&nodes, expected_assembly, 0);
+        assemble(&optimized_nodes, expected_assembly, 0);
     }
 
     const TWO: &str = "exit 1";
@@ -154,6 +173,20 @@ mod tests {
             nodes,
             [Node {
                 statement: Statement {
+                    runtime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal(1))]
+                },
+                child: None,
+                next: None,
+            }]
+        );
+        let optimized_nodes = optimize_nodes(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [Node {
+                statement: Statement {
+                    runtime: false,
                     op: Op::Syscall(Syscall::Exit),
                     arg: vec![Value::Literal(Literal(1))]
                 },
@@ -168,7 +201,7 @@ mod tests {
             mov x0, #1\n\
             svc #0\n\
         ";
-        assemble(&nodes, expected_assembly, 1);
+        assemble(&optimized_nodes, expected_assembly, 1);
     }
 
     const THREE: &str = "exit 12";
@@ -185,6 +218,20 @@ mod tests {
             nodes,
             [Node {
                 statement: Statement {
+                    runtime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal(12))]
+                },
+                child: None,
+                next: None,
+            }]
+        );
+        let optimized_nodes = optimize_nodes(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [Node {
+                statement: Statement {
+                    runtime: false,
                     op: Op::Syscall(Syscall::Exit),
                     arg: vec![Value::Literal(Literal(12))]
                 },
@@ -199,7 +246,7 @@ mod tests {
             mov x0, #12\n\
             svc #0\n\
         ";
-        assemble(&nodes, expected_assembly, 12);
+        assemble(&optimized_nodes, expected_assembly, 12);
     }
 
     const FOUR: &str = "exit 1\nexit 2";
@@ -217,6 +264,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal(1))]
                     },
@@ -225,6 +273,31 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(2))]
+                    },
+                    child: None,
+                    next: None,
+                }
+            ]
+        );
+        let optimized_nodes = optimize_nodes(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(1))]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal(2))]
                     },
@@ -243,7 +316,7 @@ mod tests {
             mov x0, #2\n\
             svc #0\n\
         ";
-        assemble(&nodes, expected_assembly, 1);
+        assemble(&optimized_nodes, expected_assembly, 1);
     }
 
     const SIX: &str = "x := 1\nexit 0";
@@ -261,6 +334,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
+                        runtime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable(Vec::from([b'x']))),
@@ -272,6 +346,34 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(0))]
+                    },
+                    child: None,
+                    next: None,
+                }
+            ]
+        );
+        let optimized_nodes = optimize_nodes(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(1))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal(0))]
                     },
@@ -290,7 +392,7 @@ mod tests {
             x:\n\
             .word 1\n\
         ";
-        assemble(&nodes, expected_assembly, 0);
+        assemble(&optimized_nodes, expected_assembly, 0);
     }
 
     const SEVEN: &str = "x := 1\nexit x";
@@ -308,6 +410,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
+                        runtime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable(Vec::from([b'x']))),
@@ -319,6 +422,34 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Variable(Variable(Vec::from([b'x'])))]
+                    },
+                    child: None,
+                    next: None,
+                }
+            ]
+        );
+        let optimized_nodes = optimize_nodes(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(1))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Variable(Variable(Vec::from([b'x'])))]
                     },
@@ -338,7 +469,7 @@ mod tests {
             x:\n\
             .word 1\n\
         ";
-        assemble(&nodes, expected_assembly, 1);
+        assemble(&optimized_nodes, expected_assembly, 1);
     }
 
     const EIGHT: &str = "x := 1\nx += 1\nexit x";
@@ -356,6 +487,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
+                        runtime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable(Vec::from([b'x']))),
@@ -367,6 +499,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
+                        runtime: false,
                         op: Op::Intrinsic(Intrinsic::Add),
                         arg: vec![
                             Value::Variable(Variable(Vec::from([b'x']))),
@@ -378,6 +511,46 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Variable(Variable(Vec::from([b'x'])))]
+                    },
+                    child: None,
+                    next: None,
+                },
+            ]
+        );
+        let optimized_nodes = optimize_nodes(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(1))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Intrinsic(Intrinsic::Add),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(1))
+                        ]
+                    },
+                    child: None,
+                    next: Some(2),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Variable(Variable(Vec::from([b'x'])))]
                     },
@@ -401,7 +574,7 @@ mod tests {
             x:\n\
             .word 1\n\
         ";
-        assemble(&nodes, expected_assembly, 2);
+        assemble(&optimized_nodes, expected_assembly, 2);
     }
 
     const NINE: &str = "x := 1\nif x = 2\n    exit 1\nexit 0";
@@ -419,6 +592,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
+                        runtime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable(Vec::from([b'x']))),
@@ -430,6 +604,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
+                        runtime: false,
                         op: Op::Intrinsic(Intrinsic::IfEq),
                         arg: vec![
                             Value::Variable(Variable(Vec::from([b'x']))),
@@ -441,6 +616,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal(1))]
                     },
@@ -449,6 +625,55 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(0))]
+                    },
+                    child: None,
+                    next: None,
+                },
+            ]
+        );
+        let optimized_nodes = optimize_nodes(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(1))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Intrinsic(Intrinsic::IfEq),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(2))
+                        ]
+                    },
+                    child: Some(2),
+                    next: Some(3),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(1))]
+                    },
+                    child: None,
+                    next: None,
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal(0))]
                     },
@@ -475,7 +700,7 @@ mod tests {
             x:\n\
             .word 1\n\
         ";
-        assemble(&nodes, expected_assembly, 0);
+        assemble(&optimized_nodes, expected_assembly, 0);
     }
 
     const TEN: &str = "x := 2\nif x = 2\n    exit 1\nexit 0";
@@ -493,6 +718,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
+                        runtime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable(Vec::from([b'x']))),
@@ -504,6 +730,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
+                        runtime: false,
                         op: Op::Intrinsic(Intrinsic::IfEq),
                         arg: vec![
                             Value::Variable(Variable(Vec::from([b'x']))),
@@ -515,6 +742,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal(1))]
                     },
@@ -523,6 +751,55 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(0))]
+                    },
+                    child: None,
+                    next: None,
+                },
+            ]
+        );
+        let optimized_nodes = optimize_nodes(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(2))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Intrinsic(Intrinsic::IfEq),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(2))
+                        ]
+                    },
+                    child: Some(2),
+                    next: Some(3),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(1))]
+                    },
+                    child: None,
+                    next: None,
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal(0))]
                     },
@@ -550,7 +827,7 @@ mod tests {
             x:\n\
             .word 2\n\
         ";
-        assemble(&nodes, expected_assembly, 1);
+        assemble(&optimized_nodes, expected_assembly, 1);
     }
 
     use std::mem::size_of;
@@ -576,10 +853,11 @@ mod tests {
             [
                 Node {
                     statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::Read),
                         arg: vec![
                             Value::Variable(Variable(Vec::from([b'x']))),
-                            Value::Literal(Literal(read as _))
+                            Value::Literal(Literal(read as _)),
                         ]
                     },
                     child: None,
@@ -587,6 +865,35 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Variable(Variable(Vec::from([b'x'])))]
+                    },
+                    child: None,
+                    next: None,
+                }
+            ]
+        );
+        let optimized_nodes = optimize_nodes(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Read),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(read as _)),
+                            Value::Literal(Literal(4))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Variable(Variable(Vec::from([b'x'])))]
                     },
@@ -604,7 +911,7 @@ mod tests {
             mov x8, #63\n\
             mov x0, #{read}\n\
             ldr x1, =x\n\
-            mov x2, 4\n\
+            mov x2, #4\n\
             svc #0\n\
             mov x8, #93\n\
             ldr x0, =x\n\
@@ -615,7 +922,7 @@ mod tests {
             .skip 4\n\
         "
         );
-        assemble(&nodes, &expected_assembly, data);
+        assemble(&optimized_nodes, &expected_assembly, data);
         unsafe {
             libc::close(read);
             libc::close(write);
@@ -644,6 +951,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::Read),
                         arg: vec![
                             Value::Variable(Variable(Vec::from([b'x']))),
@@ -655,6 +963,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::Write),
                         arg: vec![
                             Value::Variable(Variable(Vec::from([b'_']))),
@@ -667,6 +976,48 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(0))]
+                    },
+                    child: None,
+                    next: None,
+                },
+            ]
+        );
+        let optimized_nodes = optimize_nodes(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Read),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'x']))),
+                            Value::Literal(Literal(read as _)),
+                            Value::Literal(Literal(4))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Write),
+                        arg: vec![
+                            Value::Variable(Variable(Vec::from([b'_']))),
+                            Value::Literal(Literal(write as _)),
+                            Value::Variable(Variable(Vec::from([b'x'])))
+                        ]
+                    },
+                    child: None,
+                    next: Some(2),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal(0))]
                     },
@@ -684,12 +1035,12 @@ mod tests {
             mov x8, #63\n\
             mov x0, #{read}\n\
             ldr x1, =x\n\
-            mov x2, 4\n\
+            mov x2, #4\n\
             svc #0\n\
             mov x8, #64\n\
             mov x0, #{write}\n\
             ldr x1, =x\n\
-            mov x2, 4\n\
+            mov x2, #4\n\
             svc #0\n\
             mov x8, #93\n\
             mov x0, #0\n\
@@ -699,7 +1050,7 @@ mod tests {
             .skip 4\n\
         "
         );
-        assemble(&nodes, &expected_assembly, 0);
+        assemble(&optimized_nodes, &expected_assembly, 0);
 
         // Read the value from pipe
         let mut buffer = [0u8; size_of::<i32>()];
@@ -719,6 +1070,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::MemfdCreate),
                         arg: vec![Value::Variable(Variable(Vec::from([b'x']))),]
                     },
@@ -727,6 +1079,31 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal(0))]
+                    },
+                    child: None,
+                    next: None,
+                }
+            ]
+        );
+        let optimized_nodes = optimize_nodes(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [
+                Node {
+                    statement: Statement {
+                        runtime: false,
+                        op: Op::Syscall(Syscall::MemfdCreate),
+                        arg: vec![Value::Variable(Variable(Vec::from([b'x']))),]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        runtime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal(0))]
                     },
@@ -756,6 +1133,6 @@ mod tests {
             x:\n\
             .skip 4\n\
         ";
-        assemble(&nodes, expected_assembly, 0);
+        assemble(&optimized_nodes, expected_assembly, 0);
     }
 }

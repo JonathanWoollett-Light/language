@@ -1,5 +1,5 @@
 /// The AST maps closely to assembly for simplicity.
-#[derive(Debug, Eq, PartialEq, Default)]
+#[derive(Debug, Eq, PartialEq, Default, Clone)]
 pub struct Node {
     pub statement: Statement,
     pub child: Option<usize>,
@@ -15,13 +15,14 @@ impl Node {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Default)]
+#[derive(Debug, Eq, PartialEq, Default, Clone)]
 pub struct Statement {
+    pub runtime: bool,
     pub op: Op,
     pub arg: Vec<Value>,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Value {
     Literal(Literal),
     Variable(Variable),
@@ -33,13 +34,13 @@ impl Default for Value {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Default)]
+#[derive(Debug, Eq, PartialEq, Default, Clone)]
 pub struct Literal(pub u64);
 
-#[derive(Debug, Eq, PartialEq, Default)]
+#[derive(Debug, Eq, PartialEq, Default, Clone)]
 pub struct Variable(pub Vec<u8>);
 
-#[derive(Debug, Eq, PartialEq, Default)]
+#[derive(Debug, Eq, PartialEq, Default, Clone)]
 pub enum Intrinsic {
     #[default]
     Assign,
@@ -55,7 +56,7 @@ pub enum Intrinsic {
     IfGt,
 }
 
-#[derive(Debug, Eq, PartialEq, Default)]
+#[derive(Debug, Eq, PartialEq, Default, Clone)]
 pub enum Syscall {
     #[default]
     Exit,
@@ -64,7 +65,7 @@ pub enum Syscall {
     MemfdCreate,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Op {
     Intrinsic(Intrinsic),
     Syscall(Syscall),
