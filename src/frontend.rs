@@ -41,7 +41,7 @@ pub fn get_value<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> GetValue {
     match bytes.peek().map(|r| r.as_ref().unwrap()) {
         Some(b'0') => {
             bytes.next().unwrap().unwrap();
-            GetValue::Value(Value::Literal(Literal(0)))
+            GetValue::Value(Value::Literal(Literal::Integer(0)))
         }
         Some(b'1'..=b'9') => {
             let b = bytes.next().unwrap().unwrap();
@@ -65,15 +65,51 @@ pub fn get_value<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> GetValue {
                     _ => panic!(),
                 }
             }
-            GetValue::Value(Value::Literal(Literal(literal)))
+            GetValue::Value(Value::Literal(Literal::Integer(literal)))
         }
         Some(b'a'..=b'z' | b'_') => {
             GetValue::Value(Value::Variable(Variable(get_identifier(bytes))))
         }
+        Some(b'"') => {
+            bytes.next().unwrap().unwrap();
+            #[cfg(debug_assertions)]
+            let mut i = 0;
+            let mut string = Vec::new();
+            loop {
+                #[cfg(debug_assertions)]
+                {
+                    assert!(i < LOOP_LIMIT);
+                    i += 1;
+                }
+
+                match bytes.peek().map(|r| r.as_ref().unwrap()) {
+                    Some(b'\\') => {
+                        bytes.next().unwrap().unwrap();
+                        match bytes.next().map(Result::unwrap) {
+                            Some(b'n') => string.push(b'\n'),
+                            Some(b'"') => string.push(b'"'),
+                            _ => todo!(),
+                        }
+                    }
+                    Some(b'"') => {
+                        bytes.next().unwrap().unwrap();
+                        break;
+                    }
+                    Some(_) => {
+                        let b = bytes.next().unwrap().unwrap();
+                        string.push(b);
+                    }
+                    _ => panic!(),
+                }
+            }
+            GetValue::Value(Value::Literal(Literal::String(
+                std::str::from_utf8(&string).unwrap().to_string(),
+            )))
+        }
         Some(b' ') => GetValue::Space,
         Some(b'\n') => GetValue::NewLine,
         None => GetValue::None,
-        _ => panic!(),
+        x => panic!("unexpected: {:?}", x.map(|c| *c as char)),
     }
 }
 
@@ -97,8 +133,6 @@ pub fn get_values<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Value> {
             GetValue::NewLine | GetValue::None => break,
         }
     }
-
-    dbg!(&values);
     values
 }
 

@@ -61,7 +61,7 @@ pub fn instruction_from_node(
 
         match current.statement.op {
             Op::Syscall(Syscall::Exit) => match current.statement.arg.get(0) {
-                Some(Value::Literal(Literal(x))) => write!(
+                Some(Value::Literal(Literal::Integer(x))) => write!(
                     &mut assembly,
                     "\
                     mov x8, #{}\n\
@@ -86,15 +86,17 @@ pub fn instruction_from_node(
                 _ => todo!(),
             },
             Op::Intrinsic(Intrinsic::Assign) => match current.statement.arg.get(..) {
-                Some([Value::Variable(Variable(x)), Value::Literal(Literal(y))]) => write!(
-                    data,
-                    "\
+                Some([Value::Variable(Variable(x)), Value::Literal(Literal::Integer(y))]) => {
+                    write!(
+                        data,
+                        "\
                     {}:\n\
                     .word {y}\n\
                 ",
-                    std::str::from_utf8(x).unwrap()
-                )
-                .unwrap(),
+                        std::str::from_utf8(x).unwrap()
+                    )
+                    .unwrap()
+                }
                 Some([Value::Variable(Variable(x)), rest @ ..]) => write!(
                     data,
                     "\
@@ -103,11 +105,11 @@ pub fn instruction_from_node(
                 ",
                     std::str::from_utf8(x).unwrap(),
                     rest.iter()
-                        .map(|c| {
-                            let Value::Literal(Literal(c)) = c else {
-                                todo!()
-                            };
-                            c.to_string()
+                        .flat_map(|c| match c {
+                            Value::Literal(Literal::Integer(c)) => vec![c.to_string()],
+                            Value::Literal(Literal::String(s)) =>
+                                s.bytes().map(|b| b.to_string()).collect::<Vec<_>>(),
+                            _ => todo!(),
                         })
                         .intersperse(String::from(","))
                         .collect::<String>()
@@ -116,21 +118,23 @@ pub fn instruction_from_node(
                 _ => todo!(),
             },
             Op::Intrinsic(Intrinsic::Add) => match current.statement.arg.get(..) {
-                Some([Value::Variable(Variable(x)), Value::Literal(Literal(y))]) => write!(
-                    &mut assembly,
-                    "\
+                Some([Value::Variable(Variable(x)), Value::Literal(Literal::Integer(y))]) => {
+                    write!(
+                        &mut assembly,
+                        "\
                     ldr x0, ={}\n\
                     ldr x1, [x0]\n\
                     add x1, x1, #{y}\n\
                     str x1, [x0]\n\
                 ",
-                    std::str::from_utf8(x).unwrap()
-                )
-                .unwrap(),
+                        std::str::from_utf8(x).unwrap()
+                    )
+                    .unwrap()
+                }
                 _ => todo!(),
             },
             Op::Intrinsic(Intrinsic::IfEq) => match current.statement.arg.get(..) {
-                Some([Value::Variable(Variable(x)), Value::Literal(Literal(y))]) => {
+                Some([Value::Variable(Variable(x)), Value::Literal(Literal::Integer(y))]) => {
                     write!(
                         &mut assembly,
                         "\
@@ -155,7 +159,7 @@ pub fn instruction_from_node(
             },
             Op::Syscall(Syscall::Read) => match current.statement.arg.get(..) {
                 Some(
-                    [Value::Variable(Variable(x)), Value::Literal(Literal(fd)), Value::Literal(Literal(n))],
+                    [Value::Variable(Variable(x)), Value::Literal(Literal::Integer(fd)), Value::Literal(Literal::Integer(n))],
                 ) => {
                     write!(
                         &mut assembly,
@@ -184,7 +188,7 @@ pub fn instruction_from_node(
             },
             Op::Syscall(Syscall::Write) => match current.statement.arg.get(..) {
                 Some(
-                    [Value::Variable(Variable(v)), Value::Literal(Literal(fd)), Value::Variable(Variable(x)), Value::Literal(Literal(n))],
+                    [Value::Variable(Variable(v)), Value::Literal(Literal::Integer(fd)), Value::Variable(Variable(x)), Value::Literal(Literal::Integer(n))],
                 ) if v == b"_" => {
                     write!(
                         &mut assembly,

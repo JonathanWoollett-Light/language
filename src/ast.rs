@@ -34,8 +34,17 @@ impl Default for Value {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Default, Clone)]
-pub struct Literal(pub u64);
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum Literal {
+    String(String),
+    Integer(u64),
+}
+
+impl Default for Literal {
+    fn default() -> Self {
+        Self::Integer(Default::default())
+    }
+}
 
 #[derive(Debug, Eq, PartialEq, Default, Clone)]
 pub struct Variable(pub Vec<u8>);

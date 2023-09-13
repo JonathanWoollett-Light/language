@@ -28,8 +28,14 @@ pub fn optimize_nodes(nodes: &[Node]) -> Vec<Node> {
                 let Some([Value::Variable(Variable(identifier)), tail @ ..]) = arg.get(..) else {
                     todo!()
                 };
-                if tail.len() > 1 {
-                    type_map.insert(identifier, Type::Array(Array(tail.len() as u64)));
+                match tail {
+                    [] | [Value::Literal(Literal::Integer(_))] => {}
+                    [Value::Literal(Literal::String(s))] => {
+                        type_map.insert(identifier, Type::Array(Array(s.len() as u64)));
+                    }
+                    _ => {
+                        type_map.insert(identifier, Type::Array(Array(tail.len() as u64)));
+                    }
                 }
                 output.push(node.clone());
             }
@@ -55,7 +61,10 @@ pub fn optimize_nodes(nodes: &[Node]) -> Vec<Node> {
 
                     // This is wrong, but it works for now.
                     let mut new_node = node.clone();
-                    new_node.statement.arg.push(Value::Literal(Literal(n)));
+                    new_node
+                        .statement
+                        .arg
+                        .push(Value::Literal(Literal::Integer(n)));
                     output.push(new_node);
                 }
             }
@@ -74,8 +83,10 @@ pub fn optimize_nodes(nodes: &[Node]) -> Vec<Node> {
 
                     // This is wrong, but it works for now.
                     let mut new_node = node.clone();
-                    new_node.statement.arg.push(Value::Literal(Literal(n)));
-                    dbg!(&new_node);
+                    new_node
+                        .statement
+                        .arg
+                        .push(Value::Literal(Literal::Integer(n)));
                     output.push(new_node);
                 }
             }
@@ -135,7 +146,7 @@ fn search(identifier: &[u8], start: usize, nodes: &[Node]) -> Type {
             } if let Some([x,_fd,n]) = arg.get(..) && let Value::Variable(Variable(x)) = x && identifier == x => {
                 if let Some(m) = size {
                     match n {
-                        Value::Literal(Literal(n)) => {
+                        Value::Literal(Literal::Integer(n)) => {
                             assert_eq!(m, *n, "Cannot read 2 different number of bytes into a single type of 1 size.");
                         },
                         _ => todo!()
@@ -143,7 +154,7 @@ fn search(identifier: &[u8], start: usize, nodes: &[Node]) -> Type {
                 }
                 else {
                     match n {
-                        Value::Literal(Literal(n)) => {
+                        Value::Literal(Literal::Integer(n)) => {
                             size = Some(*n);
                         },
                         _ => todo!()
