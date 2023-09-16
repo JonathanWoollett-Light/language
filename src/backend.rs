@@ -71,7 +71,10 @@ pub fn instruction_from_node(
                     libc::SYS_exit
                 )
                 .unwrap(),
-                Some(Value::Variable(Variable(x))) => write!(
+                Some(Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                })) => write!(
                     &mut assembly,
                     "\
                     mov x8, #{}\n\
@@ -80,30 +83,38 @@ pub fn instruction_from_node(
                     svc #0\n\
                 ",
                     libc::SYS_exit,
-                    std::str::from_utf8(x).unwrap()
+                    std::str::from_utf8(identifier).unwrap()
                 )
                 .unwrap(),
                 _ => todo!(),
             },
             Op::Intrinsic(Intrinsic::Assign) => match current.statement.arg.get(..) {
-                Some([Value::Variable(Variable(x)), Value::Literal(Literal::Integer(y))]) => {
-                    write!(
-                        data,
-                        "\
+                Some(
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }), Value::Literal(Literal::Integer(y))],
+                ) => write!(
+                    data,
+                    "\
                     {}:\n\
                     .word {y}\n\
                 ",
-                        std::str::from_utf8(x).unwrap()
-                    )
-                    .unwrap()
-                }
-                Some([Value::Variable(Variable(x)), rest @ ..]) => write!(
+                    std::str::from_utf8(identifier).unwrap()
+                )
+                .unwrap(),
+                Some(
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }), rest @ ..],
+                ) => write!(
                     data,
                     "\
                     {}:\n\
                     .byte {}\n\
                 ",
-                    std::str::from_utf8(x).unwrap(),
+                    std::str::from_utf8(identifier).unwrap(),
                     rest.iter()
                         .flat_map(|c| match c {
                             Value::Literal(Literal::Integer(c)) => vec![c.to_string()],
@@ -117,24 +128,32 @@ pub fn instruction_from_node(
                 .unwrap(),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::Add) => match current.statement.arg.get(..) {
-                Some([Value::Variable(Variable(x)), Value::Literal(Literal::Integer(y))]) => {
-                    write!(
-                        &mut assembly,
-                        "\
+            Op::Intrinsic(Intrinsic::AddAssign) => match current.statement.arg.get(..) {
+                Some(
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }), Value::Literal(Literal::Integer(y))],
+                ) => write!(
+                    &mut assembly,
+                    "\
                     ldr x0, ={}\n\
                     ldr x1, [x0]\n\
                     add x1, x1, #{y}\n\
                     str x1, [x0]\n\
                 ",
-                        std::str::from_utf8(x).unwrap()
-                    )
-                    .unwrap()
-                }
+                    std::str::from_utf8(identifier).unwrap()
+                )
+                .unwrap(),
                 _ => todo!(),
             },
             Op::Intrinsic(Intrinsic::IfEq) => match current.statement.arg.get(..) {
-                Some([Value::Variable(Variable(x)), Value::Literal(Literal::Integer(y))]) => {
+                Some(
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }), Value::Literal(Literal::Integer(y))],
+                ) => {
                     write!(
                         &mut assembly,
                         "\
@@ -145,7 +164,7 @@ pub fn instruction_from_node(
                         {}\
                         block{block_counter}:\n\
                     ",
-                        std::str::from_utf8(x).unwrap(),
+                        std::str::from_utf8(identifier).unwrap(),
                         if let Some(child) = current.child {
                             instruction_from_node(nodes, child, data, bss, block_counter, empty)
                         } else {
@@ -159,7 +178,10 @@ pub fn instruction_from_node(
             },
             Op::Syscall(Syscall::Read) => match current.statement.arg.get(..) {
                 Some(
-                    [Value::Variable(Variable(x)), Value::Literal(Literal::Integer(fd)), Value::Literal(Literal::Integer(n))],
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }), Value::Literal(Literal::Integer(fd)), Value::Literal(Literal::Integer(n))],
                 ) => {
                     write!(
                         &mut assembly,
@@ -171,7 +193,7 @@ pub fn instruction_from_node(
                         svc #0\n\
                     ",
                         libc::SYS_read,
-                        std::str::from_utf8(x).unwrap()
+                        std::str::from_utf8(identifier).unwrap()
                     )
                     .unwrap();
                     write!(
@@ -180,7 +202,7 @@ pub fn instruction_from_node(
                         {}:\n\
                         .skip {n}\n\
                     ",
-                        std::str::from_utf8(x).unwrap()
+                        std::str::from_utf8(identifier).unwrap()
                     )
                     .unwrap();
                 }
@@ -188,7 +210,13 @@ pub fn instruction_from_node(
             },
             Op::Syscall(Syscall::Write) => match current.statement.arg.get(..) {
                 Some(
-                    [Value::Variable(Variable(v)), Value::Literal(Literal::Integer(fd)), Value::Variable(Variable(x)), Value::Literal(Literal::Integer(n))],
+                    [Value::Variable(Variable {
+                        identifier: v,
+                        index: None,
+                    }), Value::Literal(Literal::Integer(fd)), Value::Variable(Variable {
+                        identifier: x,
+                        index: None,
+                    }), Value::Literal(Literal::Integer(n))],
                 ) if v == b"_" => {
                     write!(
                         &mut assembly,
@@ -207,7 +235,12 @@ pub fn instruction_from_node(
                 _ => todo!(),
             },
             Op::Syscall(Syscall::MemfdCreate) => match current.statement.arg.get(..) {
-                Some([Value::Variable(Variable(x))]) => {
+                Some(
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    })],
+                ) => {
                     write!(
                         &mut assembly,
                         "\
@@ -219,7 +252,7 @@ pub fn instruction_from_node(
                         str x0, [x1]\n\
                     ",
                         libc::SYS_memfd_create,
-                        std::str::from_utf8(x).unwrap()
+                        std::str::from_utf8(identifier).unwrap()
                     )
                     .unwrap();
                     if !*empty {
@@ -239,7 +272,7 @@ pub fn instruction_from_node(
                         {}:\n\
                         .skip 4\n\
                     ",
-                        std::str::from_utf8(x).unwrap()
+                        std::str::from_utf8(identifier).unwrap()
                     )
                     .unwrap();
                 }
