@@ -155,9 +155,33 @@ impl TryFrom<&[u8]> for Syscall {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
+pub enum Special {
+    Assume(Cmp),
+    Require(Cmp),
+    Type,
+}
+
+impl Default for Special {
+    fn default() -> Self {
+        Self::Assume(Default::default())
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Default, Clone)]
+pub enum Cmp {
+    Gt,
+    Lt,
+    #[default]
+    Eq,
+    Ge,
+    Le,
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Op {
     Intrinsic(Intrinsic),
     Syscall(Syscall),
+    Special(Special),
 }
 
 impl Default for Op {

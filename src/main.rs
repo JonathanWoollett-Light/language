@@ -4,6 +4,7 @@
 #![feature(if_let_guard)]
 #![feature(iter_intersperse)]
 #![feature(box_patterns)]
+#![feature(exclusive_range_pattern)]
 
 extern crate test;
 
@@ -2106,7 +2107,7 @@ exit 1"#
             assert_eq!(a, b);
         }
         // assert_eq!(nodes[..expected_nodes.len()], expected_nodes);
-        // let optimized_nodes = optimize_nodes(&nodes);
+        let optimized_nodes = optimize_nodes(&nodes);
         // assert_eq!(
         //     optimized_nodes,
         //     [
@@ -2180,5 +2181,61 @@ exit 1"#
         //     libc::close(output_read);
         //     libc::close(output_write);
         // }
+    }
+
+    #[test]
+    fn test_verify() {
+        let nodes = [
+            Node {
+                statement: Statement {
+                    runtime: false,
+                    op: Op::Intrinsic(Intrinsic::Assign),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Literal(Literal::Integer(254)),
+                    ],
+                },
+                child: None,
+                next: Some(1),
+            },
+            Node {
+                statement: Statement {
+                    runtime: false,
+                    op: Op::Intrinsic(Intrinsic::AddAssign),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Literal(Literal::Integer(1)),
+                    ],
+                },
+                child: None,
+                next: Some(2),
+            },
+            Node {
+                statement: Statement {
+                    runtime: false,
+                    op: Op::Intrinsic(Intrinsic::AddAssign),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Literal(Literal::Integer(1)),
+                    ],
+                },
+                child: None,
+                next: Some(3),
+            },
+            Node {
+                statement: Statement {
+                    runtime: false,
+                    op: Op::Special(Special::Require(Cmp::Gt)),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Literal(Literal::Integer(255)),
+                    ],
+                },
+                child: None,
+                next: None,
+            },
+        ];
+        let verified = explore(&nodes);
+        println!("verified: {verified:?}");
     }
 }
