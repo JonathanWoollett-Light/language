@@ -29,6 +29,7 @@ fn main() {
     let reader = std::io::BufReader::new(empty);
     let mut iter = reader.bytes().peekable();
     let nodes = get_nodes(&mut iter);
+    let _ = explore(&nodes);
     let nodes = optimize_nodes(&nodes);
     let _assembly = assembly_from_node(&nodes);
     todo!()

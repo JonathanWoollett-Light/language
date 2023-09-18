@@ -158,7 +158,7 @@ impl TryFrom<&[u8]> for Syscall {
 pub enum Special {
     Assume(Cmp),
     Require(Cmp),
-    Type,
+    // Type,
 }
 
 impl Default for Special {

@@ -1,10 +1,10 @@
 use crate::ast::*;
-use std::collections::HashMap;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 // An inclusive range that supports wrapping around.
 #[derive(Debug, Clone)]
-struct MyRange<T> {
+pub struct MyRange<T> {
     start: T,
     end: T,
 }
@@ -13,18 +13,10 @@ impl<T: Copy + Ord + num_traits::bounds::Bounded> MyRange<T> {
         Self { start, end }
     }
     fn less_than(&self, x: T) -> bool {
-        match self.start.cmp(&self.end) {
-            Ordering::Greater => false,
-            Ordering::Equal => self.start < x,
-            Ordering::Less => self.end < x,
-        }
+        self.max() < x
     }
     fn greater_than(&self, x: T) -> bool {
-        match self.start.cmp(&self.end) {
-            Ordering::Greater => true,
-            Ordering::Equal => self.end > x,
-            Ordering::Less => self.start > x,
-        }
+        self.min() > x
     }
     fn max(&self) -> T {
         match self.start.cmp(&self.end) {
@@ -160,9 +152,19 @@ fn evaluate_states(start: &State, statement: &Statement) -> Vec<State> {
             op: Op::Special(Special::Require(Cmp::Gt)),
             arg
         } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
-            let possible = NewValueInteger::possible(*x);
-
             if let Some(NewValue::Integer(existing)) = start.values.get(identifier) && let Ok(true) = existing.greater_than(*x) {
+                vec![start.clone()]
+            }
+            else {
+                Vec::new()
+            }
+        }
+        Statement {
+            runtime: false,
+            op: Op::Special(Special::Require(Cmp::Lt)),
+            arg
+        } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
+            if let Some(NewValue::Integer(existing)) = start.values.get(identifier) && let Ok(true) = existing.less_than(*x) {
                 vec![start.clone()]
             }
             else {
@@ -581,7 +583,7 @@ pub fn optimize_nodes(nodes: &[Node]) -> Vec<Node> {
                         }) => {
                             let val_type = type_map
                                 .get(&identifier)
-                                .expect(&format!("{:?}", std::str::from_utf8(&identifier)));
+                                .unwrap_or_else(|| panic!("{:?}", std::str::from_utf8(identifier)));
 
                             let n = match val_type {
                                 Type::Array(Array { item, length: _ }) => item.bytes(),
