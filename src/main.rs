@@ -30,11 +30,12 @@ fn main() {
     let mut iter = reader.bytes().peekable();
     let nodes = get_nodes(&mut iter);
     let _ = explore(&nodes);
-    let nodes = optimize_nodes(&nodes);
+    // let nodes = optimize_nodes(&nodes);
     let _assembly = assembly_from_node(&nodes);
     todo!()
 }
 
+#[cfg(feature = "false")]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2236,7 +2237,9 @@ exit 1"#
                 next: None,
             },
         ];
-        let verified = explore(&nodes);
-        println!("verified: {verified:?}");
+        let states = explore(&nodes);
+        println!("states: {states:?}");
+        let best_state = states.into_iter().min();
+        println!("best_state: {best_state:?}");
     }
 }

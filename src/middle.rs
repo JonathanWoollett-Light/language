@@ -1,14 +1,47 @@
 use crate::ast::*;
+use num_traits::bounds::Bounded;
+use num_traits::identities::One;
+use num_traits::identities::Zero;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
 // An inclusive range that supports wrapping around.
-#[derive(Debug, Clone)]
-pub struct MyRange<T> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MyRange<
+    T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
+> {
     start: T,
     end: T,
 }
-impl<T: Copy + Ord + num_traits::bounds::Bounded> MyRange<T> {
+impl<
+        T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
+    > Ord for MyRange<T>
+{
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.len().cmp(&other.len())
+    }
+}
+
+impl<
+        T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
+    > PartialOrd for MyRange<T>
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<
+        T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
+    > MyRange<T>
+{
+    fn len(&self) -> T {
+        match self.start.cmp(&self.end) {
+            Ordering::Greater => (T::max_value() - self.start) + self.end + T::one(),
+            Ordering::Equal => T::zero(),
+            Ordering::Less => self.end - self.start,
+        }
+    }
     fn new(start: T, end: T) -> Self {
         Self { start, end }
     }
@@ -33,17 +66,50 @@ impl<T: Copy + Ord + num_traits::bounds::Bounded> MyRange<T> {
         }
     }
 }
+pub fn update(nodes: &[Node]) {
+    let states = explore(nodes);
+    let shared_state = state_intersection(&states);
+}
+
+/// Given a set of states return a state that represents the intersections of all states in the set.
+pub fn state_intersection(states: &[State]) -> State {
+    let mut intersections = HashMap::new();
+
+    let Some([first, tail @ ..]) = states.get(..) else {
+        panic!()
+    };
+    for (key, value) in first.values.iter() {
+        if tail
+            .iter()
+            .all(|s| s.values.get(key).unwrap().type_value() == value.type_value())
+        {
+            intersections.insert(key.clone(), value.clone());
+        }
+    }
+    State {
+        values: intersections,
+    }
+}
 
 pub fn explore(nodes: &[Node]) -> Vec<State> {
     assert!(!nodes.is_empty());
     let node = &nodes[0];
     let mut end_states = Vec::new();
+    // While there is are no branches we can safetly evaluated syscalls at compile time (e.g. read),
+    // when we have multiple branches and ways they might be evaluated we can no longer evaluate
+    // them.
+    // While this is `true` syscalls can be evalauted. It is set `false` when `evaluate_states`
+    // would return multiple states.
+    let mut single = true;
+
     let initial_states = evaluate_states(
         &State {
             values: HashMap::new(),
         },
         &node.statement,
+        single
     );
+
     let mut stack = initial_states
         .into_iter()
         .map(|state| GraphNode {
@@ -56,46 +122,29 @@ pub fn explore(nodes: &[Node]) -> Vec<State> {
     while let Some(current) = stack.pop() {
         match (current.next, current.child) {
             (Some(next), Some(child)) => {
-                for state in evaluate_states(&current.state, &nodes[next].statement) {
-                    stack.push(GraphNode {
-                        state,
-                        child: nodes[next].child,
-                        next: nodes[next].next,
-                    });
-                }
-                for state in evaluate_states(&current.state, &nodes[child].statement) {
-                    stack.push(GraphNode {
-                        state,
-                        child: nodes[child].child,
-                        next: nodes[child].next,
-                    });
-                }
+                append_nodes(&current.state, &nodes[next], &mut stack);
+                append_nodes(&current.state, &nodes[child], &mut stack);
             }
-            (Some(next), None) => {
-                for state in evaluate_states(&current.state, &nodes[next].statement) {
-                    stack.push(GraphNode {
-                        state,
-                        child: nodes[next].child,
-                        next: nodes[next].next,
-                    });
-                }
-            }
-            (None, Some(child)) => {
-                for state in evaluate_states(&current.state, &nodes[child].statement) {
-                    stack.push(GraphNode {
-                        state,
-                        child: nodes[child].child,
-                        next: nodes[child].next,
-                    });
-                }
-            }
+            (Some(next), None) => append_nodes(&current.state, &nodes[next], &mut stack),
+            (None, Some(child)) => append_nodes(&current.state, &nodes[child], &mut stack),
+            // If a graph node is reached which has no succeding element, we managed to successfuly evaluate to a leaf of the computational graph, thus we have the full type state of the program.
             (None, None) => end_states.push(current.state),
         }
     }
     end_states
 }
 
-fn evaluate_states(start: &State, statement: &Statement) -> Vec<State> {
+fn append_nodes(current: &State, succeeding: &Node, stack: &mut Vec<GraphNode>, single: &mut bool) {
+    for state in evaluate_states(current, &succeeding.statement, single) {
+        stack.push(GraphNode {
+            state,
+            child: succeeding.child,
+            next: succeeding.next,
+        });
+    }
+}
+
+fn evaluate_states(start: &State, statement: &Statement, single: &mut bool) -> Vec<State> {
     match statement {
         Statement {
             runtime: false,
@@ -103,6 +152,10 @@ fn evaluate_states(start: &State, statement: &Statement) -> Vec<State> {
             arg
         } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
             let possible = NewValueInteger::possible(*x);
+            
+            if possible.len() > 1 {
+                single = false;
+            }
 
             match start.values.get(identifier) {
                 Some(NewValue::Integer(existing)) => {
@@ -181,17 +234,57 @@ struct GraphNode {
     child: Option<usize>,
     next: Option<usize>,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq)]
 pub struct State {
     values: HashMap<Vec<u8>, NewValue>,
 }
+impl Ord for State {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let lhs = self
+            .values
+            .iter()
+            .map(|(_key, value)| value.cost())
+            .sum::<u64>();
+        let rhs = other
+            .values
+            .iter()
+            .map(|(key, value)| value.cost())
+            .sum::<u64>();
+        lhs.cmp(&rhs)
+    }
+}
 
-#[derive(Debug, Clone)]
+impl PartialOrd for State {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for State {
+    fn eq(&self, other: &Self) -> bool {
+        self.values.len() == other.values.len() &&
+        self.values.iter().all(|(key,value)|matches!(other.values.get(key), Some(other_value) if value == other_value))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NewValue {
     Integer(NewValueInteger),
 }
+impl NewValue {
+    pub fn type_value(&self) -> Type {
+        match self {
+            Self::Integer(int) => int.type_value(),
+        }
+    }
+    pub fn cost(&self) -> u64 {
+        match self {
+            Self::Integer(int) => int.type_index() as u64,
+        }
+    }
+}
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NewValueInteger {
     U8(MyRange<u8>),
     U16(MyRange<u16>),
@@ -203,6 +296,18 @@ pub enum NewValueInteger {
     I64(MyRange<i64>),
 }
 impl NewValueInteger {
+    pub fn type_value(&self) -> Type {
+        match self {
+            Self::U8(_) => Type::U8,
+            Self::U16(_) => Type::U16,
+            Self::U32(_) => Type::U32,
+            Self::U64(_) => Type::U64,
+            Self::I8(_) => Type::I8,
+            Self::I16(_) => Type::I16,
+            Self::I32(_) => Type::I32,
+            Self::I64(_) => Type::I64,
+        }
+    }
     fn type_index(&self) -> u8 {
         match self {
             Self::U8(_) => 0,
@@ -432,277 +537,34 @@ impl NewValueInteger {
     }
 }
 
-pub fn optimize_nodes(nodes: &[Node]) -> Vec<Node> {
-    let mut output = Vec::new();
-
-    // Stores types for each variable.
-    let mut type_map = HashMap::new();
-
-    assert!(!nodes.is_empty());
-    let mut stack = vec![0];
-    while let Some(current) = stack.pop() {
-        // Set node
-        let node = &nodes[current];
-        if let Some(next) = node.next {
-            stack.push(next);
-        }
-        if let Some(child) = node.child {
-            stack.push(child)
-        }
-
-        match &node.statement {
-            Statement {
-                runtime: _,
-                op: Op::Syscall(Syscall::MemfdCreate),
-                arg,
-            } => {
-                let Some(
-                    [Value::Variable(Variable {
-                        identifier,
-                        index: _,
-                    }), ..],
-                ) = arg.get(..)
-                else {
-                    panic!()
-                };
-                type_map.insert(identifier, Type::FILE_DESCRIPTOR);
-                output.push(node.clone());
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn range_len() {
+        assert_eq!(
+            MyRange {
+                start: 0u8,
+                end: 255u8
             }
-            Statement {
-                runtime: _,
-                op: Op::Syscall(Syscall::Mmap),
-                arg,
-            } => {
-                let Some(
-                    [Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    }), ..],
-                ) = arg.get(..)
-                else {
-                    panic!()
-                };
-                type_map.insert(identifier, Type::Pointer(Pointer { item: None }));
-                output.push(node.clone());
+            .len(),
+            255u8
+        );
+        assert_eq!(
+            MyRange {
+                start: 1u8,
+                end: 0u8
             }
-            Statement {
-                runtime: _,
-                op: Op::Intrinsic(Intrinsic::Assign),
-                arg,
-            } => {
-                let Some(
-                    [Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    }), tail @ ..],
-                ) = arg.get(..)
-                else {
-                    todo!()
-                };
-                match tail {
-                    [] | [Value::Literal(Literal::Integer(_))] => {}
-                    [Value::Literal(Literal::String(s))] => {
-                        type_map.insert(
-                            identifier,
-                            Type::Array(Array {
-                                item: Box::new(Type::Integer(Integer(8))),
-                                length: s.len() as u64,
-                            }),
-                        );
-                    }
-                    _ => {
-                        type_map.insert(
-                            identifier,
-                            Type::Array(Array {
-                                item: Box::new(Type::Integer(Integer(8))),
-                                length: tail.len() as u64,
-                            }),
-                        );
-                    }
-                }
-                output.push(node.clone());
+            .len(),
+            255u8
+        );
+        assert_eq!(
+            MyRange {
+                start: 11u8,
+                end: 10u8
             }
-            // E.g. `x = read 1` which reads from `STDIN` the number of bytes required for the type of `x`, in this case the type isn't specified so we need to figure it (and defaulting to `i32` if we can't).
-            Statement {
-                runtime: _,
-                op: Op::Syscall(Syscall::Read),
-                arg,
-            } => {
-                if let Some([x, _fd]) = arg.get(..) {
-                    let Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    }) = x
-                    else {
-                        todo!()
-                    };
-
-                    let val_type = if let Some(val_type) = type_map.get(&identifier) {
-                        val_type.clone()
-                    } else {
-                        let val_type = search(identifier, current, nodes);
-                        type_map.insert(identifier, val_type.clone());
-                        val_type
-                    };
-                    let n = val_type.bytes();
-
-                    // This is wrong, but it works for now.
-                    let mut new_node = node.clone();
-                    new_node
-                        .statement
-                        .arg
-                        .push(Value::Literal(Literal::Integer(n as _)));
-                    output.push(new_node);
-                }
-            }
-            Statement {
-                runtime: _,
-                op: Op::Syscall(Syscall::Write),
-                arg,
-            } => {
-                match arg.get(..) {
-                    Some([_result, _fd, x]) => match x {
-                        Value::Variable(Variable {
-                            identifier,
-                            index: None,
-                        }) => {
-                            let val_type = type_map.get(&identifier).unwrap();
-                            let n = val_type.bytes();
-
-                            // This is wrong, but it works for now.
-                            let mut new_node = node.clone();
-                            new_node
-                                .statement
-                                .arg
-                                .push(Value::Literal(Literal::Integer(n as _)));
-                            output.push(new_node);
-                        }
-                        Value::Variable(Variable {
-                            identifier,
-                            index: Some(box Index::Offset(_)),
-                        }) => {
-                            let val_type = type_map
-                                .get(&identifier)
-                                .unwrap_or_else(|| panic!("{:?}", std::str::from_utf8(identifier)));
-
-                            let n = match val_type {
-                                Type::Array(Array { item, length: _ }) => item.bytes(),
-                                Type::Pointer(Pointer {
-                                    item: Some(box item),
-                                }) => item.bytes(),
-                                _ => panic!("{:?}", val_type),
-                            };
-
-                            // This is wrong, but it works for now.
-                            let mut new_node = node.clone();
-                            new_node
-                                .statement
-                                .arg
-                                .push(Value::Literal(Literal::Integer(n as _)));
-                            output.push(new_node);
-                        }
-                        _ => todo!(),
-                    },
-                    _ => todo!(),
-                }
-            }
-            // This is wrong, but it works for now.
-            _ => output.push(node.clone()),
-        }
-    }
-    output
-}
-
-#[derive(Debug, Clone)]
-enum Type {
-    Integer(Integer),
-    Array(Array),
-    Pointer(Pointer),
-}
-impl Type {
-    const FILE_DESCRIPTOR: Self = Self::Integer(Integer(32));
-    fn bytes(&self) -> u64 {
-        self.bits().div_ceil(8)
-    }
-    fn bits(&self) -> u64 {
-        match self {
-            Self::Integer(Integer(n)) => *n,
-            Self::Array(Array { item, length }) => item.bits() * length,
-            Self::Pointer(_) => 8,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct Pointer {
-    item: Option<Box<Type>>,
-}
-
-#[derive(Debug, Clone)]
-struct Array {
-    /// The type of elements in the array
-    item: Box<Type>,
-    /// The number of elements in the array
-    length: u64,
-}
-/// The bits in size.
-#[derive(Debug, Clone)]
-struct Integer(u64);
-
-/// Searches through the AST to figure out the type of a variable.
-fn search(identifier: &[u8], start: usize, nodes: &[Node]) -> Type {
-    let mut size: Option<u64> = None;
-
-    let mut stack = vec![start];
-    while let Some(current) = stack.pop() {
-        // Set node
-        let node = &nodes[current];
-        if let Some(next) = node.next {
-            stack.push(next);
-        }
-        if let Some(child) = node.child {
-            stack.push(child)
-        }
-
-        // Look at node
-        match &node.statement {
-            Statement {
-                runtime: _,
-                op: Op::Syscall(Syscall::Read),
-                arg,
-            } if let Some([x,_fd,n]) = arg.get(..) && let Value::Variable(Variable { identifier: x, index: None }) = x && identifier == x => {
-                if let Some(m) = size {
-                    match n {
-                        Value::Literal(Literal::Integer(n)) => {
-                            assert_eq!(m, *n as _, "Cannot read 2 different number of bytes into a single type of 1 size.");
-                        },
-                        _ => todo!()
-                    }
-                }
-                else {
-                    match n {
-                        Value::Literal(Literal::Integer(n)) => {
-                            size = Some(*n as _);
-                        },
-                        _ => todo!()
-                    }
-                }
-            },
-            Statement {
-                runtime: _,
-                op: Op::Syscall(Syscall::MemfdCreate),
-                arg,
-            } if let Some([x]) = arg.get(..) && let Value::Variable(Variable { identifier: x, index: None }) = x && identifier == x => {
-                assert!(size.is_none() || size == Some(32));
-                return Type::FILE_DESCRIPTOR;
-            },
-            _ => continue,
-        }
-    }
-    match size {
-        // Default to `i32`.
-        None => Type::Integer(Integer(32)),
-        // Default to signed integer.
-        Some(n) => Type::Integer(Integer(n)),
+            .len(),
+            255u8
+        );
     }
 }

@@ -26,6 +26,7 @@ pub struct Statement {
 pub enum Value {
     Literal(Literal),
     Variable(Variable),
+    Type(Type),
 }
 
 impl Default for Value {
@@ -158,13 +159,26 @@ impl TryFrom<&[u8]> for Syscall {
 pub enum Special {
     Assume(Cmp),
     Require(Cmp),
-    // Type,
+    Type, // Type,
 }
 
 impl Default for Special {
     fn default() -> Self {
         Self::Assume(Default::default())
     }
+}
+
+#[derive(Debug, Eq, PartialEq, Default, Clone)]
+pub enum Type {
+    #[default]
+    U8,
+    U16,
+    U32,
+    U64,
+    I8,
+    I16,
+    I32,
+    I64,
 }
 
 #[derive(Debug, Eq, PartialEq, Default, Clone)]
