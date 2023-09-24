@@ -8,6 +8,13 @@ use std::collections::HashMap;
 #[cfg(test)]
 use tracing::instrument;
 
+// -------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------
+
 // An inclusive range that supports wrapping around.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MyRange<
@@ -70,144 +77,84 @@ impl<
     }
 }
 
-pub fn newer_update(nodes: &mut Vec<Node>) {
-    let mut i = 0;
-    while i < nodes.len() {
-        // Explore stats while they don't diverge
-        {
-            let mut stack = vec![0];
-            let mut state = HashMap::new();
-            while let Some(j) = stack.pop() {
-                let node = nodes[j];
-                match node.statement.op {
-                    Op::Syscall(Syscall::Exit) => match node.statement.arg.as_slice() {
-                        [Value::Literal(Literal::Integer(literal))] => assert!(
-                            i32::try_from(literal).is_ok(),
-                            "Literal out of range for `exit`."
-                        ),
-                        [Value::Variable(Variable {
-                            identifier,
-                            index: None,
-                        })] => {
-                            let type_state = state
-                                .get_mut(identifier)
-                                .expect("Using undefined variable.");
-                            match type_state.variable_type {
-                                Some(Type::I32) => {},
-                                None => *type_state = Some(Type::I32),
-                                Some(other) => {
-                                    panic!("`exit` expects `i32`, {other} was provided.")
-                                }
-                            }
-                        }
-                        _ => panic!("Bad types passed to `exit`."),
-                    },
-                    Op::Intrinsic(Intrinsic::Assign) => match node.statement.arg.as_slice() {
-                        [Value::Variable(Variable { identifier, index: None, }), tail @ ..] => match  {
-                            if let Some(non_divergent_state) = state.get_mut(identifier) {
-                                // Check all previously assigned states support this state.
-                                let new_variable_possble_type = possible_types(tail,&state);
-
-                                let new_variable_type = non_divergent_state.variable_type.iter().cloned().filter(|a|new_variable_possble_type.contains(a)).collect();
-                                assert!(!new_variable_type.is_empty(),"No type exists which can support all the assigned values.");
-                                non_divergent_state.variable_type = new_variable_type;
-
-                                // Add variable value state.
-                                non_divergent_state.variable_value.push(Vec::from(tail));
-                            }
-                            else {
-                                // Add 1st variable value state.
-                                state.insert(identifier, NonDivergentTypeState {
-                                    variable_type: possible_types(tail, &state),
-                                    variable_value: vec![Vec::from(tail)]
-                                });
-                            }
-                        },
-                        _ => panic!(),
-                    }
-                }
-
-                stack.push(node.next);
-                stack.push(node.child);
-            }
-        }
-    }
-}
-
-struct NonDivergentTypeState {
-    // This is just cached for speedup
-    variable_type: Vec<Type>,
-    // TODO Can these be stored by reference to the AST rather than cloned?
-    variable_value: Vec<Arg>,
-}
-impl NonDivergentTypeState {
-    // Attempts to push a new variable value, it will fail if previous values are not compatible
-    // with the given variable value.
-    fn push_value(&self, arg: Arg,state: &HashMap<Identifier, NonDivergentTypeState>) {
-        possible_types(arg, )
-    }
-}
-fn possible_types(arg: Arg, state: &HashMap<Identifier, NonDivergentTypeState>) -> Vec<Type> {
-    match arg.as_slice() {
-        [Value::Literal(Literal::Integer(integer))] => possible_integer(integer),
-        [Value::Variable(Variable { identifier, index: None })] => state.get(identifier).unwrap().variable_type.clone(),
-        _ => todo!()
-    }
-}
-
-// -------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------------------------
-
 // Runs updates until there is no change.
 #[cfg_attr(test, instrument(level = "TRACE", skip(nodes)))]
 pub fn multi_update(nodes: &[Node]) -> Vec<Node> {
-    let mut current = nodes;
-    let mut temp = update(nodes);
-    if temp != current {
+    let mut state = get_states_intersection(nodes);
+    let mut new_nodes = evaluate(nodes, &state);
+
+    if new_nodes != nodes {
         loop {
-            let prev = temp;
-            temp = update(nodes);
-            if prev == temp {
+            let prev = new_nodes;
+            state = get_states_intersection(&prev);
+            new_nodes = evaluate(&prev, &state);
+            if prev == new_nodes {
                 break;
             }
         }
     }
-    temp
+
+    // Adds the type definitions into the code
+    {
+        let iter_one = state
+            .values
+            .iter()
+            .enumerate()
+            .map(|(i, (key, value))| Node {
+                statement: Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Type),
+                    arg: vec![
+                        Value::Variable(Variable {
+                            identifier: key.clone(),
+                            index: None,
+                        }),
+                        Value::Type(value.type_value()),
+                    ],
+                },
+                child: None,
+                next: Some(i + 1),
+            });
+        let iter_two = new_nodes.iter().map(|node| Node {
+            statement: node.statement.clone(),
+            child: node.child.map(|c| c + state.values.len()),
+            next: node.next.map(|n| n + state.values.len()),
+        });
+        iter_one.chain(iter_two).collect()
+    }
 }
 
+// Optimizes the code using the given state.
 #[cfg_attr(test, instrument(level = "TRACE", skip(nodes)))]
-pub fn update(nodes: &[Node]) -> Vec<Node> {
+pub fn evaluate(nodes: &[Node], state: &State) -> Vec<Node> {
+    if nodes.is_empty() {
+        return Vec::new();
+    }
+    let mut stack = vec![0];
+    let mut new_nodes = Vec::new();
+    while let Some(i) = stack.pop() {
+        let node = &nodes[i];
+        match node.statement.op {
+            Op::Syscall(Syscall::Exit) => {
+                new_nodes.push(Node {
+                    statement: node.statement.clone(),
+                    child: None,
+                    next: None,
+                });
+            }
+            _ => todo!(),
+        }
+        // stack.push()
+    }
+    new_nodes
+}
+
+// Compute a state from exploring the code.
+#[cfg_attr(test, instrument(level = "TRACE", skip(nodes)))]
+pub fn get_states_intersection(nodes: &[Node]) -> State {
     let states = explore(nodes);
     let intersection = state_intersection(&states);
-    let iter_one = intersection
-        .values
-        .iter()
-        .enumerate()
-        .map(|(i, (key, value))| Node {
-            statement: Statement {
-                comptime: false,
-                op: Op::Special(Special::Type),
-                arg: vec![
-                    Value::Variable(Variable {
-                        identifier: key.clone(),
-                        index: None,
-                    }),
-                    Value::Type(value.type_value()),
-                ],
-            },
-            child: None,
-            next: Some(i + 1),
-        });
-    let iter_two = nodes.iter().map(|node| Node {
-        statement: node.statement.clone(),
-        child: node.child.map(|c| c + intersection.values.len()),
-        next: node.next.map(|n| n + intersection.values.len()),
-    });
-    iter_one.chain(iter_two).collect()
+    intersection
 }
 
 /// Given a set of states return a state that represents the intersections of all states in the set.
@@ -216,10 +163,6 @@ pub fn state_intersection(states: &[State]) -> State {
     let mut intersections = HashMap::new();
 
     tracing::info!("states: {states:?}");
-
-    // match states.get(..) {
-    //     Some([]) => return
-    // }
 
     let Some([first, tail @ ..]) = states.get(..) else {
         panic!()
@@ -242,12 +185,6 @@ pub fn explore(nodes: &[Node]) -> Vec<State> {
     assert!(!nodes.is_empty());
     let node = &nodes[0];
     let mut end_states = Vec::new();
-    // While there is are no branches we can safetly evaluated syscalls at compile time (e.g. read),
-    // when we have multiple branches and ways they might be evaluated we can no longer evaluate
-    // them.
-    // While this is `true` syscalls can be evalauted. It is set `false` when `evaluate_states`
-    // would return multiple states.
-    let mut single = true;
 
     let mut stack = Vec::new();
     append_nodes(
@@ -256,22 +193,17 @@ pub fn explore(nodes: &[Node]) -> Vec<State> {
         },
         &node,
         &mut stack,
-        &mut single,
     );
     tracing::info!("stack: {stack:?}");
 
     while let Some(current) = stack.pop() {
         match (current.next, current.child) {
             (Some(next), Some(child)) => {
-                append_nodes(&current.state, &nodes[next], &mut stack, &mut single);
-                append_nodes(&current.state, &nodes[child], &mut stack, &mut single);
+                append_nodes(&current.state, &nodes[next], &mut stack);
+                append_nodes(&current.state, &nodes[child], &mut stack);
             }
-            (Some(next), None) => {
-                append_nodes(&current.state, &nodes[next], &mut stack, &mut single)
-            }
-            (None, Some(child)) => {
-                append_nodes(&current.state, &nodes[child], &mut stack, &mut single)
-            }
+            (Some(next), None) => append_nodes(&current.state, &nodes[next], &mut stack),
+            (None, Some(child)) => append_nodes(&current.state, &nodes[child], &mut stack),
             // If a graph node is reached which has no succeding element, we managed to successfuly evaluate to a leaf of the computational graph, thus we have the full type state of the program.
             (None, None) => end_states.push(current.state),
         }
@@ -279,12 +211,9 @@ pub fn explore(nodes: &[Node]) -> Vec<State> {
     end_states
 }
 
-#[cfg_attr(
-    test,
-    instrument(level = "TRACE", skip(current, succeeding, stack, single))
-)]
-fn append_nodes(current: &State, succeeding: &Node, stack: &mut Vec<GraphNode>, single: &mut bool) {
-    let (states, exit) = evaluate_states(current, &succeeding.statement, single);
+#[cfg_attr(test, instrument(level = "TRACE", skip(current, succeeding, stack)))]
+fn append_nodes(current: &State, succeeding: &Node, stack: &mut Vec<GraphNode>) {
+    let (states, exit) = evaluate_states(current, &succeeding.statement);
     for state in states {
         stack.push(GraphNode {
             state,
@@ -294,8 +223,8 @@ fn append_nodes(current: &State, succeeding: &Node, stack: &mut Vec<GraphNode>, 
     }
 }
 
-#[cfg_attr(test, instrument(level = "TRACE", skip(start, statement, single)))]
-fn evaluate_states(start: &State, statement: &Statement, single: &mut bool) -> (Vec<State>, bool) {
+#[cfg_attr(test, instrument(level = "TRACE", skip(start, statement)))]
+fn evaluate_states(start: &State, statement: &Statement) -> (Vec<State>, bool) {
     let mut exit = false;
     let states = match statement {
         Statement {
@@ -328,10 +257,6 @@ fn evaluate_states(start: &State, statement: &Statement, single: &mut bool) -> (
             arg
         } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
             let possible = NewValueInteger::possible(*x);
-
-            if possible.len() > 1 {
-                *single = false;
-            }
 
             match start.values.get(identifier) {
                 Some(NewValue::Integer(existing)) => {
@@ -728,21 +653,9 @@ fn possible_integer(x: i128) -> Vec<Type> {
 
     match x {
         I64_MIN..I32_MIN => vec![Type::I64],
-        I32_MIN..I16_MIN => vec![
-            Type::I64,
-            Type::I32,
-        ],
-        I16_MIN..I8_MIN => vec![
-            Type::I64,
-            Type::I32,
-            Type::I16,
-        ],
-        I8_MIN..0 => vec![
-            Type::I64,
-            Type::I32,
-            Type::I16,
-            Type::I8,
-        ],
+        I32_MIN..I16_MIN => vec![Type::I64, Type::I32],
+        I16_MIN..I8_MIN => vec![Type::I64, Type::I32, Type::I16],
+        I8_MIN..0 => vec![Type::I64, Type::I32, Type::I16, Type::I8],
         0..U8_MAX => vec![
             Type::I64,
             Type::I32,
@@ -758,40 +671,22 @@ fn possible_integer(x: i128) -> Vec<Type> {
             Type::I32,
             Type::I16,
             Type::U64,
-            Type::u32,
+            Type::U32,
             Type::U16,
             Type::U8,
         ],
         U16_EDGE..U16_MAX => vec![
-            Type::I64(MyRange::new(x as i64, x as i64)),
-            Type::I32(MyRange::new(x as i32, x as i32)),
-            Type::I16(MyRange::new(x as i16, x as i16)),
-            Type::U64(MyRange::new(x as u64, x as u64)),
-            Type::U32(MyRange::new(x as u32, x as u32)),
-            Type::U16(MyRange::new(x as u16, x as u16)),
-        ],
-        U16_MAX => vec![
-            Type::I64(MyRange::new(x as i64, x as i64)),
-            Type::I32(MyRange::new(x as i32, x as i32)),
-            Type::U64(MyRange::new(x as u64, x as u64)),
-            Type::U32(MyRange::new(x as u32, x as u32)),
-            Type::U16(MyRange::new(x as u16, x as u16)),
-        ],
-        U32_EDGE..U32_MAX => vec![
-            Type::I64(MyRange::new(x as i64, x as i64)),
-            Type::I32(MyRange::new(x as i32, x as i32)),
-            Type::U64(MyRange::new(x as u64, x as u64)),
-            Type::U32(MyRange::new(x as u32, x as u32)),
-        ],
-        U32_MAX => vec![
             Type::I64,
+            Type::I32,
+            Type::I16,
             Type::U64,
             Type::U32,
+            Type::U16,
         ],
-        U64_EDGE..U64_MAX => vec![
-            Type::I64,
-            Type::U64,
-        ],
+        U16_MAX => vec![Type::I64, Type::I32, Type::U64, Type::U32, Type::U16],
+        U32_EDGE..U32_MAX => vec![Type::I64, Type::I32, Type::U64, Type::U32],
+        U32_MAX => vec![Type::I64, Type::U64, Type::U32],
+        U64_EDGE..U64_MAX => vec![Type::I64, Type::U64],
         U64_MAX => vec![Type::U64],
         _ => panic!(),
     }
