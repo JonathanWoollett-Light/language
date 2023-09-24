@@ -5,7 +5,7 @@ use std::io::Read;
 use std::iter::once;
 use std::iter::Peekable;
 
-const RUNTIME_IDENTIFIER: &[u8] = b"rt";
+const RUNTIME_IDENTIFIER: &[u8] = b"comptime";
 
 #[cfg(test)]
 use tracing::instrument;
@@ -370,24 +370,24 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
     let mut variable = get_variable(bytes);
 
     // Check if statement should only be evaluated at runtime.
-    let mut runtime = false;
+    let mut comptime = false;
     if variable.identifier == RUNTIME_IDENTIFIER {
         assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
 
         variable = get_variable(bytes);
-        runtime = true;
+        comptime = true;
     }
 
     match (variable.identifier.as_slice(), &variable.index) {
         // Loop
         (b"loop", None) => Statement {
-            runtime,
+            comptime,
             op: Op::Intrinsic(Intrinsic::Loop),
             arg: get_values(bytes),
         },
         // Exit
         (b"exit", None) => Statement {
-            runtime,
+            comptime,
             op: Op::Syscall(Syscall::Exit),
             arg: get_values(bytes),
         },
@@ -410,10 +410,10 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             );
             let rhs = get_value(bytes);
             let arg = vec![lhs, rhs];
-            Statement { runtime, op, arg }
+            Statement { comptime, op, arg }
         }
         (b"break", None) => Statement {
-            runtime,
+            comptime,
             op: Op::Intrinsic(Intrinsic::Break),
             arg: Vec::new(),
         },
@@ -432,13 +432,13 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                     assert_eq!(Some(b' '), bytes.next().map(Result::unwrap));
                     let arg = get_value(bytes);
                     let arg = vec![lhs, arg];
-                    Statement { runtime, op: Op::Intrinsic(arithmetic), arg, }
+                    Statement { comptime, op: Op::Intrinsic(arithmetic), arg, }
                 }
                 Some(b':') => match bytes.next().map(Result::unwrap) {
                     Some(b' ') => {
                         let variable_type = get_type(bytes);
                         Statement {
-                            runtime,
+                            comptime,
                             op: Op::Special(Special::Type),
                             arg: vec![lhs, Value::Type(variable_type)]
                         }
@@ -452,7 +452,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                             match (&first, &tail) {
                                 (Value::Variable(Variable { identifier, index: None }), _) if let Ok(syscall) = Syscall::try_from(identifier.as_slice()) => {
                                     Statement {
-                                        runtime,
+                                        comptime,
                                         op: Op::Syscall(syscall),
                                         arg: once(lhs)
                                             .chain(tail.iter().cloned())
@@ -460,7 +460,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                                     }
                                 },
                                 _ => Statement {
-                                    runtime,
+                                    comptime,
                                     op: Op::Intrinsic(Intrinsic::Assign),
                                     arg: once(lhs)
                                         .chain(once(first.clone()))
@@ -480,7 +480,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
 
                                         let second = get_value(bytes);
                                         let arg = vec![lhs, first, second];
-                                        Statement { runtime, op: Op::Intrinsic(arithmetic), arg, }
+                                        Statement { comptime, op: Op::Intrinsic(arithmetic), arg, }
                                     },
                                     _ => get_statement(lhs, first, bytes),
                                 }

@@ -17,7 +17,7 @@ impl Node {
 
 #[derive(Debug, Eq, PartialEq, Default, Clone)]
 pub struct Statement {
-    pub runtime: bool,
+    pub comptime: bool,
     pub op: Op,
     pub arg: Vec<Value>,
 }

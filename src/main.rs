@@ -35,6 +35,278 @@ fn main() {
     todo!()
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::remove_file;
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    use std::process::Command;
+    use test::Bencher;
+    use uuid::Uuid;
+
+    fn parse(text: &str) -> Vec<Node> {
+        let reader = std::io::BufReader::new(text.as_bytes());
+        let mut iter = reader.bytes().peekable();
+        get_nodes(&mut iter)
+    }
+
+    fn assemble(nodes: &[Node], expected_assembly: &str, expected_exitcode: i32) {
+        let assembly = assembly_from_node(nodes);
+        assert_eq!(assembly, expected_assembly);
+        let path = format!("/tmp/{}", Uuid::new_v4());
+        let assembly_path = format!("{path}.s");
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(&assembly_path)
+            .unwrap();
+        file.write_all(assembly.as_bytes()).unwrap();
+        let object_path = format!("{path}.o");
+        let output = Command::new("as")
+            .args(["-o", &object_path, &assembly_path])
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.stdout,
+            [],
+            "{}",
+            std::str::from_utf8(&output.stdout).unwrap()
+        );
+        assert_eq!(
+            output.stderr,
+            [],
+            "{}",
+            std::str::from_utf8(&output.stderr).unwrap()
+        );
+        assert_eq!(output.status.code(), Some(0));
+        remove_file(assembly_path).unwrap();
+
+        let output = Command::new("ld")
+            .args(["-s", "-o", &path, &object_path])
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.stdout,
+            [],
+            "{}",
+            std::str::from_utf8(&output.stdout).unwrap()
+        );
+        assert_eq!(
+            output.stderr,
+            [],
+            "{}",
+            std::str::from_utf8(&output.stderr).unwrap()
+        );
+        assert_eq!(output.status.code(), Some(0));
+        remove_file(object_path).unwrap();
+
+        let output = Command::new(&path).output().unwrap();
+        assert_eq!(
+            output.stdout,
+            [],
+            "{}",
+            std::str::from_utf8(&output.stdout).unwrap()
+        );
+        assert_eq!(
+            output.stderr,
+            [],
+            "{}",
+            std::str::from_utf8(&output.stderr).unwrap()
+        );
+        assert_eq!(output.status.code(), Some(expected_exitcode));
+        remove_file(path).unwrap();
+    }
+
+    const ONE: &str = "exit 0";
+
+    impl Variable {
+        pub fn new(s: &str) -> Self {
+            Self {
+                identifier: Vec::from(s.as_bytes()),
+                index: None,
+            }
+        }
+    }
+
+    #[test]
+    fn test_one() {
+        // use tracing_subscriber::fmt::format::FmtSpan;
+        // tracing_subscriber::fmt::fmt()
+        //     .with_max_level(tracing_subscriber::filter::LevelFilter::TRACE)
+        //     .with_span_events(FmtSpan::ENTER)
+        //     .init();
+
+        let nodes = parse(ONE);
+        assert_eq!(
+            nodes,
+            [Node {
+                statement: Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(0))]
+                },
+                child: None,
+                next: None,
+            }]
+        );
+        let optimized_nodes = multi_update(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [Node {
+                statement: Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(0))]
+                },
+                child: None,
+                next: None,
+            }]
+        );
+        let expected_assembly = "\
+            .global _start\n\
+            _start:\n\
+            mov x8, #93\n\
+            mov x0, #0\n\
+            svc #0\n\
+        ";
+        assemble(&optimized_nodes, expected_assembly, 0);
+    }
+
+    const TWO: &str = "exit 1";
+
+    #[test]
+    fn test_two() {
+        let nodes = parse(TWO);
+        assert_eq!(
+            nodes,
+            [Node {
+                statement: Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(1))]
+                },
+                child: None,
+                next: None,
+            }]
+        );
+        let optimized_nodes = multi_update(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [Node {
+                statement: Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(1))]
+                },
+                child: None,
+                next: None,
+            }]
+        );
+        let expected_assembly = "\
+            .global _start\n\
+            _start:\n\
+            mov x8, #93\n\
+            mov x0, #1\n\
+            svc #0\n\
+        ";
+        assemble(&optimized_nodes, expected_assembly, 1);
+    }
+
+    const THREE: &str = "exit 12";
+
+    #[test]
+    fn test_three() {
+        let nodes = parse(THREE);
+        assert_eq!(
+            nodes,
+            [Node {
+                statement: Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(12))]
+                },
+                child: None,
+                next: None,
+            }]
+        );
+        let optimized_nodes = multi_update(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [Node {
+                statement: Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(12))]
+                },
+                child: None,
+                next: None,
+            }]
+        );
+        let expected_assembly = "\
+            .global _start\n\
+            _start:\n\
+            mov x8, #93\n\
+            mov x0, #12\n\
+            svc #0\n\
+        ";
+        assemble(&optimized_nodes, expected_assembly, 12);
+    }
+
+    const FOUR: &str = "exit 1\nexit 2";
+
+    #[test]
+    fn test_four() {
+        let nodes = parse(FOUR);
+        assert_eq!(
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal::Integer(1))]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal::Integer(2))]
+                    },
+                    child: None,
+                    next: None,
+                }
+            ]
+        );
+        let optimized_nodes = multi_update(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal::Integer(1))]
+                    },
+                    child: None,
+                    next: None,
+                },
+            ]
+        );
+        let expected_assembly = "\
+            .global _start\n\
+            _start:\n\
+            mov x8, #93\n\
+            mov x0, #1\n\
+            svc #0\n\
+        ";
+        assemble(&optimized_nodes, expected_assembly, 1);
+    }
+}
+
 #[cfg(feature = "false")]
 #[cfg(test)]
 mod tests {
@@ -130,139 +402,6 @@ mod tests {
         }
     }
 
-    #[bench]
-    fn bench_one(b: &mut Bencher) {
-        b.iter(|| parse(ONE));
-    }
-
-    #[test]
-    fn test_one() {
-        let nodes = parse(ONE);
-        assert_eq!(
-            nodes,
-            [Node {
-                statement: Statement {
-                    runtime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(0))]
-                },
-                child: None,
-                next: None,
-            }]
-        );
-        let optimized_nodes = optimize_nodes(&nodes);
-        assert_eq!(
-            optimized_nodes,
-            [Node {
-                statement: Statement {
-                    runtime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(0))]
-                },
-                child: None,
-                next: None,
-            }]
-        );
-        let expected_assembly = "\
-            .global _start\n\
-            _start:\n\
-            mov x8, #93\n\
-            mov x0, #0\n\
-            svc #0\n\
-        ";
-        assemble(&optimized_nodes, expected_assembly, 0);
-    }
-
-    const TWO: &str = "exit 1";
-
-    #[bench]
-    fn bench_two(b: &mut Bencher) {
-        b.iter(|| parse(TWO));
-    }
-
-    #[test]
-    fn test_two() {
-        let nodes = parse(TWO);
-        assert_eq!(
-            nodes,
-            [Node {
-                statement: Statement {
-                    runtime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(1))]
-                },
-                child: None,
-                next: None,
-            }]
-        );
-        let optimized_nodes = optimize_nodes(&nodes);
-        assert_eq!(
-            optimized_nodes,
-            [Node {
-                statement: Statement {
-                    runtime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(1))]
-                },
-                child: None,
-                next: None,
-            }]
-        );
-        let expected_assembly = "\
-            .global _start\n\
-            _start:\n\
-            mov x8, #93\n\
-            mov x0, #1\n\
-            svc #0\n\
-        ";
-        assemble(&optimized_nodes, expected_assembly, 1);
-    }
-
-    const THREE: &str = "exit 12";
-
-    #[bench]
-    fn bench_three(b: &mut Bencher) {
-        b.iter(|| parse(THREE));
-    }
-
-    #[test]
-    fn test_three() {
-        let nodes = parse(THREE);
-        assert_eq!(
-            nodes,
-            [Node {
-                statement: Statement {
-                    runtime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(12))]
-                },
-                child: None,
-                next: None,
-            }]
-        );
-        let optimized_nodes = optimize_nodes(&nodes);
-        assert_eq!(
-            optimized_nodes,
-            [Node {
-                statement: Statement {
-                    runtime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(12))]
-                },
-                child: None,
-                next: None,
-            }]
-        );
-        let expected_assembly = "\
-            .global _start\n\
-            _start:\n\
-            mov x8, #93\n\
-            mov x0, #12\n\
-            svc #0\n\
-        ";
-        assemble(&optimized_nodes, expected_assembly, 12);
-    }
-
     const FOUR: &str = "exit 1\nexit 2";
 
     #[bench]
@@ -278,7 +417,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(1))]
                     },
@@ -287,7 +426,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(2))]
                     },
@@ -302,7 +441,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(1))]
                     },
@@ -311,7 +450,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(2))]
                     },
@@ -348,7 +487,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -360,7 +499,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(0))]
                     },
@@ -375,7 +514,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -387,7 +526,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(0))]
                     },
@@ -424,7 +563,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -436,7 +575,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Variable(Variable::new("x"))]
                     },
@@ -451,7 +590,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -463,7 +602,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Variable(Variable::new("x"))]
                     },
@@ -501,7 +640,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -513,7 +652,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::AddAssign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -525,7 +664,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Variable(Variable::new("x"))]
                     },
@@ -540,7 +679,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -552,7 +691,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::AddAssign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -564,7 +703,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Variable(Variable::new("x"))]
                     },
@@ -606,7 +745,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -618,7 +757,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::IfEq),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -630,7 +769,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(1))]
                     },
@@ -639,7 +778,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(0))]
                     },
@@ -654,7 +793,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -666,7 +805,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::IfEq),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -678,7 +817,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(1))]
                     },
@@ -687,7 +826,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(0))]
                     },
@@ -732,7 +871,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -744,7 +883,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::IfEq),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -756,7 +895,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(1))]
                     },
@@ -765,7 +904,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(0))]
                     },
@@ -780,7 +919,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -792,7 +931,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::IfEq),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -804,7 +943,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(1))]
                     },
@@ -813,7 +952,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(0))]
                     },
@@ -867,7 +1006,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Read),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -879,7 +1018,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Variable(Variable::new("x"))]
                     },
@@ -894,7 +1033,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Read),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -907,7 +1046,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Variable(Variable::new("x"))]
                     },
@@ -965,7 +1104,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Read),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -977,7 +1116,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Write),
                         arg: vec![
                             Value::Variable(Variable::new("_")),
@@ -990,7 +1129,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(0))]
                     },
@@ -1005,7 +1144,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Read),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -1018,7 +1157,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Write),
                         arg: vec![
                             Value::Variable(Variable::new("_")),
@@ -1032,7 +1171,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(0))]
                     },
@@ -1089,7 +1228,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::MemfdCreate),
                         arg: vec![Value::Variable(Variable::new("x")),]
                     },
@@ -1098,7 +1237,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(0))]
                     },
@@ -1113,7 +1252,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::MemfdCreate),
                         arg: vec![Value::Variable(Variable::new("x")),]
                     },
@@ -1122,7 +1261,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(0))]
                     },
@@ -1173,7 +1312,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -1198,7 +1337,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Write),
                         arg: vec![
                             Value::Variable(Variable::new("_")),
@@ -1211,7 +1350,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(0))]
                     },
@@ -1226,7 +1365,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -1251,7 +1390,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Write),
                         arg: vec![
                             Value::Variable(Variable::new("_")),
@@ -1265,7 +1404,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(0))]
                     },
@@ -1323,7 +1462,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -1335,7 +1474,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Write),
                         arg: vec![
                             Value::Variable(Variable::new("_")),
@@ -1348,7 +1487,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(0))]
                     },
@@ -1363,7 +1502,7 @@ mod tests {
             [
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
@@ -1375,7 +1514,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Write),
                         arg: vec![
                             Value::Variable(Variable::new("_")),
@@ -1389,7 +1528,7 @@ mod tests {
                 },
                 Node {
                     statement: Statement {
-                        runtime: false,
+                        comptime: false,
                         op: Op::Syscall(Syscall::Exit),
                         arg: vec![Value::Literal(Literal::Integer(0))]
                     },
@@ -1526,7 +1665,7 @@ exit 1"#
         let expected_nodes = [
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Assign),
                     arg: vec![
                         Value::Variable(Variable::new("target_min")),
@@ -1538,7 +1677,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Syscall(Syscall::Read),
                     arg: vec![
                         Value::Variable(Variable::new("target")),
@@ -1550,7 +1689,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Syscall(Syscall::Read),
                     arg: vec![
                         Value::Variable(Variable::new("length")),
@@ -1562,7 +1701,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Syscall(Syscall::MemfdCreate),
                     arg: vec![Value::Variable(Variable::new("fd"))],
                 },
@@ -1571,7 +1710,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Syscall(Syscall::FTruncate),
                     arg: vec![
                         Value::Variable(Variable::new("_")),
@@ -1584,7 +1723,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Syscall(Syscall::Mmap),
                     arg: vec![
                         Value::Variable(Variable::new("mem")),
@@ -1597,7 +1736,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Assign),
                     arg: vec![
                         Value::Variable(Variable::new("buf_len")),
@@ -1609,7 +1748,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Div),
                     arg: vec![
                         Value::Variable(Variable::new("len")),
@@ -1622,7 +1761,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Rem),
                     arg: vec![
                         Value::Variable(Variable::new("rem")),
@@ -1635,7 +1774,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Assign),
                     arg: vec![
                         Value::Variable(Variable::new("index")),
@@ -1647,7 +1786,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Loop),
                     arg: Vec::new(),
                 },
@@ -1656,7 +1795,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::IfEq),
                     arg: vec![
                         Value::Variable(Variable::new("len")),
@@ -1668,7 +1807,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Break),
                     arg: Vec::new(),
                 },
@@ -1677,7 +1816,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::SubAssign),
                     arg: vec![
                         Value::Variable(Variable::new("len")),
@@ -1689,7 +1828,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Syscall(Syscall::Read),
                     arg: vec![
                         Value::Variable(Variable::new("buf")),
@@ -1701,7 +1840,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Assign),
                     arg: vec![
                         Value::Variable(Variable::new("pos")),
@@ -1713,7 +1852,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Loop),
                     arg: Vec::new(),
                 },
@@ -1722,7 +1861,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::IfEq),
                     arg: vec![
                         Value::Variable(Variable::new("pos")),
@@ -1734,7 +1873,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Break),
                     arg: Vec::new(),
                 },
@@ -1743,7 +1882,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Sub),
                     arg: vec![
                         Value::Variable(Variable::new("diff")),
@@ -1761,7 +1900,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Add),
                     arg: vec![
                         Value::Variable(Variable::new("diff_offset")),
@@ -1774,7 +1913,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::IfGt),
                     arg: vec![
                         Value::Variable(Variable {
@@ -1791,7 +1930,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Syscall(Syscall::Write),
                     arg: vec![
                         Value::Variable(Variable::new("_")),
@@ -1809,7 +1948,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Syscall(Syscall::Write),
                     arg: vec![
                         Value::Variable(Variable::new("_")),
@@ -1822,7 +1961,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Syscall(Syscall::Exit),
                     arg: vec![Value::Literal(Literal::Integer(0))],
                 },
@@ -1831,7 +1970,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Add),
                     arg: vec![
                         Value::Variable(Variable::new("buff_offset")),
@@ -1849,7 +1988,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Assign),
                     arg: vec![
                         Value::Variable(Variable {
@@ -1866,7 +2005,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::AddAssign),
                     arg: vec![
                         Value::Variable(Variable::new("pos")),
@@ -1878,7 +2017,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::AddAssign),
                     arg: vec![
                         Value::Variable(Variable::new("index")),
@@ -1890,7 +2029,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Syscall(Syscall::Read),
                     arg: vec![
                         Value::Variable(Variable {
@@ -1908,7 +2047,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Assign),
                     arg: vec![
                         Value::Variable(Variable::new("pos")),
@@ -1920,7 +2059,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Loop),
                     arg: Vec::new(),
                 },
@@ -1929,7 +2068,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::IfEq),
                     arg: vec![
                         Value::Variable(Variable::new("pos")),
@@ -1941,7 +2080,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Break),
                     arg: Vec::new(),
                 },
@@ -1950,7 +2089,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Sub),
                     arg: vec![
                         Value::Variable(Variable::new("diff")),
@@ -1968,7 +2107,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Add),
                     arg: vec![
                         Value::Variable(Variable::new("diff_offset")),
@@ -1981,7 +2120,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::IfGt),
                     arg: vec![
                         Value::Variable(Variable {
@@ -1998,7 +2137,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Syscall(Syscall::Write),
                     arg: vec![
                         Value::Variable(Variable::new("_")),
@@ -2016,7 +2155,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Syscall(Syscall::Write),
                     arg: vec![
                         Value::Variable(Variable::new("_")),
@@ -2029,7 +2168,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Syscall(Syscall::Exit),
                     arg: vec![Value::Literal(Literal::Integer(0))],
                 },
@@ -2038,7 +2177,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Add),
                     arg: vec![
                         Value::Variable(Variable::new("buff_offset")),
@@ -2056,7 +2195,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Assign),
                     arg: vec![
                         Value::Variable(Variable {
@@ -2073,7 +2212,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::AddAssign),
                     arg: vec![
                         Value::Variable(Variable::new("pos")),
@@ -2085,7 +2224,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::AddAssign),
                     arg: vec![
                         Value::Variable(Variable::new("index")),
@@ -2097,7 +2236,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Syscall(Syscall::Exit),
                     arg: vec![Value::Literal(Literal::Integer(1))],
                 },
@@ -2115,7 +2254,7 @@ exit 1"#
         //     [
         //         Node {
         //             statement: Statement {
-        //                 runtime: false,
+        //                 comptime: false,
         //                 op: Op::Intrinsic(Intrinsic::Assign),
         //                 arg: vec![
         //                     Value::Variable(Variable::new("x")),
@@ -2127,7 +2266,7 @@ exit 1"#
         //         },
         //         Node {
         //             statement: Statement {
-        //                 runtime: false,
+        //                 comptime: false,
         //                 op: Op::Syscall(Syscall::Write),
         //                 arg: vec![
         //                     Value::Variable(Variable::new("_")),
@@ -2141,7 +2280,7 @@ exit 1"#
         //         },
         //         Node {
         //             statement: Statement {
-        //                 runtime: false,
+        //                 comptime: false,
         //                 op: Op::Syscall(Syscall::Exit),
         //                 arg: vec![Value::Literal(Literal::Integer(0))]
         //             },
@@ -2190,7 +2329,7 @@ exit 1"#
         let nodes = [
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::Assign),
                     arg: vec![
                         Value::Variable(Variable::new("x")),
@@ -2202,7 +2341,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::AddAssign),
                     arg: vec![
                         Value::Variable(Variable::new("x")),
@@ -2214,7 +2353,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Intrinsic(Intrinsic::AddAssign),
                     arg: vec![
                         Value::Variable(Variable::new("x")),
@@ -2226,7 +2365,7 @@ exit 1"#
             },
             Node {
                 statement: Statement {
-                    runtime: false,
+                    comptime: false,
                     op: Op::Special(Special::Require(Cmp::Gt)),
                     arg: vec![
                         Value::Variable(Variable::new("x")),

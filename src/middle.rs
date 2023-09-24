@@ -5,6 +5,9 @@ use num_traits::identities::Zero;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
+#[cfg(test)]
+use tracing::instrument;
+
 // An inclusive range that supports wrapping around.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MyRange<
@@ -66,14 +69,65 @@ impl<
         }
     }
 }
-pub fn update(nodes: &[Node]) {
+
+// Runs updates until there is no change.
+#[cfg_attr(test, instrument(level = "TRACE", skip(nodes)))]
+pub fn multi_update(nodes: &[Node]) -> Vec<Node> {
+    let mut current = nodes;
+    let mut temp = update(nodes);
+    if temp != current {
+        loop {
+            let prev = temp;
+            temp = update(nodes);
+            if prev == temp {
+                break;
+            }
+        }
+    }
+    temp
+}
+
+#[cfg_attr(test, instrument(level = "TRACE", skip(nodes)))]
+pub fn update(nodes: &[Node]) -> Vec<Node> {
     let states = explore(nodes);
-    let shared_state = state_intersection(&states);
+    let intersection = state_intersection(&states);
+    let iter_one = intersection
+        .values
+        .iter()
+        .enumerate()
+        .map(|(i, (key, value))| Node {
+            statement: Statement {
+                comptime: false,
+                op: Op::Special(Special::Type),
+                arg: vec![
+                    Value::Variable(Variable {
+                        identifier: key.clone(),
+                        index: None,
+                    }),
+                    Value::Type(value.type_value()),
+                ],
+            },
+            child: None,
+            next: Some(i + 1),
+        });
+    let iter_two = nodes.iter().map(|node| Node {
+        statement: node.statement.clone(),
+        child: node.child.map(|c| c + intersection.values.len()),
+        next: node.next.map(|n| n + intersection.values.len()),
+    });
+    iter_one.chain(iter_two).collect()
 }
 
 /// Given a set of states return a state that represents the intersections of all states in the set.
+#[cfg_attr(test, instrument(level = "TRACE", ret, skip(states)))]
 pub fn state_intersection(states: &[State]) -> State {
     let mut intersections = HashMap::new();
+
+    tracing::info!("states: {states:?}");
+
+    // match states.get(..) {
+    //     Some([]) => return  
+    // }
 
     let Some([first, tail @ ..]) = states.get(..) else {
         panic!()
@@ -91,6 +145,7 @@ pub fn state_intersection(states: &[State]) -> State {
     }
 }
 
+#[cfg_attr(test, instrument(level = "TRACE", ret, skip(nodes)))]
 pub fn explore(nodes: &[Node]) -> Vec<State> {
     assert!(!nodes.is_empty());
     let node = &nodes[0];
@@ -102,31 +157,22 @@ pub fn explore(nodes: &[Node]) -> Vec<State> {
     // would return multiple states.
     let mut single = true;
 
-    let initial_states = evaluate_states(
-        &State {
-            values: HashMap::new(),
-        },
-        &node.statement,
-        single
-    );
-
-    let mut stack = initial_states
-        .into_iter()
-        .map(|state| GraphNode {
-            state,
-            child: node.child,
-            next: node.next,
-        })
-        .collect::<Vec<_>>();
+    let mut stack = Vec::new();
+    append_nodes(&State { values: HashMap::new() }, &node, &mut stack, &mut single);
+    tracing::info!("stack: {stack:?}");
 
     while let Some(current) = stack.pop() {
         match (current.next, current.child) {
             (Some(next), Some(child)) => {
-                append_nodes(&current.state, &nodes[next], &mut stack);
-                append_nodes(&current.state, &nodes[child], &mut stack);
+                append_nodes(&current.state, &nodes[next], &mut stack, &mut single);
+                append_nodes(&current.state, &nodes[child], &mut stack, &mut single);
             }
-            (Some(next), None) => append_nodes(&current.state, &nodes[next], &mut stack),
-            (None, Some(child)) => append_nodes(&current.state, &nodes[child], &mut stack),
+            (Some(next), None) => {
+                append_nodes(&current.state, &nodes[next], &mut stack, &mut single)
+            }
+            (None, Some(child)) => {
+                append_nodes(&current.state, &nodes[child], &mut stack, &mut single)
+            }
             // If a graph node is reached which has no succeding element, we managed to successfuly evaluate to a leaf of the computational graph, thus we have the full type state of the program.
             (None, None) => end_states.push(current.state),
         }
@@ -134,27 +180,58 @@ pub fn explore(nodes: &[Node]) -> Vec<State> {
     end_states
 }
 
+#[cfg_attr(
+    test,
+    instrument(level = "TRACE", skip(current, succeeding, stack, single))
+)]
 fn append_nodes(current: &State, succeeding: &Node, stack: &mut Vec<GraphNode>, single: &mut bool) {
-    for state in evaluate_states(current, &succeeding.statement, single) {
+    let (states, exit) = evaluate_states(current, &succeeding.statement, single);
+    for state in states {
         stack.push(GraphNode {
             state,
-            child: succeeding.child,
-            next: succeeding.next,
+            child: if exit { None } else { succeeding.child },
+            next: if exit { None } else { succeeding.next },
         });
     }
 }
 
-fn evaluate_states(start: &State, statement: &Statement, single: &mut bool) -> Vec<State> {
-    match statement {
+#[cfg_attr(test, instrument(level = "TRACE", skip(start, statement, single)))]
+fn evaluate_states(start: &State, statement: &Statement, single: &mut bool) -> (Vec<State>, bool) {
+    let mut exit = false;
+    let states = match statement {
         Statement {
-            runtime: false,
+            comptime: false,
+            op: Op::Syscall(Syscall::Exit),
+            arg
+        } => {
+            exit = true;
+            match arg.get(..) {
+                Some([Value::Literal(Literal::Integer(_))]) => vec![start.clone()],
+                Some([Value::Variable(Variable { identifier, index: None })]) => {
+                    match start.values.get(identifier) {
+                        Some(NewValue::Integer(NewValueInteger::I32(_))) => {
+                            vec![start.clone()]
+                        },
+                        None => {
+                            let mut state = start.clone();
+                            state.values.insert(identifier.clone(), NewValue::Integer(NewValueInteger::I32(MyRange::new(i32::MIN,i32::MAX))));
+                            vec![state]
+                        }
+                        Some(_) => Vec::new(),
+                    }
+                },
+                _ => panic!()
+            }
+        }
+        Statement {
+            comptime: false,
             op: Op::Intrinsic(Intrinsic::Assign),
             arg
         } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
             let possible = NewValueInteger::possible(*x);
-            
+
             if possible.len() > 1 {
-                single = false;
+                *single = false;
             }
 
             match start.values.get(identifier) {
@@ -181,7 +258,7 @@ fn evaluate_states(start: &State, statement: &Statement, single: &mut bool) -> V
             }
         },
         Statement {
-            runtime: false,
+            comptime: false,
             op: Op::Intrinsic(Intrinsic::AddAssign),
             arg
         } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
@@ -201,7 +278,7 @@ fn evaluate_states(start: &State, statement: &Statement, single: &mut bool) -> V
             }
         }
         Statement {
-            runtime: false,
+            comptime: false,
             op: Op::Special(Special::Require(Cmp::Gt)),
             arg
         } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
@@ -213,7 +290,7 @@ fn evaluate_states(start: &State, statement: &Statement, single: &mut bool) -> V
             }
         }
         Statement {
-            runtime: false,
+            comptime: false,
             op: Op::Special(Special::Require(Cmp::Lt)),
             arg
         } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
@@ -225,7 +302,8 @@ fn evaluate_states(start: &State, statement: &Statement, single: &mut bool) -> V
             }
         }
         _ => todo!()
-    }
+    };
+    (states, exit)
 }
 
 #[derive(Debug, Clone)]
