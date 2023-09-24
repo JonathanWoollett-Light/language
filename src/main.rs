@@ -284,17 +284,15 @@ mod tests {
         let optimized_nodes = multi_update(&nodes);
         assert_eq!(
             optimized_nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Literal(Literal::Integer(1))]
-                    },
-                    child: None,
-                    next: None,
+            [Node {
+                statement: Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(1))]
                 },
-            ]
+                child: None,
+                next: None,
+            },]
         );
         let expected_assembly = "\
             .global _start\n\

@@ -70,6 +70,98 @@ impl<
     }
 }
 
+pub fn newer_update(nodes: &mut Vec<Node>) {
+    let mut i = 0;
+    while i < nodes.len() {
+        // Explore stats while they don't diverge
+        {
+            let mut stack = vec![0];
+            let mut state = HashMap::new();
+            while let Some(j) = stack.pop() {
+                let node = nodes[j];
+                match node.statement.op {
+                    Op::Syscall(Syscall::Exit) => match node.statement.arg.as_slice() {
+                        [Value::Literal(Literal::Integer(literal))] => assert!(
+                            i32::try_from(literal).is_ok(),
+                            "Literal out of range for `exit`."
+                        ),
+                        [Value::Variable(Variable {
+                            identifier,
+                            index: None,
+                        })] => {
+                            let type_state = state
+                                .get_mut(identifier)
+                                .expect("Using undefined variable.");
+                            match type_state.variable_type {
+                                Some(Type::I32) => {},
+                                None => *type_state = Some(Type::I32),
+                                Some(other) => {
+                                    panic!("`exit` expects `i32`, {other} was provided.")
+                                }
+                            }
+                        }
+                        _ => panic!("Bad types passed to `exit`."),
+                    },
+                    Op::Intrinsic(Intrinsic::Assign) => match node.statement.arg.as_slice() {
+                        [Value::Variable(Variable { identifier, index: None, }), tail @ ..] => match  {
+                            if let Some(non_divergent_state) = state.get_mut(identifier) {
+                                // Check all previously assigned states support this state.
+                                let new_variable_possble_type = possible_types(tail,&state);
+
+                                let new_variable_type = non_divergent_state.variable_type.iter().cloned().filter(|a|new_variable_possble_type.contains(a)).collect();
+                                assert!(!new_variable_type.is_empty(),"No type exists which can support all the assigned values.");
+                                non_divergent_state.variable_type = new_variable_type;
+
+                                // Add variable value state.
+                                non_divergent_state.variable_value.push(Vec::from(tail));
+                            }
+                            else {
+                                // Add 1st variable value state.
+                                state.insert(identifier, NonDivergentTypeState {
+                                    variable_type: possible_types(tail, &state),
+                                    variable_value: vec![Vec::from(tail)]
+                                });
+                            }
+                        },
+                        _ => panic!(),
+                    }
+                }
+
+                stack.push(node.next);
+                stack.push(node.child);
+            }
+        }
+    }
+}
+
+struct NonDivergentTypeState {
+    // This is just cached for speedup
+    variable_type: Vec<Type>,
+    // TODO Can these be stored by reference to the AST rather than cloned?
+    variable_value: Vec<Arg>,
+}
+impl NonDivergentTypeState {
+    // Attempts to push a new variable value, it will fail if previous values are not compatible
+    // with the given variable value.
+    fn push_value(&self, arg: Arg,state: &HashMap<Identifier, NonDivergentTypeState>) {
+        possible_types(arg, )
+    }
+}
+fn possible_types(arg: Arg, state: &HashMap<Identifier, NonDivergentTypeState>) -> Vec<Type> {
+    match arg.as_slice() {
+        [Value::Literal(Literal::Integer(integer))] => possible_integer(integer),
+        [Value::Variable(Variable { identifier, index: None })] => state.get(identifier).unwrap().variable_type.clone(),
+        _ => todo!()
+    }
+}
+
+// -------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------
+
 // Runs updates until there is no change.
 #[cfg_attr(test, instrument(level = "TRACE", skip(nodes)))]
 pub fn multi_update(nodes: &[Node]) -> Vec<Node> {
@@ -126,7 +218,7 @@ pub fn state_intersection(states: &[State]) -> State {
     tracing::info!("states: {states:?}");
 
     // match states.get(..) {
-    //     Some([]) => return  
+    //     Some([]) => return
     // }
 
     let Some([first, tail @ ..]) = states.get(..) else {
@@ -158,7 +250,14 @@ pub fn explore(nodes: &[Node]) -> Vec<State> {
     let mut single = true;
 
     let mut stack = Vec::new();
-    append_nodes(&State { values: HashMap::new() }, &node, &mut stack, &mut single);
+    append_nodes(
+        &State {
+            values: HashMap::new(),
+        },
+        &node,
+        &mut stack,
+        &mut single,
+    );
     tracing::info!("stack: {stack:?}");
 
     while let Some(current) = stack.pop() {
@@ -612,6 +711,89 @@ impl NewValueInteger {
             U64_MAX => vec![Self::U64(MyRange::new(x as u64, x as u64))],
             _ => panic!(),
         }
+    }
+}
+fn possible_integer(x: i128) -> Vec<Type> {
+    const I64_MIN: i128 = i64::MIN as i128;
+    const I32_MIN: i128 = i32::MIN as i128;
+    const I16_MIN: i128 = i16::MIN as i128;
+    const I8_MIN: i128 = i8::MIN as i128;
+    const U64_MAX: i128 = u64::MAX as i128;
+    const U32_MAX: i128 = u32::MAX as i128;
+    const U16_MAX: i128 = u16::MAX as i128;
+    const U8_MAX: i128 = u8::MAX as i128;
+    const U64_EDGE: i128 = u32::MAX as i128 + 1;
+    const U32_EDGE: i128 = u16::MAX as i128 + 1;
+    const U16_EDGE: i128 = u8::MAX as i128 + 1;
+
+    match x {
+        I64_MIN..I32_MIN => vec![Type::I64],
+        I32_MIN..I16_MIN => vec![
+            Type::I64,
+            Type::I32,
+        ],
+        I16_MIN..I8_MIN => vec![
+            Type::I64,
+            Type::I32,
+            Type::I16,
+        ],
+        I8_MIN..0 => vec![
+            Type::I64,
+            Type::I32,
+            Type::I16,
+            Type::I8,
+        ],
+        0..U8_MAX => vec![
+            Type::I64,
+            Type::I32,
+            Type::I16,
+            Type::I8,
+            Type::U64,
+            Type::U32,
+            Type::U16,
+            Type::U8,
+        ],
+        U8_MAX => vec![
+            Type::I64,
+            Type::I32,
+            Type::I16,
+            Type::U64,
+            Type::u32,
+            Type::U16,
+            Type::U8,
+        ],
+        U16_EDGE..U16_MAX => vec![
+            Type::I64(MyRange::new(x as i64, x as i64)),
+            Type::I32(MyRange::new(x as i32, x as i32)),
+            Type::I16(MyRange::new(x as i16, x as i16)),
+            Type::U64(MyRange::new(x as u64, x as u64)),
+            Type::U32(MyRange::new(x as u32, x as u32)),
+            Type::U16(MyRange::new(x as u16, x as u16)),
+        ],
+        U16_MAX => vec![
+            Type::I64(MyRange::new(x as i64, x as i64)),
+            Type::I32(MyRange::new(x as i32, x as i32)),
+            Type::U64(MyRange::new(x as u64, x as u64)),
+            Type::U32(MyRange::new(x as u32, x as u32)),
+            Type::U16(MyRange::new(x as u16, x as u16)),
+        ],
+        U32_EDGE..U32_MAX => vec![
+            Type::I64(MyRange::new(x as i64, x as i64)),
+            Type::I32(MyRange::new(x as i32, x as i32)),
+            Type::U64(MyRange::new(x as u64, x as u64)),
+            Type::U32(MyRange::new(x as u32, x as u32)),
+        ],
+        U32_MAX => vec![
+            Type::I64,
+            Type::U64,
+            Type::U32,
+        ],
+        U64_EDGE..U64_MAX => vec![
+            Type::I64,
+            Type::U64,
+        ],
+        U64_MAX => vec![Type::U64],
+        _ => panic!(),
     }
 }
 

@@ -19,8 +19,10 @@ impl Node {
 pub struct Statement {
     pub comptime: bool,
     pub op: Op,
-    pub arg: Vec<Value>,
+    pub arg: Arg,
 }
+
+pub type Arg = Vec<Value>;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Value {
@@ -38,8 +40,10 @@ impl Default for Value {
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Literal {
     String(String),
-    Integer(i128),
+    Integer(Integer),
 }
+
+pub type Integer = i128;
 
 impl Default for Literal {
     fn default() -> Self {
@@ -49,9 +53,10 @@ impl Default for Literal {
 
 #[derive(Eq, PartialEq, Default, Clone)]
 pub struct Variable {
-    pub identifier: Vec<u8>,
+    pub identifier: Identifier,
     pub index: Option<Box<Index>>,
 }
+pub type Identifier = Vec<u8>;
 
 impl std::fmt::Debug for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
