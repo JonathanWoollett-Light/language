@@ -274,11 +274,8 @@ pub fn explore_two(nodes: &[Node]) {
     struct GraphNode {
         node: usize,
         state: TypeValueState,
+        next: Vec<usize>,
         prev: Option<usize>,
-    }
-    struct GraphLeaf {
-        node: usize,
-        prev: usize,
     }
 
     let (mut graph_nodes, mut indices) = evaluate_new(&nodes[0], &TypeValueState::new())
@@ -289,33 +286,28 @@ pub fn explore_two(nodes: &[Node]) {
                 GraphNode {
                     node: 0,
                     state,
+                    next: Vec::new(),
                     prev: None,
                 },
                 i,
             )
         })
         .unzip::<_, _, Vec<_>, Vec<_>>();
-    let mut leaves = Vec::new();
     while let Some(index) = indices.pop() {
-        let graph_node = graph_nodes[index];
+        let graph_node = &mut graph_nodes[index];
         let node = nodes[graph_node.node];
 
         let mut append = |i| {
-            let states = evaluate_new(&nodes[i], &graph_node.state);
-            if states.is_empty() {
-                leaves.push(GraphLeaf {
+            for state in evaluate_new(&nodes[i], &graph_node.state) {
+                let j = graph_nodes.len();
+                indices.push(j);
+                graph_node.next.push(j);
+                graph_nodes.push(GraphNode {
                     node: i,
-                    prev: index,
+                    state,
+                    next: Vec::new(),
+                    prev: Some(index),
                 });
-            } else {
-                for state in evaluate_new(&nodes[i], &graph_node.state) {
-                    indices.push(graph_nodes.len());
-                    graph_nodes.push(GraphNode {
-                        node: i,
-                        state,
-                        prev: Some(index),
-                    });
-                }
             }
         };
         if let Some(next) = node.next {
@@ -326,16 +318,22 @@ pub fn explore_two(nodes: &[Node]) {
         }
     }
 
-    // `leaves` is the set of states that have no valid following states.
-    // `exit` syscall statements return no valid following states since at this point the progrma exits and no new statements will be entered.
-    // `require` special statements can return no valid following states if for all incoming states the required conditional is false.
-    // While leaves can exist that are not `exit`s the only valid leaves are `exit`s.
-    let valid_leaves = leaves
-        .into_iter()
-        .filter(|GraphLeaf { node, .. }| nodes[*node].statement.is_exit())
-        .collect::<Vec<_>>();
+    // `leaves` are all `GraphNode`s in `graph_nodes` that where `self.next.is_empty()`, this means
+    // there are no valid following states.
+    // There may be no valid following states becuase:
+    // 1. They are `exit` syscall statements whiuch return no valid following states since at this
+    //    point the progrma exits and no new statements will be entered.
+    // 2. They are `require` special statements can return no valid following states if for all
+    //    incoming states the required conditional is false.
+    // While leaves can exist that are not `exit`s the only valid leaves are `exit`s. So we only
+    // want to value `exit` leaves when anaylsing.
 
-    // Now we need to pick a combination of compatible leaves 
+    // let valid_leaves = leaves
+    //     .into_iter()
+    //     .filter(|GraphLeaf { node, .. }| nodes[*node].statement.is_exit())
+    //     .collect::<Vec<_>>();
+
+    // Now we need to pick a combination of compatible leaves
 }
 // Given an incoming state and a node, outputs the possible outgoing states.
 pub fn evaluate_new(node: &Node, incoming_state: &TypeValueState) -> Vec<TypeValueState> {
