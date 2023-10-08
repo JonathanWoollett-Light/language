@@ -5,10 +5,8 @@ use num_traits::identities::Zero;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-
-
-use tracing::instrument;
 use tracing::info;
+use tracing::instrument;
 
 // -------------------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------------------
@@ -77,19 +75,35 @@ impl<
             Ordering::Less => self.start,
         }
     }
+    fn value(&self) -> Option<T> {
+        if self.start == self.end {
+            Some(self.start)
+        } else {
+            None
+        }
+    }
 }
 
 // Runs updates until there is no change.
 #[instrument(level = "TRACE", skip(nodes))]
 pub fn multi_update(nodes: &[Node]) -> Vec<Node> {
-    let mut state = get_states_intersection(nodes);
+    let mut state = explore(nodes)
+        .into_iter()
+        .map(TypeState::from)
+        .min()
+        .unwrap();
     info!("state: {state:?}");
     let mut new_nodes = evaluate(nodes, &state);
+    info!("new_nodes: {new_nodes:?}");
 
     if new_nodes != nodes {
         loop {
             let prev = new_nodes;
-            state = get_states_intersection(&prev);
+            state = explore(&prev)
+                .into_iter()
+                .map(TypeState::from)
+                .min()
+                .unwrap();
             new_nodes = evaluate(&prev, &state);
             if prev == new_nodes {
                 break;
@@ -99,29 +113,25 @@ pub fn multi_update(nodes: &[Node]) -> Vec<Node> {
 
     // Adds the type definitions into the code
     {
-        let iter_one = state
-            .values
-            .iter()
-            .enumerate()
-            .map(|(i, (key, value))| Node {
-                statement: Statement {
-                    comptime: false,
-                    op: Op::Special(Special::Type),
-                    arg: vec![
-                        Value::Variable(Variable {
-                            identifier: key.clone(),
-                            index: None,
-                        }),
-                        Value::Type(value.type_value()),
-                    ],
-                },
-                child: None,
-                next: Some(i + 1),
-            });
+        let iter_one = state.iter().enumerate().map(|(i, (key, value))| Node {
+            statement: Statement {
+                comptime: false,
+                op: Op::Special(Special::Type),
+                arg: vec![
+                    Value::Variable(Variable {
+                        identifier: key.clone(),
+                        index: None,
+                    }),
+                    Value::Type(value.type_value()),
+                ],
+            },
+            child: None,
+            next: Some(i + 1),
+        });
         let iter_two = new_nodes.iter().map(|node| Node {
             statement: node.statement.clone(),
-            child: node.child.map(|c| c + state.values.len()),
-            next: node.next.map(|n| n + state.values.len()),
+            child: node.child.map(|c| c + state.len()),
+            next: node.next.map(|n| n + state.len()),
         });
         iter_one.chain(iter_two).collect()
     }
@@ -129,27 +139,56 @@ pub fn multi_update(nodes: &[Node]) -> Vec<Node> {
 
 // Optimizes the code using the given state.
 #[instrument(level = "TRACE", skip(nodes))]
-pub fn evaluate(nodes: &[Node], state: &State) -> Vec<Node> {
+pub fn evaluate(nodes: &[Node], state: &TypeState) -> Vec<Node> {
     if nodes.is_empty() {
         return Vec::new();
     }
     let mut stack = vec![0];
     let mut new_nodes = Vec::new();
-    // let allocated = std::collections::HashSet::new();
     while let Some(i) = stack.pop() {
         let node = &nodes[i];
         match node.statement.op {
-            Op::Syscall(Syscall::Exit) => {
-                new_nodes.push(Node {
-                    statement: node.statement.clone(),
-                    child: None,
-                    next: None,
-                });
-            }
+            Op::Syscall(Syscall::Exit) => match node.statement.arg.as_slice() {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                })] => {
+                    let value = state.get(identifier).unwrap();
+                    if let Some(integer) = value.integer() && let Some(value) = integer.value() {
+                            new_nodes.push(Node {
+                                statement: Statement { comptime: false, op: Op::Syscall(Syscall::Exit), arg: vec![Value::Literal(Literal::Integer(value))] },
+                                child: None,
+                                next: None,
+                            });
+                        }
+                        else {
+                            new_nodes.push(Node {
+                                statement: node.statement.clone(),
+                                child: None,
+                                next: None,
+                            });
+                        }
+                }
+                [Value::Literal(_)] => {
+                    new_nodes.push(Node {
+                        statement: node.statement.clone(),
+                        child: None,
+                        next: None,
+                    });
+                }
+                _ => todo!(),
+            },
             // TODO Only add the asssignment if it is used.
             Op::Intrinsic(Intrinsic::Assign) => {
+                // Only push an assignment node if this variable is used after this assignment.
                 if appears(nodes, node) {
                     new_nodes.push(node.clone());
+                }
+                if let Some(next) = node.next {
+                    stack.push(next);
+                }
+                if let Some(child) = node.child {
+                    stack.push(child);
                 }
             }
             _ => todo!(),
@@ -179,8 +218,9 @@ pub fn appears(nodes: &[Node], current: &Node) -> bool {
     }
     while let Some(i) = stack.pop() {
         let node = &nodes[i];
-        match node.statement.op {
-            Op::Intrinsic(Intrinsic::Assign) => match node.statement.arg.as_slice() {
+        let statement = &node.statement;
+        match statement.op {
+            Op::Intrinsic(Intrinsic::Assign) => match statement.arg.as_slice() {
                 [Value::Variable(Variable {
                     identifier,
                     index: None,
@@ -191,7 +231,7 @@ pub fn appears(nodes: &[Node], current: &Node) -> bool {
                 }
                 _ => todo!(),
             },
-            Op::Syscall(Syscall::Exit) => match node.statement.arg.as_slice() {
+            Op::Syscall(Syscall::Exit) => match statement.arg.as_slice() {
                 [Value::Variable(Variable {
                     identifier,
                     index: None,
@@ -203,59 +243,115 @@ pub fn appears(nodes: &[Node], current: &Node) -> bool {
                 [Value::Literal(_)] => continue,
                 _ => todo!(),
             },
+            Op::Intrinsic(Intrinsic::AddAssign) => match statement.arg.as_slice() {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                })] => {
+                    if identifier == current_identifier {
+                        return true;
+                    }
+                }
+                _ => todo!(),
+            },
             _ => todo!(),
         }
     }
     false
 }
 
-// Compute a state from exploring the code.
-#[cfg_attr(test, instrument(level = "TRACE", skip(nodes)))]
-pub fn get_states_intersection(nodes: &[Node]) -> State {
-    let states = explore(nodes);
-    let intersection = state_intersection(&states);
-    intersection
+struct OutgoingState {
+    statement: usize,
+    // The state after evaluating the statement in the node.
+    state: TypeValueState,
+    prev: Option<usize>,
 }
+struct IncomingState {
+    node: usize,
+    state: TypeValueState,
+}
+pub fn explore_two(nodes: &[Node]) {
+    struct GraphNode {
+        node: usize,
+        state: TypeValueState,
+        prev: Option<usize>,
+    }
+    struct GraphLeaf {
+        node: usize,
+        prev: usize,
+    }
 
-/// Given a set of states return a state that represents the intersections of all states in the set.
-#[cfg_attr(test, instrument(level = "TRACE", ret, skip(states)))]
-pub fn state_intersection(states: &[State]) -> State {
-    let mut intersections = HashMap::new();
+    let (mut graph_nodes, mut indices) = evaluate_new(&nodes[0], &TypeValueState::new())
+        .into_iter()
+        .enumerate()
+        .map(|(i, state)| {
+            (
+                GraphNode {
+                    node: 0,
+                    state,
+                    prev: None,
+                },
+                i,
+            )
+        })
+        .unzip::<_, _, Vec<_>, Vec<_>>();
+    let mut leaves = Vec::new();
+    while let Some(index) = indices.pop() {
+        let graph_node = graph_nodes[index];
+        let node = nodes[graph_node.node];
 
-    // info!("states: {states:?}");
-
-    let Some([first, tail @ ..]) = states.get(..) else {
-        panic!()
-    };
-    for (key, value) in first.values.iter() {
-        if tail
-            .iter()
-            .all(|s| s.values.get(key).unwrap().type_value() == value.type_value())
-        {
-            intersections.insert(key.clone(), value.clone());
+        let mut append = |i| {
+            let states = evaluate_new(&nodes[i], &graph_node.state);
+            if states.is_empty() {
+                leaves.push(GraphLeaf {
+                    node: i,
+                    prev: index,
+                });
+            } else {
+                for state in evaluate_new(&nodes[i], &graph_node.state) {
+                    indices.push(graph_nodes.len());
+                    graph_nodes.push(GraphNode {
+                        node: i,
+                        state,
+                        prev: Some(index),
+                    });
+                }
+            }
+        };
+        if let Some(next) = node.next {
+            append(next);
+        }
+        if let Some(child) = node.child {
+            append(child);
         }
     }
-    State {
-        values: intersections,
-    }
+
+    // `leaves` is the set of states that have no valid following states.
+    // `exit` syscall statements return no valid following states since at this point the progrma exits and no new statements will be entered.
+    // `require` special statements can return no valid following states if for all incoming states the required conditional is false.
+    // While leaves can exist that are not `exit`s the only valid leaves are `exit`s.
+    let valid_leaves = leaves
+        .into_iter()
+        .filter(|GraphLeaf { node, .. }| nodes[*node].statement.is_exit())
+        .collect::<Vec<_>>();
+
+    // Now we need to pick a combination of compatible leaves 
+}
+// Given an incoming state and a node, outputs the possible outgoing states.
+pub fn evaluate_new(node: &Node, incoming_state: &TypeValueState) -> Vec<TypeValueState> {
+    todo!()
 }
 
 #[cfg_attr(test, instrument(level = "TRACE", ret, skip(nodes)))]
-pub fn explore(nodes: &[Node]) -> Vec<State> {
+pub fn explore(nodes: &[Node]) -> Vec<TypeValueState> {
     let Some(node) = nodes.first() else {
-        return Vec::new()
-    }; 
+        return Vec::new();
+    };
 
     let mut end_states = Vec::new();
 
     let mut stack = Vec::new();
-    append_nodes(
-        &State {
-            values: HashMap::new(),
-        },
-        &node,
-        &mut stack,
-    );
+    append_nodes(&TypeValueState::new(), &node, &mut stack);
     // info!("stack: {stack:?}");
 
     while let Some(current) = stack.pop() {
@@ -274,7 +370,7 @@ pub fn explore(nodes: &[Node]) -> Vec<State> {
 }
 
 #[cfg_attr(test, instrument(level = "TRACE", skip(current, succeeding, stack)))]
-fn append_nodes(current: &State, succeeding: &Node, stack: &mut Vec<GraphNode>) {
+fn append_nodes(current: &TypeValueState, succeeding: &Node, stack: &mut Vec<GraphNode>) {
     let (states, exit) = evaluate_states(current, &succeeding.statement);
     for state in states {
         stack.push(GraphNode {
@@ -286,7 +382,7 @@ fn append_nodes(current: &State, succeeding: &Node, stack: &mut Vec<GraphNode>) 
 }
 
 #[cfg_attr(test, instrument(level = "TRACE", skip(start, statement)))]
-fn evaluate_states(start: &State, statement: &Statement) -> (Vec<State>, bool) {
+fn evaluate_states(start: &TypeValueState, statement: &Statement) -> (Vec<TypeValueState>, bool) {
     let mut exit = false;
     let states = match statement {
         Statement {
@@ -298,13 +394,13 @@ fn evaluate_states(start: &State, statement: &Statement) -> (Vec<State>, bool) {
             match arg.get(..) {
                 Some([Value::Literal(Literal::Integer(_))]) => vec![start.clone()],
                 Some([Value::Variable(Variable { identifier, index: None })]) => {
-                    match start.values.get(identifier) {
+                    match start.get(identifier) {
                         Some(NewValue::Integer(NewValueInteger::I32(_))) => {
                             vec![start.clone()]
                         },
                         None => {
                             let mut state = start.clone();
-                            state.values.insert(identifier.clone(), NewValue::Integer(NewValueInteger::I32(MyRange::new(i32::MIN,i32::MAX))));
+                            state.insert(identifier.clone(), NewValue::Integer(NewValueInteger::I32(MyRange::new(i32::MIN,i32::MAX))));
                             vec![state]
                         }
                         Some(_) => Vec::new(),
@@ -320,13 +416,13 @@ fn evaluate_states(start: &State, statement: &Statement) -> (Vec<State>, bool) {
         } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
             let possible = NewValueInteger::possible(*x);
 
-            match start.values.get(identifier) {
+            match start.get(identifier) {
                 Some(NewValue::Integer(existing)) => {
                     // If the current value in contained in the set of possible values for this
                     // assignment, continue, else end as this path is invalid.
                     if let Some(x) = possible.iter().find(|x|x.type_index()==existing.type_index()) {
                         let mut state = start.clone();
-                        *state.values.get_mut(identifier).unwrap() = NewValue::Integer(x.clone());
+                        *state.get_mut(identifier).unwrap() = NewValue::Integer(x.clone());
                         vec![state]
                     }
                     else {
@@ -336,7 +432,7 @@ fn evaluate_states(start: &State, statement: &Statement) -> (Vec<State>, bool) {
                 None => {
                     possible.into_iter().map(|p| {
                         let mut state = start.clone();
-                        state.values.insert(identifier.clone(), NewValue::Integer(p.clone()));
+                        state.insert(identifier.clone(), NewValue::Integer(p.clone()));
                         state
                     }).collect()
                 }
@@ -348,13 +444,13 @@ fn evaluate_states(start: &State, statement: &Statement) -> (Vec<State>, bool) {
             op: Op::Intrinsic(Intrinsic::AddAssign),
             arg
         } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
-            let Some(NewValue::Integer(existing)) = start.values.get(identifier) else {
+            let Some(NewValue::Integer(existing)) = start.get(identifier) else {
                 panic!()
             };
             match existing.overflowing_add(*x) {
                 Ok(b) => {
                     let mut state = start.clone();
-                    let Some(NewValue::Integer(c)) = state.values.get_mut(identifier) else {
+                    let Some(NewValue::Integer(c)) = state.get_mut(identifier) else {
                         panic!()
                     };
                     *c = b;
@@ -368,7 +464,7 @@ fn evaluate_states(start: &State, statement: &Statement) -> (Vec<State>, bool) {
             op: Op::Special(Special::Require(Cmp::Gt)),
             arg
         } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
-            if let Some(NewValue::Integer(existing)) = start.values.get(identifier) && let Ok(true) = existing.greater_than(*x) {
+            if let Some(NewValue::Integer(existing)) = start.get(identifier) && let Ok(true) = existing.greater_than(*x) {
                 vec![start.clone()]
             }
             else {
@@ -380,7 +476,7 @@ fn evaluate_states(start: &State, statement: &Statement) -> (Vec<State>, bool) {
             op: Op::Special(Special::Require(Cmp::Lt)),
             arg
         } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
-            if let Some(NewValue::Integer(existing)) = start.values.get(identifier) && let Ok(true) = existing.less_than(*x) {
+            if let Some(NewValue::Integer(existing)) = start.get(identifier) && let Ok(true) = existing.less_than(*x) {
                 vec![start.clone()]
             }
             else {
@@ -392,42 +488,138 @@ fn evaluate_states(start: &State, statement: &Statement) -> (Vec<State>, bool) {
     (states, exit)
 }
 
+impl Statement {
+    fn is_require(&self) -> bool {
+        match self.op {
+            Op::Special(Special::Require(_)) => true,
+            _ => false,
+        }
+    }
+    fn is_exit(&self) -> bool {
+        match self.op {
+            Op::Syscall(Syscall::Exit) => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct GraphNode {
-    state: State,
+    state: TypeValueState,
     child: Option<usize>,
     next: Option<usize>,
 }
-#[derive(Debug, Clone, Eq)]
-pub struct State {
-    values: HashMap<Vec<u8>, NewValue>,
+#[derive(Debug, Clone)]
+pub struct TypeValueState(HashMap<Identifier, NewValue>);
+impl TypeValueState {
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
+    fn iter(&self) -> std::collections::hash_map::Iter<'_, Identifier, NewValue> {
+        self.0.iter()
+    }
+    fn into_iter(self) -> std::collections::hash_map::IntoIter<Identifier, NewValue> {
+        self.0.into_iter()
+    }
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+    fn get(&self, key: &Identifier) -> Option<&NewValue> {
+        self.0.get(key)
+    }
+    fn get_mut(&mut self, key: &Identifier) -> Option<&mut NewValue> {
+        self.0.get_mut(key)
+    }
+    fn insert(&mut self, key: Identifier, value: NewValue) -> Option<NewValue> {
+        self.0.insert(key, value)
+    }
 }
-impl Ord for State {
+#[derive(Debug, Clone, Eq)]
+pub struct TypeState(HashMap<Identifier, Type>);
+
+impl TypeState {
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
+    fn iter(&self) -> std::collections::hash_map::Iter<'_, Identifier, Type> {
+        self.0.iter()
+    }
+    fn into_iter(self) -> std::collections::hash_map::IntoIter<Identifier, Type> {
+        self.0.into_iter()
+    }
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+    fn get(&self, key: &Identifier) -> Option<&Type> {
+        self.0.get(key)
+    }
+    fn get_mut(&mut self, key: &Identifier) -> Option<&mut Type> {
+        self.0.get_mut(key)
+    }
+    fn insert(&mut self, key: Identifier, value: Type) -> Option<Type> {
+        self.0.insert(key, value)
+    }
+}
+
+impl Ord for TypeState {
     fn cmp(&self, other: &Self) -> Ordering {
-        let lhs = self
-            .values
-            .iter()
-            .map(|(_key, value)| value.cost())
-            .sum::<u64>();
-        let rhs = other
-            .values
-            .iter()
-            .map(|(key, value)| value.cost())
-            .sum::<u64>();
+        let lhs = self.iter().map(|(_key, value)| value.cost()).sum::<u64>();
+        let rhs = other.iter().map(|(key, value)| value.cost()).sum::<u64>();
         lhs.cmp(&rhs)
     }
 }
 
-impl PartialOrd for State {
+impl PartialOrd for TypeState {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl PartialEq for State {
+impl PartialEq for TypeState {
     fn eq(&self, other: &Self) -> bool {
-        self.values.len() == other.values.len() &&
-        self.values.iter().all(|(key,value)|matches!(other.values.get(key), Some(other_value) if value == other_value))
+        self.len() == other.len()
+            && self.iter().all(
+                |(key, value)| matches!(other.get(key), Some(other_value) if value == other_value),
+            )
+    }
+}
+
+impl From<TypeValueState> for TypeState {
+    fn from(x: TypeValueState) -> Self {
+        Self(
+            x.into_iter()
+                .map(|(key, value)| (key, Type::from(value)))
+                .collect(),
+        )
+    }
+}
+
+impl From<NewValue> for Type {
+    fn from(x: NewValue) -> Type {
+        match x {
+            NewValue::Integer(NewValueInteger::U8(_)) => Self::U8,
+            NewValue::Integer(NewValueInteger::U16(_)) => Self::U16,
+            NewValue::Integer(NewValueInteger::U32(_)) => Self::U32,
+            NewValue::Integer(NewValueInteger::U64(_)) => Self::U64,
+            NewValue::Integer(NewValueInteger::I8(_)) => Self::I8,
+            NewValue::Integer(NewValueInteger::I16(_)) => Self::I16,
+            NewValue::Integer(NewValueInteger::I32(_)) => Self::I32,
+            NewValue::Integer(NewValueInteger::I64(_)) => Self::I64,
+        }
+    }
+}
+impl Type {
+    fn cost(&self) -> u64 {
+        match self {
+            Self::U8 => 0,
+            Self::U16 => 1,
+            Self::U32 => 2,
+            Self::U64 => 3,
+            Self::I8 => 4,
+            Self::I16 => 5,
+            Self::I32 => 6,
+            Self::I64 => 7,
+        }
     }
 }
 
@@ -441,9 +633,10 @@ impl NewValue {
             Self::Integer(int) => int.type_value(),
         }
     }
-    pub fn cost(&self) -> u64 {
+    fn integer(&self) -> Option<&NewValueInteger> {
         match self {
-            Self::Integer(int) => int.type_index() as u64,
+            Self::Integer(integer) => Some(integer),
+            _ => None,
         }
     }
 }
@@ -697,6 +890,18 @@ impl NewValueInteger {
             ],
             U64_MAX => vec![Self::U64(MyRange::new(x as u64, x as u64))],
             _ => panic!(),
+        }
+    }
+    fn value(&self) -> Option<i128> {
+        match self {
+            Self::U8(x) => x.value().map(i128::from),
+            Self::U16(x) => x.value().map(i128::from),
+            Self::U32(x) => x.value().map(i128::from),
+            Self::U64(x) => x.value().map(i128::from),
+            Self::I8(x) => x.value().map(i128::from),
+            Self::I16(x) => x.value().map(i128::from),
+            Self::I32(x) => x.value().map(i128::from),
+            Self::I64(x) => x.value().map(i128::from),
         }
     }
 }

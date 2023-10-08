@@ -35,6 +35,12 @@ fn main() {
     todo!()
 }
 
+// use tracing_subscriber::fmt::format::FmtSpan;
+// tracing_subscriber::fmt::fmt()
+//     .with_max_level(tracing_subscriber::filter::LevelFilter::TRACE)
+//     .with_span_events(FmtSpan::ENTER)
+//     .init();
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,12 +137,6 @@ mod tests {
 
     #[test]
     fn test_one() {
-        // use tracing_subscriber::fmt::format::FmtSpan;
-        // tracing_subscriber::fmt::fmt()
-        //     .with_max_level(tracing_subscriber::filter::LevelFilter::TRACE)
-        //     .with_span_events(FmtSpan::ENTER)
-        //     .init();
-
         let nodes = parse(ONE);
         assert_eq!(
             nodes,
@@ -305,19 +305,8 @@ mod tests {
     }
     const SIX: &str = "x := 1\nexit 0";
 
-    #[bench]
-    fn bench_six(b: &mut Bencher) {
-        b.iter(|| parse(SIX));
-    }
-
     #[test]
     fn test_six() {
-        // use tracing_subscriber::fmt::format::FmtSpan;
-        tracing_subscriber::fmt::fmt()
-            .with_max_level(tracing_subscriber::filter::LevelFilter::TRACE)
-            // .with_span_events(FmtSpan::ENTER)
-            .init();
-
         let nodes = parse(SIX);
         assert_eq!(
             nodes,
@@ -348,17 +337,15 @@ mod tests {
         let optimized_nodes = multi_update(&nodes);
         assert_eq!(
             optimized_nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Literal(Literal::Integer(0))]
-                    },
-                    child: None,
-                    next: None,
-                }
-            ]
+            [Node {
+                statement: Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(0))]
+                },
+                child: None,
+                next: None,
+            }]
         );
         let expected_assembly = "\
             .global _start\n\
@@ -368,6 +355,126 @@ mod tests {
             svc #0\n\
         ";
         assemble(&optimized_nodes, expected_assembly, 0);
+    }
+
+    const SEVEN: &str = "x := 1\nexit x";
+
+    #[test]
+    fn seven() {
+        let nodes = parse(SEVEN);
+        assert_eq!(
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable::new("x")),
+                            Value::Literal(Literal::Integer(1))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Variable(Variable::new("x"))]
+                    },
+                    child: None,
+                    next: None,
+                }
+            ]
+        );
+        let optimized_nodes = multi_update(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [Node {
+                statement: Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(1))]
+                },
+                child: None,
+                next: None,
+            }]
+        );
+        let expected_assembly = "\
+            .global _start\n\
+            _start:\n\
+            mov x8, #93\n\
+            mov x0, #1\n\
+            svc #0\n\
+        ";
+        assemble(&optimized_nodes, expected_assembly, 1);
+    }
+
+    const EIGHT: &str = "x := 1\nx += 1\nexit x";
+
+    #[test]
+    fn test_eight() {
+        let nodes = parse(EIGHT);
+        assert_eq!(
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable::new("x")),
+                            Value::Literal(Literal::Integer(1))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Intrinsic(Intrinsic::AddAssign),
+                        arg: vec![
+                            Value::Variable(Variable::new("x")),
+                            Value::Literal(Literal::Integer(1))
+                        ]
+                    },
+                    child: None,
+                    next: Some(2),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Variable(Variable::new("x"))]
+                    },
+                    child: None,
+                    next: None,
+                },
+            ]
+        );
+        let optimized_nodes = multi_update(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [Node {
+                statement: Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(2))]
+                },
+                child: None,
+                next: None,
+            },]
+        );
+        let expected_assembly = "\
+            .global _start\n\
+            _start:\n\
+            mov x8, #93\n\
+            mov x0, #2\n\
+            svc #0\n\
+        ";
+        assemble(&optimized_nodes, expected_assembly, 2);
     }
 }
 
@@ -462,83 +569,6 @@ mod tests {
                 index: None,
             }
         }
-    }
-
-    const SEVEN: &str = "x := 1\nexit x";
-
-    #[bench]
-    fn bench_seven(b: &mut Bencher) {
-        b.iter(|| parse(SEVEN));
-    }
-
-    #[test]
-    fn seven() {
-        let nodes = parse(SEVEN);
-        assert_eq!(
-            nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Intrinsic(Intrinsic::Assign),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(1))
-                        ]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Variable(Variable::new("x"))]
-                    },
-                    child: None,
-                    next: None,
-                }
-            ]
-        );
-        let optimized_nodes = optimize_nodes(&nodes);
-        assert_eq!(
-            optimized_nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Intrinsic(Intrinsic::Assign),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(1))
-                        ]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Variable(Variable::new("x"))]
-                    },
-                    child: None,
-                    next: None,
-                }
-            ]
-        );
-        let expected_assembly = "\
-            .global _start\n\
-            _start:\n\
-            mov x8, #93\n\
-            ldr x0, =x\n\
-            ldr x0, [x0]\n\
-            svc #0\n\
-            .data\n\
-            x:\n\
-            .word 1\n\
-        ";
-        assemble(&optimized_nodes, expected_assembly, 1);
     }
 
     const EIGHT: &str = "x := 1\nx += 1\nexit x";
