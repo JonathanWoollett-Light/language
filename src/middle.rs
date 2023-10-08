@@ -5,8 +5,10 @@ use num_traits::identities::Zero;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-#[cfg(test)]
+
+
 use tracing::instrument;
+use tracing::info;
 
 // -------------------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------------------
@@ -78,9 +80,10 @@ impl<
 }
 
 // Runs updates until there is no change.
-#[cfg_attr(test, instrument(level = "TRACE", skip(nodes)))]
+#[instrument(level = "TRACE", skip(nodes))]
 pub fn multi_update(nodes: &[Node]) -> Vec<Node> {
     let mut state = get_states_intersection(nodes);
+    info!("state: {state:?}");
     let mut new_nodes = evaluate(nodes, &state);
 
     if new_nodes != nodes {
@@ -125,13 +128,14 @@ pub fn multi_update(nodes: &[Node]) -> Vec<Node> {
 }
 
 // Optimizes the code using the given state.
-#[cfg_attr(test, instrument(level = "TRACE", skip(nodes)))]
+#[instrument(level = "TRACE", skip(nodes))]
 pub fn evaluate(nodes: &[Node], state: &State) -> Vec<Node> {
     if nodes.is_empty() {
         return Vec::new();
     }
     let mut stack = vec![0];
     let mut new_nodes = Vec::new();
+    // let allocated = std::collections::HashSet::new();
     while let Some(i) = stack.pop() {
         let node = &nodes[i];
         match node.statement.op {
@@ -142,11 +146,67 @@ pub fn evaluate(nodes: &[Node], state: &State) -> Vec<Node> {
                     next: None,
                 });
             }
+            // TODO Only add the asssignment if it is used.
+            Op::Intrinsic(Intrinsic::Assign) => {
+                if appears(nodes, node) {
+                    new_nodes.push(node.clone());
+                }
+            }
             _ => todo!(),
         }
         // stack.push()
     }
     new_nodes
+}
+
+// Returns if a variable appears anywhere in the given nodes.
+#[instrument(level = "TRACE", skip(nodes))]
+pub fn appears(nodes: &[Node], current: &Node) -> bool {
+    let [Value::Variable(Variable {
+        identifier: current_identifier,
+        index: _,
+    }), ..] = current.statement.arg.as_slice()
+    else {
+        panic!()
+    };
+
+    let mut stack = Vec::new();
+    if let Some(next) = current.next {
+        stack.push(next);
+    }
+    if let Some(child) = current.child {
+        stack.push(child);
+    }
+    while let Some(i) = stack.pop() {
+        let node = &nodes[i];
+        match node.statement.op {
+            Op::Intrinsic(Intrinsic::Assign) => match node.statement.arg.as_slice() {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), ..] => {
+                    if identifier == current_identifier {
+                        return true;
+                    }
+                }
+                _ => todo!(),
+            },
+            Op::Syscall(Syscall::Exit) => match node.statement.arg.as_slice() {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                })] => {
+                    if identifier == current_identifier {
+                        return true;
+                    }
+                }
+                [Value::Literal(_)] => continue,
+                _ => todo!(),
+            },
+            _ => todo!(),
+        }
+    }
+    false
 }
 
 // Compute a state from exploring the code.
@@ -162,7 +222,7 @@ pub fn get_states_intersection(nodes: &[Node]) -> State {
 pub fn state_intersection(states: &[State]) -> State {
     let mut intersections = HashMap::new();
 
-    tracing::info!("states: {states:?}");
+    // info!("states: {states:?}");
 
     let Some([first, tail @ ..]) = states.get(..) else {
         panic!()
@@ -182,8 +242,10 @@ pub fn state_intersection(states: &[State]) -> State {
 
 #[cfg_attr(test, instrument(level = "TRACE", ret, skip(nodes)))]
 pub fn explore(nodes: &[Node]) -> Vec<State> {
-    assert!(!nodes.is_empty());
-    let node = &nodes[0];
+    let Some(node) = nodes.first() else {
+        return Vec::new()
+    }; 
+
     let mut end_states = Vec::new();
 
     let mut stack = Vec::new();
@@ -194,7 +256,7 @@ pub fn explore(nodes: &[Node]) -> Vec<State> {
         &node,
         &mut stack,
     );
-    tracing::info!("stack: {stack:?}");
+    // info!("stack: {stack:?}");
 
     while let Some(current) = stack.pop() {
         match (current.next, current.child) {
