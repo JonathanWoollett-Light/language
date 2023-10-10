@@ -147,7 +147,7 @@ pub fn instruction_from_node(
                 .unwrap(),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::IfEq) => match current.statement.arg.get(..) {
+            Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => match current.statement.arg.get(..) {
                 Some(
                     [Value::Variable(Variable {
                         identifier,

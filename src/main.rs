@@ -20,6 +20,8 @@ use middle::*;
 mod backend;
 use backend::*;
 
+mod middle_new;
+
 #[cfg(debug_assertions)]
 const LOOP_LIMIT: usize = 200;
 

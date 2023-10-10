@@ -397,9 +397,9 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             let lhs = get_value(bytes);
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             let op = match bytes.next().map(Result::unwrap) {
-                Some(b'=') => Op::Intrinsic(Intrinsic::IfEq),
-                Some(b'>') => Op::Intrinsic(Intrinsic::IfGt),
-                Some(b'<') => Op::Intrinsic(Intrinsic::IfLt),
+                Some(b'=') => Op::Intrinsic(Intrinsic::If(Cmp::Eq)),
+                Some(b'>') => Op::Intrinsic(Intrinsic::If(Cmp::Gt)),
+                Some(b'<') => Op::Intrinsic(Intrinsic::If(Cmp::Lt)),
                 _ => panic!(),
             };
             assert_eq!(

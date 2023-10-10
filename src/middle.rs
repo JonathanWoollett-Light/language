@@ -87,115 +87,13 @@ impl<
 // Runs updates until there is no change.
 #[instrument(level = "TRACE", skip(nodes))]
 pub fn multi_update(nodes: &[Node]) -> Vec<Node> {
-    let mut state = explore(nodes)
-        .into_iter()
-        .map(TypeState::from)
-        .min()
-        .unwrap();
-    info!("state: {state:?}");
-    let mut new_nodes = evaluate(nodes, &state);
-    info!("new_nodes: {new_nodes:?}");
-
-    if new_nodes != nodes {
-        loop {
-            let prev = new_nodes;
-            state = explore(&prev)
-                .into_iter()
-                .map(TypeState::from)
-                .min()
-                .unwrap();
-            new_nodes = evaluate(&prev, &state);
-            if prev == new_nodes {
-                break;
-            }
-        }
-    }
-
-    // Adds the type definitions into the code
-    {
-        let iter_one = state.iter().enumerate().map(|(i, (key, value))| Node {
-            statement: Statement {
-                comptime: false,
-                op: Op::Special(Special::Type),
-                arg: vec![
-                    Value::Variable(Variable {
-                        identifier: key.clone(),
-                        index: None,
-                    }),
-                    Value::Type(value.type_value()),
-                ],
-            },
-            child: None,
-            next: Some(i + 1),
-        });
-        let iter_two = new_nodes.iter().map(|node| Node {
-            statement: node.statement.clone(),
-            child: node.child.map(|c| c + state.len()),
-            next: node.next.map(|n| n + state.len()),
-        });
-        iter_one.chain(iter_two).collect()
-    }
+    todo!()
 }
 
 // Optimizes the code using the given state.
 #[instrument(level = "TRACE", skip(nodes))]
 pub fn evaluate(nodes: &[Node], state: &TypeState) -> Vec<Node> {
-    if nodes.is_empty() {
-        return Vec::new();
-    }
-    let mut stack = vec![0];
-    let mut new_nodes = Vec::new();
-    while let Some(i) = stack.pop() {
-        let node = &nodes[i];
-        match node.statement.op {
-            Op::Syscall(Syscall::Exit) => match node.statement.arg.as_slice() {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                })] => {
-                    let value = state.get(identifier).unwrap();
-                    if let Some(integer) = value.integer() && let Some(value) = integer.value() {
-                            new_nodes.push(Node {
-                                statement: Statement { comptime: false, op: Op::Syscall(Syscall::Exit), arg: vec![Value::Literal(Literal::Integer(value))] },
-                                child: None,
-                                next: None,
-                            });
-                        }
-                        else {
-                            new_nodes.push(Node {
-                                statement: node.statement.clone(),
-                                child: None,
-                                next: None,
-                            });
-                        }
-                }
-                [Value::Literal(_)] => {
-                    new_nodes.push(Node {
-                        statement: node.statement.clone(),
-                        child: None,
-                        next: None,
-                    });
-                }
-                _ => todo!(),
-            },
-            // TODO Only add the asssignment if it is used.
-            Op::Intrinsic(Intrinsic::Assign) => {
-                // Only push an assignment node if this variable is used after this assignment.
-                if appears(nodes, node) {
-                    new_nodes.push(node.clone());
-                }
-                if let Some(next) = node.next {
-                    stack.push(next);
-                }
-                if let Some(child) = node.child {
-                    stack.push(child);
-                }
-            }
-            _ => todo!(),
-        }
-        // stack.push()
-    }
-    new_nodes
+    todo!()
 }
 
 // Returns if a variable appears anywhere in the given nodes.
@@ -260,80 +158,8 @@ pub fn appears(nodes: &[Node], current: &Node) -> bool {
     false
 }
 
-struct OutgoingState {
-    statement: usize,
-    // The state after evaluating the statement in the node.
-    state: TypeValueState,
-    prev: Option<usize>,
-}
-struct IncomingState {
-    node: usize,
-    state: TypeValueState,
-}
 pub fn explore_two(nodes: &[Node]) {
-    struct GraphNode {
-        node: usize,
-        state: TypeValueState,
-        next: Vec<usize>,
-        prev: Option<usize>,
-    }
-
-    let (mut graph_nodes, mut indices) = evaluate_new(&nodes[0], &TypeValueState::new())
-        .into_iter()
-        .enumerate()
-        .map(|(i, state)| {
-            (
-                GraphNode {
-                    node: 0,
-                    state,
-                    next: Vec::new(),
-                    prev: None,
-                },
-                i,
-            )
-        })
-        .unzip::<_, _, Vec<_>, Vec<_>>();
-    while let Some(index) = indices.pop() {
-        let graph_node = &mut graph_nodes[index];
-        let node = nodes[graph_node.node];
-
-        let mut append = |i| {
-            for state in evaluate_new(&nodes[i], &graph_node.state) {
-                let j = graph_nodes.len();
-                indices.push(j);
-                graph_node.next.push(j);
-                graph_nodes.push(GraphNode {
-                    node: i,
-                    state,
-                    next: Vec::new(),
-                    prev: Some(index),
-                });
-            }
-        };
-        if let Some(next) = node.next {
-            append(next);
-        }
-        if let Some(child) = node.child {
-            append(child);
-        }
-    }
-
-    // `leaves` are all `GraphNode`s in `graph_nodes` that where `self.next.is_empty()`, this means
-    // there are no valid following states.
-    // There may be no valid following states becuase:
-    // 1. They are `exit` syscall statements whiuch return no valid following states since at this
-    //    point the progrma exits and no new statements will be entered.
-    // 2. They are `require` special statements can return no valid following states if for all
-    //    incoming states the required conditional is false.
-    // While leaves can exist that are not `exit`s the only valid leaves are `exit`s. So we only
-    // want to value `exit` leaves when anaylsing.
-
-    // let valid_leaves = leaves
-    //     .into_iter()
-    //     .filter(|GraphLeaf { node, .. }| nodes[*node].statement.is_exit())
-    //     .collect::<Vec<_>>();
-
-    // Now we need to pick a combination of compatible leaves
+    todo!()
 }
 // Given an incoming state and a node, outputs the possible outgoing states.
 pub fn evaluate_new(node: &Node, incoming_state: &TypeValueState) -> Vec<TypeValueState> {

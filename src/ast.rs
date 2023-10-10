@@ -104,12 +104,7 @@ pub enum Intrinsic {
     Mul,
     Div,
     Rem,
-    // beq
-    IfEq,
-    // blt
-    IfLt,
-    // bgt
-    IfGt,
+    If(Cmp),
     Loop,
     Break,
 }
