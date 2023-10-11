@@ -8,16 +8,79 @@ use std::collections::HashMap;
 use tracing::info;
 use tracing::instrument;
 
-pub fn explore(nodes: &[Node]) {
-    #[derive(Debug)]
-    struct GraphNode {
-        node: usize,
-        state: TypeValueState,
-        next: Vec<usize>,
-        prev: Option<usize>,
+pub fn optimize(nodes: &[Node]) {
+    let (paths, start) = explore(nodes);
+    let best_path = pick_path(&paths, start);
+}
+
+#[derive(Debug)]
+struct GraphNode {
+    node: usize,
+    state: TypeValueState,
+    next: Vec<Vec<usize>>,
+    prev: Option<usize>,
+}
+
+fn pick_path(nodes: &[Node], graph_nodes: &[GraphNode], start: usize) -> Vec<usize> {
+    // struct PathNode {
+    //     current: usize,
+    //     next: Vec<usize>
+    // }
+    // let mut paths = (0..start).map(|i|vec![PathNode {
+    //     current: i,
+    //     next: Vec::new()
+    // }]).collect::<Vec<_>>();
+
+    // struct Path {
+    //     node: PathNode,
+    //     front: us
+    // }
+
+    struct Trace {
+        stack: Vec<usize>,
+        path: Vec<Option<TypeValueState>>,
     }
 
-    let (mut graph_nodes, mut indices) = get_possible_states(&nodes[0], &TypeValueState::new())
+    // let mut valid_paths = Vec::new();
+    let mut stack = (0..start)
+        .map(|i| Trace {
+            stack: vec![i],
+            path: (0..nodes.len()).map(|_| None).collect(),
+        })
+        .collect::<Vec<_>>();
+    let mut paths = Vec::new();
+
+    while let Some(mut trace) = stack.pop() {
+        if let Some(front) = trace.stack.pop() {
+            let graph = &graph_nodes[front];
+            let n = graph.node;
+            let node = &nodes[graph.node];
+
+            assert!(trace.path[n].is_none());
+            trace.path[n] = Some(graph.state);
+
+            // let traces = graph.next.iter().map(||)
+
+            match node.statement.op {
+                Op::Syscall(Syscall::Exit) => {
+                    assert!(graph.next.is_empty());
+                }
+                _ => {}
+            }
+            stack.push(trace);
+        } else {
+            paths.push(trace.path);
+        }
+    }
+
+    vec![]
+}
+
+fn explore(nodes: &[Node]) -> (Vec<GraphNode>, usize) {
+    let initial_possible_states = get_possible_states(&nodes[0], &TypeValueState::new());
+    let number_of_initial_states = initial_possible_states.len();
+
+    let (mut graph_nodes, mut indices) = initial_possible_states
         .into_iter()
         .enumerate()
         .map(|(i, state)| {
@@ -32,14 +95,18 @@ pub fn explore(nodes: &[Node]) {
             )
         })
         .unzip::<_, _, Vec<_>, Vec<_>>();
+
     while let Some(index) = indices.pop() {
         let n = graph_nodes[index].node;
 
-        let mut append = |node_index: usize, graph_index: usize, graph_nodes: &mut Vec<GraphNode>| {
+        let mut append = |node_index: usize,
+                          graph_index: usize,
+                          path_index: usize,
+                          graph_nodes: &mut Vec<GraphNode>| {
             for state in get_possible_states(&nodes[node_index], &graph_nodes[graph_index].state) {
                 let j = graph_nodes.len();
                 indices.push(j);
-                graph_nodes[graph_index].next.push(j);
+                graph_nodes[graph_index].next[path_index].push(j);
                 graph_nodes.push(GraphNode {
                     node: node_index,
                     state,
@@ -56,31 +123,40 @@ pub fn explore(nodes: &[Node]) {
                 match nodes[n].statement.arg.as_slice() {
                     [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] =>
                     {
+                        let graph_index = graph_nodes[index].next.len();
+                        graph_nodes[index].next.push(Vec::new());
+
                         let y = graph_nodes[index]
                             .state
                             .get(identifier)
                             .unwrap()
                             .integer()
                             .unwrap();
+
                         // If we know the if will be true at compile-time
-                        if y.max() < *x  {
-                            append(n + 1, index, &mut graph_nodes); // See 1 & 2
+                        if y.max() < *x {
+                            append(n + 1, index, graph_index, &mut graph_nodes);
+                        // See 1 & 2
                         }
                         // If we know the if will be false at compile-time
                         else if y.min() >= *x {
                             if let Some(next) = nodes[n].next {
-                                append(next, index, &mut graph_nodes);
+                                append(next, index, graph_index, &mut graph_nodes);
                             } else {
-                                append(n + 1, index, &mut graph_nodes); // See 2
+                                append(n + 1, index, graph_index, &mut graph_nodes);
+                                // See 2
                             }
                         } else {
                             if let Some(child) = nodes[n].child {
-                                append(child, index, &mut graph_nodes);
+                                append(child, index, graph_index, &mut graph_nodes);
                             }
+                            let graph_index = graph_nodes[index].next.len();
+                            graph_nodes[index].next.push(Vec::new());
                             if let Some(next) = nodes[n].next {
-                                append(next, index, &mut graph_nodes);
+                                append(next, index, graph_index, &mut graph_nodes);
                             } else {
-                                append(n + 1, index, &mut graph_nodes); // See 2
+                                append(n + 1, index, graph_index, &mut graph_nodes);
+                                // See 2
                             }
                         }
                     }
@@ -90,7 +166,11 @@ pub fn explore(nodes: &[Node]) {
             // See 2
             Op::Syscall(Syscall::Exit) => continue,
             // See 1 & 2
-            _ => append(n + 1, index, &mut graph_nodes),
+            _ => {
+                let graph_index = graph_nodes[index].next.len();
+                graph_nodes[index].next.push(Vec::new());
+                append(n + 1, index, graph_index, &mut graph_nodes);
+            }
         }
     }
 
@@ -103,6 +183,7 @@ pub fn explore(nodes: &[Node]) {
             .filter(|n| n.next.is_empty())
             .collect::<Vec<_>>()
     );
+    (graph_nodes, number_of_initial_states)
 }
 
 /// Given an incoming state (`state`) and a node, outputs the possible outgoing states.
