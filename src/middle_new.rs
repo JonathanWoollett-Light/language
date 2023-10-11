@@ -17,7 +17,12 @@ pub fn optimize(nodes: &[Node]) {
 struct GraphNode {
     node: usize,
     state: TypeValueState,
-    next: Vec<Vec<usize>>,
+
+    // The options for the next node.
+    next: Vec<usize>,
+    // The options for the other next node (e.g. we cannot evaluate an `if` at compile-time so we need to evaluate both paths).
+    other: Vec<usize>,
+
     prev: Option<usize>,
 }
 
@@ -89,6 +94,7 @@ fn explore(nodes: &[Node]) -> (Vec<GraphNode>, usize) {
                     node: 0,
                     state,
                     next: Vec::new(),
+                    other: Vec::new(),
                     prev: None,
                 },
                 i,
@@ -99,22 +105,24 @@ fn explore(nodes: &[Node]) -> (Vec<GraphNode>, usize) {
     while let Some(index) = indices.pop() {
         let n = graph_nodes[index].node;
 
-        let mut append = |node_index: usize,
-                          graph_index: usize,
-                          path_index: usize,
-                          graph_nodes: &mut Vec<GraphNode>| {
-            for state in get_possible_states(&nodes[node_index], &graph_nodes[graph_index].state) {
-                let j = graph_nodes.len();
-                indices.push(j);
-                graph_nodes[graph_index].next[path_index].push(j);
-                graph_nodes.push(GraphNode {
-                    node: node_index,
-                    state,
-                    next: Vec::new(),
-                    prev: Some(graph_index),
-                });
-            }
-        };
+        let mut append =
+            |node_index: usize, graph_index: usize, graph_nodes: &mut Vec<GraphNode>| {
+                get_possible_states(&nodes[node_index], &graph_nodes[graph_index].state)
+                    .into_iter()
+                    .map(|state| {
+                        let j = graph_nodes.len();
+                        indices.push(j);
+                        graph_nodes.push(GraphNode {
+                            node: node_index,
+                            state,
+                            next: Vec::new(),
+                            other: Vec::new(),
+                            prev: Some(graph_index),
+                        });
+                        j
+                    })
+                    .collect()
+            };
 
         // 1. Relies on the ordering of `nodes` (it will be `child -> next -> outer`).
         // 2. Only `exit`s are allowed to have no following nodes, otherwise it is an error.
@@ -123,9 +131,6 @@ fn explore(nodes: &[Node]) -> (Vec<GraphNode>, usize) {
                 match nodes[n].statement.arg.as_slice() {
                     [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] =>
                     {
-                        let graph_index = graph_nodes[index].next.len();
-                        graph_nodes[index].next.push(Vec::new());
-
                         let y = graph_nodes[index]
                             .state
                             .get(identifier)
@@ -135,29 +140,27 @@ fn explore(nodes: &[Node]) -> (Vec<GraphNode>, usize) {
 
                         // If we know the if will be true at compile-time
                         if y.max() < *x {
-                            append(n + 1, index, graph_index, &mut graph_nodes);
+                            graph_nodes[index].next = append(n + 1, index, &mut graph_nodes);
                         // See 1 & 2
                         }
                         // If we know the if will be false at compile-time
                         else if y.min() >= *x {
-                            if let Some(next) = nodes[n].next {
-                                append(next, index, graph_index, &mut graph_nodes);
+                            graph_nodes[index].next = if let Some(next) = nodes[n].next {
+                                append(next, index, &mut graph_nodes)
                             } else {
-                                append(n + 1, index, graph_index, &mut graph_nodes);
                                 // See 2
-                            }
+                                append(n + 1, index, &mut graph_nodes)
+                            };
                         } else {
                             if let Some(child) = nodes[n].child {
-                                append(child, index, graph_index, &mut graph_nodes);
+                                graph_nodes[index].next = append(child, index, &mut graph_nodes);
                             }
-                            let graph_index = graph_nodes[index].next.len();
-                            graph_nodes[index].next.push(Vec::new());
-                            if let Some(next) = nodes[n].next {
-                                append(next, index, graph_index, &mut graph_nodes);
+                            graph_nodes[index].other = if let Some(next) = nodes[n].next {
+                                append(next, index, &mut graph_nodes)
                             } else {
-                                append(n + 1, index, graph_index, &mut graph_nodes);
                                 // See 2
-                            }
+                                append(n + 1, index, &mut graph_nodes)
+                            };
                         }
                     }
                     _ => todo!(),
@@ -167,9 +170,7 @@ fn explore(nodes: &[Node]) -> (Vec<GraphNode>, usize) {
             Op::Syscall(Syscall::Exit) => continue,
             // See 1 & 2
             _ => {
-                let graph_index = graph_nodes[index].next.len();
-                graph_nodes[index].next.push(Vec::new());
-                append(n + 1, index, graph_index, &mut graph_nodes);
+                graph_nodes[index].next = append(n + 1, index, &mut graph_nodes);
             }
         }
     }
