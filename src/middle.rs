@@ -1,3 +1,4 @@
+#![allow(warnings)]
 use crate::ast::*;
 use num_traits::bounds::Bounded;
 use num_traits::identities::One;
@@ -175,7 +176,7 @@ pub fn explore(nodes: &[Node]) -> Vec<TypeValueState> {
     let mut end_states = Vec::new();
 
     let mut stack = Vec::new();
-    append_nodes(&TypeValueState::new(), &node, &mut stack);
+    append_nodes(&TypeValueState::new(), node, &mut stack);
     // info!("stack: {stack:?}");
 
     while let Some(current) = stack.pop() {
@@ -260,7 +261,6 @@ fn evaluate_states(start: &TypeValueState, statement: &Statement) -> (Vec<TypeVa
                         state
                     }).collect()
                 }
-                Some(_) => panic!()
             }
         },
         Statement {
@@ -314,16 +314,10 @@ fn evaluate_states(start: &TypeValueState, statement: &Statement) -> (Vec<TypeVa
 
 impl Statement {
     fn is_require(&self) -> bool {
-        match self.op {
-            Op::Special(Special::Require(_)) => true,
-            _ => false,
-        }
+        matches!(self.op, Op::Special(Special::Require(_)))
     }
     fn is_exit(&self) -> bool {
-        match self.op {
-            Op::Syscall(Syscall::Exit) => true,
-            _ => false,
-        }
+        matches!(self.op, Op::Syscall(Syscall::Exit))
     }
 }
 
@@ -388,7 +382,7 @@ impl TypeState {
 impl Ord for TypeState {
     fn cmp(&self, other: &Self) -> Ordering {
         let lhs = self.iter().map(|(_key, value)| value.cost()).sum::<u64>();
-        let rhs = other.iter().map(|(key, value)| value.cost()).sum::<u64>();
+        let rhs = other.iter().map(|(_key, value)| value.cost()).sum::<u64>();
         lhs.cmp(&rhs)
     }
 }
@@ -451,6 +445,7 @@ impl Type {
 pub enum NewValue {
     Integer(NewValueInteger),
 }
+#[allow(unreachable_patterns)]
 impl NewValue {
     pub fn type_value(&self) -> Type {
         match self {

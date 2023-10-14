@@ -50,7 +50,6 @@ mod tests {
     use std::fs::OpenOptions;
     use std::io::Write;
     use std::process::Command;
-    use test::Bencher;
     use uuid::Uuid;
 
     fn parse(text: &str) -> Vec<Node> {

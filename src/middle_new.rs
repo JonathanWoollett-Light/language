@@ -5,83 +5,148 @@ use num_traits::identities::Zero;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use tracing::info;
-use tracing::instrument;
+use itertools::Itertools;
 
 pub fn optimize(nodes: &[Node]) {
-    let (paths, start) = explore(nodes);
-    let best_path = pick_path(&paths, start);
+    // Get all possible paths.
+    let (possbile_paths, start) = explore_paths(nodes);
+    // Get all complete paths.
+    let complete_paths = reduce_paths(nodes, &possbile_paths, start);
+    // Pick the best path.
+    println!("complete_paths: {}", complete_paths.len());
+    println!("\n\n\n\n\n\n\n\n");
+    println!("{complete_paths:?}");
+    let _best_path = pick_best_path(complete_paths);
 }
 
 #[derive(Debug)]
 struct GraphNode {
     node: usize,
     state: TypeValueState,
-
-    // The options for the next node.
+    /// The options for the next node.
     next: Vec<usize>,
-    // The options for the other next node (e.g. we cannot evaluate an `if` at compile-time so we need to evaluate both paths).
+    /// The options for the other next node (e.g. we cannot evaluate an `if` at compile-time so we need to evaluate both paths).
     other: Vec<usize>,
-
     prev: Option<usize>,
 }
 
-fn pick_path(nodes: &[Node], graph_nodes: &[GraphNode], start: usize) -> Vec<usize> {
-    // struct PathNode {
-    //     current: usize,
-    //     next: Vec<usize>
-    // }
-    // let mut paths = (0..start).map(|i|vec![PathNode {
-    //     current: i,
-    //     next: Vec::new()
-    // }]).collect::<Vec<_>>();
+// Applies typical optimizations. E.g. removing unused variables, unreachable code, etc.
+fn optimize_with_path(_nodes: &[Node], _path: &[(usize, TypeValueState)]) -> Vec<Node> {
+    todo!()
+}
 
-    // struct Path {
-    //     node: PathNode,
-    //     front: us
-    // }
+fn pick_best_path(paths: Vec<Vec<(usize, TypeValueState)>>) -> Vec<(usize, TypeValueState)> {
+    // TODO This is a bad heuristic to pick the best path, this should be improved.
+    paths.into_iter().min_by_key(|p| p.len()).unwrap()
+}
 
+fn reduce_paths(
+    nodes: &[Node],
+    graph_nodes: &[GraphNode],
+    start: usize,
+) -> Vec<Vec<(usize, TypeValueState)>> {
+    #[derive(Debug, Clone)]
     struct Trace {
+        /// The stack of `GraphNode` that need to be visited to complete the trace, these are
+        /// indices into `graph_nodes`.
         stack: Vec<usize>,
+        /// The type states for every `node` where `path[i]` corresponds to `nodes[i]`, this is
+        /// filled as the trace pops values from `self.stack`.
         path: Vec<Option<TypeValueState>>,
     }
 
-    // let mut valid_paths = Vec::new();
+    // The stack of incomplete traces that need to be completed.
     let mut stack = (0..start)
         .map(|i| Trace {
             stack: vec![i],
-            path: (0..nodes.len()).map(|_| None).collect(),
+            path: vec![None; nodes.len()],
         })
         .collect::<Vec<_>>();
+
+    // The set of complete paths. A complete path is a set of `TypeValueState` for every `Node` that
+    // could be encountered given the initial `TypeValueState`.
     let mut paths = Vec::new();
 
     while let Some(mut trace) = stack.pop() {
-        if let Some(front) = trace.stack.pop() {
-            let graph = &graph_nodes[front];
-            let n = graph.node;
-            let node = &nodes[graph.node];
+        let front = trace.stack.pop().unwrap();
+        let graph = &graph_nodes[front];
+        let n = graph.node;
+        let node = &nodes[graph.node];
 
-            assert!(trace.path[n].is_none());
-            trace.path[n] = Some(graph.state);
+        // If this node had been previously evaluated it would have a pre-existing state. Here
+        // it should not have been previously evaluated thus should not have a pre-existing state.
+        assert!(trace.path[n].is_none());
 
-            // let traces = graph.next.iter().map(||)
+        // Set the state at this node.
+        trace.path[n] = Some(graph.state.clone());
 
-            match node.statement.op {
-                Op::Syscall(Syscall::Exit) => {
-                    assert!(graph.next.is_empty());
+        // Add next nodes that need to be evaluated to the trace stack.
+        match node.statement.op {
+            Op::Syscall(Syscall::Exit) => {
+                assert!(graph.next.is_empty());
+                assert!(graph.other.is_empty());
+
+                // println!("huh?");
+                if trace.stack.is_empty() {
+                    let temp = trace
+                        .path
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(i, x)| x.map(|y| (i, y)))
+                        .collect::<Vec<_>>();
+                    paths.push(temp);
                 }
-                _ => {}
             }
-            stack.push(trace);
-        } else {
-            paths.push(trace.path);
+            Op::Intrinsic(Intrinsic::If(_)) => {
+                if graph.next.is_empty() && graph.other.is_empty() {
+                    continue;
+                }
+                match (graph.next.is_empty(), graph.other.is_empty()) {
+                    // This condition occurs when a `require` fails.
+                    (true, true) => continue,
+                    (false, false) => {
+                        for (a, b) in graph.next.iter().cartesian_product(graph.other.iter()) {
+                            let mut temp = trace.clone();
+                            temp.stack.push(*a);
+                            temp.stack.push(*b);
+                            stack.push(temp);
+                        }
+                    }
+                    (false, true) => {
+                        for a in graph.next.iter() {
+                            let mut temp = trace.clone();
+                            temp.stack.push(*a);
+                            stack.push(temp);
+                        }
+                    }
+                    (true, false) => {
+                        for b in graph.other.iter() {
+                            let mut temp = trace.clone();
+                            temp.stack.push(*b);
+                            stack.push(temp);
+                        }
+                    }
+                }
+            }
+            _ => {
+                // This condition occurs when a `require` fails.
+                if graph.next.is_empty() {
+                    continue;
+                }
+                assert!(graph.other.is_empty());
+                for state in graph.next.iter() {
+                    let mut temp = trace.clone();
+                    temp.stack.push(*state);
+                    stack.push(temp);
+                }
+            }
         }
     }
 
-    vec![]
+    paths
 }
 
-fn explore(nodes: &[Node]) -> (Vec<GraphNode>, usize) {
+fn explore_paths(nodes: &[Node]) -> (Vec<GraphNode>, usize) {
     let initial_possible_states = get_possible_states(&nodes[0], &TypeValueState::new());
     let number_of_initial_states = initial_possible_states.len();
 
@@ -320,6 +385,7 @@ impl TypeValueState {
 pub enum TypeValue {
     Integer(TypeValueInteger),
 }
+#[allow(unreachable_patterns)]
 impl TypeValue {
     fn integer_mut(&mut self) -> Option<&mut TypeValueInteger> {
         match self {
@@ -1150,6 +1216,6 @@ mod tests {
                 next: None,
             },
         ];
-        explore(&nodes);
+        optimize(&nodes);
     }
 }
