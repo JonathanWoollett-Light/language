@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
     <title>Placeholder lang</title>
+    <style>
+        .code {
+            font-family: "consolas";
+            background-color: rgba(100,100,100,0.2);
+            padding: 5px;
+            border-radius: 3px;
+            white-space:pre-wrap;
+        }
+    </style>
   </head>
   <body>
     <main class="container" style="padding-top: 0px;">
@@ -16,47 +25,51 @@
                 <li><a href="https://github.com/JonathanWoollett-Light/language">GitHub</a></li>
             </ul>
         </nav>
-        <div class="grid">
-            <div>
-                <h5>Simple</h5>
-                <p>A smaller keyword set than C with Python-like syntax.</p>
-            </div>
-            <div>
-                <h5>Explicit</h5>
-                <p>No hidden memory allocations, not even on the stack, no stack overflow.</p>
-            </div>
-            <div>
-                <h5>Hybrid compiler-interpreter</h5>
-                <p>An interpreter able to perform extensive compile-time analysis and execute syscalls at compile-time.</p>
-                <p>No build scripts, no macros, no generics/templates.</p>
-            </div>
-        </div>
+        <ul>
+            <li>
+                <b>Simple</b>
+                <p>Python-like syntax with fewer keywords than C.</p>
+            </li>
+            <li>
+                <b>Explicit</b>
+                <p>No hidden memory allocations, not even on the stack. No stack overflow.</p>
+            </li>
+            <li>
+                <b>Thorough</b>
+                <p>Full type inference incorporating formal verification. No generics or templates.</p>
+            </li>
+            <li>
+                <b>Interpretable</b>
+                <p>Compile-time evaluation of syscalls. No build scripts. No macros.</p>
+            </li>
+        </ul>
         <h3>Hello, World!</h3>
         <div class="grid">
             <div>
                 <h5>Source</h5>
-                <p style="font-family:consolas">x := "Hello, World!\n"<br>_ := write 1 x<br>exit 0</p>
+                <p class="code">x := "Hello, World!\n"<br>_ := write 1 x<br>exit 0</p>
             </div>
             <div>
                 <h5>Assembly</h5>
-                <p style="font-family:consolas">
-                    .global _start<br>
-                    _start:<br>
-                    mov x8, #64<br>
-                    mov x0, #1<br>
-                    ldr x1, =x<br>
-                    mov x2, #14<br>
-                    svc #0<br>
-                    mov x8, #93<br>
-                    mov x0, #0<br>
-                    svc #0<br>
-                    .data<br>
-                    x:<br>
-                    .byte 72,101,108,108,111,44,32,87,111,114,108,100,33,10
+                <p class="code">.global _start<br>_start:<br>mov x8, #64<br>mov x0, #1<br>ldr x1, =x<br>mov x2, #14<br>svc #0<br>mov x8, #93<br>mov x0, #0<br>svc #0<br>.data<br>x:<br>.byte 72,101,108,108,111,44,32,87,111,114,108,100,33,10
                 </p>
                 <p>This is aarch64 assembly, the only currently supported backend.<br>I think in the future I might add RISC-V.<br>I do not like x86-64 and it shrinks in market share each year, I do not think I will add it.</p>
             </div>
         </div>
+        <h3>Planned keywords</h3>
+        <ol>
+            <li><span class="code">if</span>: <a href="https://www.w3schools.com/python/gloss_python_if_statement.asp">Python's <span class="code">if</span></a> without the <span class="code">:</span>.</li>
+            <li><span class="code">loop</span>: <a href="https://doc.rust-lang.org/rust-by-example/flow_control/loop.html">Rust's <span class="code">loop</span></a> without the brackets.</li>
+            <li><span class="code">def</span>: <a href="https://www.w3schools.com/python/python_functions.asp">Python's <span class="code">def</span></a> without the <span class="code">:</span>.</li>
+            <li><span class="code">in</span>: The arguments given to a function.</li>
+            <li><span class="code">out</span>: The return of a function.</li>
+            <li><span class="code">comptime</span>: Forces evaluation at compile-time.</li>
+            <li><span class="code">require</span>: A condition to prove with formal verification at compile-time.</li>
+            <li><span class="code">assume</span>: A condition assumed to be true at compile-time.</li>
+            <li><span class="code">assert</span>: A condition that calls <span class="code">exit</span> if false at run-time.</li>
+        </ol>
+        <h4>Example</h4>
+        <p class="code">def add<br>    lhs = in[0] # 1<br>    rhs = in[1] # 2<br>    out = rhs + lhs # 3<br>x := add 1 2 # 3<br>comptime write 1 x<br>require x = 3 # true<br>assume x = 4<br>require x = 4 # true<br>assert x = 4 # false</p>
     </main>
   </body>
 </html>
