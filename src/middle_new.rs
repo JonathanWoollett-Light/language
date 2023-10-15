@@ -7,16 +7,18 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 
-pub fn optimize(nodes: &[Node]) {
+pub fn optimize(nodes: &[Node]) -> Vec<Node> {
     // Get all possible paths.
     let (possbile_paths, start) = explore_paths(nodes);
+
     // Get all complete paths.
     let complete_paths = reduce_paths(nodes, &possbile_paths, start);
+
     // Pick the best path.
-    println!("complete_paths: {}", complete_paths.len());
-    println!("\n\n\n\n\n\n\n\n");
-    println!("{complete_paths:?}");
-    let _best_path = pick_best_path(complete_paths);
+    let (best_path, type_state) = pick_best_path(complete_paths);
+
+    // Use the best path to apply optimizations to the nodes.
+    optimize_with_path(nodes, &best_path, type_state)
 }
 
 #[derive(Debug)]
@@ -31,20 +33,144 @@ struct GraphNode {
 }
 
 // Applies typical optimizations. E.g. removing unused variables, unreachable code, etc.
-fn optimize_with_path(_nodes: &[Node], _path: &[(usize, TypeValueState)]) -> Vec<Node> {
-    todo!()
+fn optimize_with_path(
+    nodes: &[Node],
+    path: &[Option<TypeValueState>],
+    type_state: TypeState,
+) -> Vec<Node> {
+    assert_eq!(nodes.len(), path.len());
+
+    // Remove unreachable nodes
+    // ---------------------------------------------------------------------------------------------
+    let mut new_nodes = nodes
+        .iter()
+        .cloned()
+        .zip(path.iter().cloned())
+        .map(|(n, p)| p.map(|x| (n, x)))
+        .collect::<Vec<_>>();
+
+    // TODO This is incomplete and currently only works for simple `next` links.
+
+    // Update node links
+    // ---------------------------------------------------------------------------------------------
+    {
+        let mut first = 0;
+        loop {
+            match new_nodes.get(first) {
+                None => unreachable!(),
+                Some(None) => {
+                    first += 1;
+                }
+                Some(Some(_)) => break,
+            }
+        }
+        'outer: loop {
+            let mut second = first;
+            loop {
+                second += 1;
+                match new_nodes.get(second) {
+                    None => break 'outer,
+                    Some(None) => continue,
+                    Some(Some(_)) => break,
+                }
+            }
+
+            let (node, _state) = new_nodes[first].as_mut().unwrap();
+            if let Some(next) = &mut node.next {
+                *next = second;
+            }
+            first = second;
+        }
+    }
+
+    // Remove `None` elements
+    // ---------------------------------------------------------------------------------------------
+    let flat = {
+        let mut decrement = 0;
+        for i in (0..new_nodes.len()).rev() {
+            let Some((node, _state)) = &mut new_nodes[i] else {
+                decrement += 1;
+                continue;
+            };
+            if let Some(next) = &mut node.next {
+                *next -= decrement;
+            }
+            if let Some(child) = &mut node.child {
+                *child -= decrement;
+            }
+            decrement = 0;
+        }
+        new_nodes
+            .into_iter()
+            .filter_map(|x| x.map(|(n, _)| n))
+            .collect::<Vec<_>>()
+    };
+
+    // Prepend variable definitions
+    // ---------------------------------------------------------------------------------------------
+    let n = type_state.len();
+    let definition = (1..)
+        .zip(type_state.into_iter())
+        .map(|(i, (identifier, type_value))| Node {
+            statement: Statement {
+                comptime: false,
+                op: Op::Special(Special::Type),
+                arg: vec![
+                    Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }),
+                    Value::Type(type_value),
+                ],
+            },
+            child: None,
+            next: Some(i),
+        });
+    let original = flat.into_iter().map(|mut node| {
+        if let Some(next) = &mut node.next {
+            *next += n;
+        }
+        if let Some(child) = &mut node.child {
+            *child += n;
+        }
+        node
+    });
+
+    definition.chain(original).collect()
 }
 
-fn pick_best_path(paths: Vec<Vec<(usize, TypeValueState)>>) -> Vec<(usize, TypeValueState)> {
+fn pick_best_path(
+    paths: Vec<Vec<Option<TypeValueState>>>,
+) -> (Vec<Option<TypeValueState>>, TypeState) {
     // TODO This is a bad heuristic to pick the best path, this should be improved.
-    paths.into_iter().min_by_key(|p| p.len()).unwrap()
+
+    let (mut min_len, mut min_path) = (paths[0].iter().filter(|x| x.is_some()).count(), 0);
+    for (i, path) in paths.iter().enumerate().skip(1) {
+        let len = path.iter().filter(|x| x.is_some()).count();
+        if len < min_len {
+            min_len = len;
+            min_path = i;
+        }
+    }
+    let type_state =
+        paths[min_path]
+            .iter()
+            .filter_map(|x| x.as_ref())
+            .fold(TypeState::new(), |mut acc, x| {
+                for (ident, value_type) in x.iter() {
+                    acc.insert(ident.clone(), value_type.type_value());
+                }
+                acc
+            });
+
+    (paths[min_path].clone(), type_state)
 }
 
 fn reduce_paths(
     nodes: &[Node],
     graph_nodes: &[GraphNode],
     start: usize,
-) -> Vec<Vec<(usize, TypeValueState)>> {
+) -> Vec<Vec<Option<TypeValueState>>> {
     #[derive(Debug, Clone)]
     struct Trace {
         /// The stack of `GraphNode` that need to be visited to complete the trace, these are
@@ -77,24 +203,17 @@ fn reduce_paths(
         // it should not have been previously evaluated thus should not have a pre-existing state.
         assert!(trace.path[n].is_none());
 
-        // Set the state at this node.
-        trace.path[n] = Some(graph.state.clone());
-
         // Add next nodes that need to be evaluated to the trace stack.
         match node.statement.op {
             Op::Syscall(Syscall::Exit) => {
                 assert!(graph.next.is_empty());
                 assert!(graph.other.is_empty());
 
-                // println!("huh?");
+                // Set the state at this node.
+                trace.path[n] = Some(graph.state.clone());
+
                 if trace.stack.is_empty() {
-                    let temp = trace
-                        .path
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(i, x)| x.map(|y| (i, y)))
-                        .collect::<Vec<_>>();
-                    paths.push(temp);
+                    paths.push(trace.path);
                 }
             }
             Op::Intrinsic(Intrinsic::If(_)) => {
@@ -105,6 +224,9 @@ fn reduce_paths(
                     // This condition occurs when a `require` fails.
                     (true, true) => continue,
                     (false, false) => {
+                        // Set the state at this node.
+                        trace.path[n] = Some(graph.state.clone());
+
                         for (a, b) in graph.next.iter().cartesian_product(graph.other.iter()) {
                             let mut temp = trace.clone();
                             temp.stack.push(*a);
@@ -113,6 +235,8 @@ fn reduce_paths(
                         }
                     }
                     (false, true) => {
+                        // This statement can be omitted so we don't set the state.
+
                         for a in graph.next.iter() {
                             let mut temp = trace.clone();
                             temp.stack.push(*a);
@@ -120,6 +244,8 @@ fn reduce_paths(
                         }
                     }
                     (true, false) => {
+                        // This statement can be omitted so we don't set the state.
+
                         for b in graph.other.iter() {
                             let mut temp = trace.clone();
                             temp.stack.push(*b);
@@ -128,11 +254,30 @@ fn reduce_paths(
                     }
                 }
             }
+            Op::Special(Special::Require(_)) => {
+                // This condition occurs when a `require` fails.
+                if graph.next.is_empty() {
+                    continue;
+                }
+
+                // This statement can be omitted so we don't set the state.
+
+                assert!(graph.other.is_empty());
+                for state in graph.next.iter() {
+                    let mut temp = trace.clone();
+                    temp.stack.push(*state);
+                    stack.push(temp);
+                }
+            }
             _ => {
                 // This condition occurs when a `require` fails.
                 if graph.next.is_empty() {
                     continue;
                 }
+
+                // Set the state at this node.
+                trace.path[n] = Some(graph.state.clone());
+
                 assert!(graph.other.is_empty());
                 for state in graph.next.iter() {
                     let mut temp = trace.clone();
@@ -240,15 +385,6 @@ fn explore_paths(nodes: &[Node]) -> (Vec<GraphNode>, usize) {
         }
     }
 
-    println!("graph_nodes: {graph_nodes:?}");
-    println!("\n\n\n");
-    println!(
-        "leaves: {:#?}",
-        graph_nodes
-            .iter()
-            .filter(|n| n.next.is_empty())
-            .collect::<Vec<_>>()
-    );
     (graph_nodes, number_of_initial_states)
 }
 
@@ -377,6 +513,32 @@ impl TypeValueState {
         self.0.get_mut(key)
     }
     fn insert(&mut self, key: Identifier, value: TypeValue) -> Option<TypeValue> {
+        self.0.insert(key, value)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TypeState(HashMap<Identifier, Type>);
+impl TypeState {
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
+    fn iter(&self) -> std::collections::hash_map::Iter<'_, Identifier, Type> {
+        self.0.iter()
+    }
+    fn into_iter(self) -> std::collections::hash_map::IntoIter<Identifier, Type> {
+        self.0.into_iter()
+    }
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+    fn get(&self, key: &Identifier) -> Option<&Type> {
+        self.0.get(key)
+    }
+    fn get_mut(&mut self, key: &Identifier) -> Option<&mut Type> {
+        self.0.get_mut(key)
+    }
+    fn insert(&mut self, key: Identifier, value: Type) -> Option<Type> {
         self.0.insert(key, value)
     }
 }
@@ -819,89 +981,93 @@ impl TypeValueInteger {
             }
         }
     }
-    // fn possible(x: i128) -> Vec<Self> {
-    //     const I64_MIN: i128 = i64::MIN as i128;
-    //     const I32_MIN: i128 = i32::MIN as i128;
-    //     const I16_MIN: i128 = i16::MIN as i128;
-    //     const I8_MIN: i128 = i8::MIN as i128;
-    //     const U64_MAX: i128 = u64::MAX as i128;
-    //     const U32_MAX: i128 = u32::MAX as i128;
-    //     const U16_MAX: i128 = u16::MAX as i128;
-    //     const U8_MAX: i128 = u8::MAX as i128;
-    //     const U64_EDGE: i128 = u32::MAX as i128 + 1;
-    //     const U32_EDGE: i128 = u16::MAX as i128 + 1;
-    //     const U16_EDGE: i128 = u8::MAX as i128 + 1;
+    #[cfg(not(feature = "16"))]
+    fn possible(x: i128) -> Vec<Self> {
+        const I64_MIN: i128 = i64::MIN as i128;
+        const I32_MIN: i128 = i32::MIN as i128;
+        const I16_MIN: i128 = i16::MIN as i128;
+        const I8_MIN: i128 = i8::MIN as i128;
+        const U64_MAX: i128 = u64::MAX as i128;
+        const U32_MAX: i128 = u32::MAX as i128;
+        const U16_MAX: i128 = u16::MAX as i128;
+        const U8_MAX: i128 = u8::MAX as i128;
+        const U64_EDGE: i128 = u32::MAX as i128 + 1;
+        const U32_EDGE: i128 = u16::MAX as i128 + 1;
+        const U16_EDGE: i128 = u8::MAX as i128 + 1;
 
-    //     match x {
-    //         I64_MIN..I32_MIN => vec![Self::I64(MyRange::new(x as i64, x as i64))],
-    //         I32_MIN..I16_MIN => vec![
-    //             Self::I64(MyRange::new(x as i64, x as i64)),
-    //             Self::I32(MyRange::new(x as i32, x as i32)),
-    //         ],
-    //         I16_MIN..I8_MIN => vec![
-    //             Self::I64(MyRange::new(x as i64, x as i64)),
-    //             Self::I32(MyRange::new(x as i32, x as i32)),
-    //             Self::I16(MyRange::new(x as i16, x as i16)),
-    //         ],
-    //         I8_MIN..0 => vec![
-    //             Self::I64(MyRange::new(x as i64, x as i64)),
-    //             Self::I32(MyRange::new(x as i32, x as i32)),
-    //             Self::I16(MyRange::new(x as i16, x as i16)),
-    //             Self::I8(MyRange::new(x as i8, x as i8)),
-    //         ],
-    //         0..U8_MAX => vec![
-    //             Self::I64(MyRange::new(x as i64, x as i64)),
-    //             Self::I32(MyRange::new(x as i32, x as i32)),
-    //             Self::I16(MyRange::new(x as i16, x as i16)),
-    //             Self::I8(MyRange::new(x as i8, x as i8)),
-    //             Self::U64(MyRange::new(x as u64, x as u64)),
-    //             Self::U32(MyRange::new(x as u32, x as u32)),
-    //             Self::U16(MyRange::new(x as u16, x as u16)),
-    //             Self::U8(MyRange::new(x as u8, x as u8)),
-    //         ],
-    //         U8_MAX => vec![
-    //             Self::I64(MyRange::new(x as i64, x as i64)),
-    //             Self::I32(MyRange::new(x as i32, x as i32)),
-    //             Self::I16(MyRange::new(x as i16, x as i16)),
-    //             Self::U64(MyRange::new(x as u64, x as u64)),
-    //             Self::U32(MyRange::new(x as u32, x as u32)),
-    //             Self::U16(MyRange::new(x as u16, x as u16)),
-    //             Self::U8(MyRange::new(x as u8, x as u8)),
-    //         ],
-    //         U16_EDGE..U16_MAX => vec![
-    //             Self::I64(MyRange::new(x as i64, x as i64)),
-    //             Self::I32(MyRange::new(x as i32, x as i32)),
-    //             Self::I16(MyRange::new(x as i16, x as i16)),
-    //             Self::U64(MyRange::new(x as u64, x as u64)),
-    //             Self::U32(MyRange::new(x as u32, x as u32)),
-    //             Self::U16(MyRange::new(x as u16, x as u16)),
-    //         ],
-    //         U16_MAX => vec![
-    //             Self::I64(MyRange::new(x as i64, x as i64)),
-    //             Self::I32(MyRange::new(x as i32, x as i32)),
-    //             Self::U64(MyRange::new(x as u64, x as u64)),
-    //             Self::U32(MyRange::new(x as u32, x as u32)),
-    //             Self::U16(MyRange::new(x as u16, x as u16)),
-    //         ],
-    //         U32_EDGE..U32_MAX => vec![
-    //             Self::I64(MyRange::new(x as i64, x as i64)),
-    //             Self::I32(MyRange::new(x as i32, x as i32)),
-    //             Self::U64(MyRange::new(x as u64, x as u64)),
-    //             Self::U32(MyRange::new(x as u32, x as u32)),
-    //         ],
-    //         U32_MAX => vec![
-    //             Self::I64(MyRange::new(x as i64, x as i64)),
-    //             Self::U64(MyRange::new(x as u64, x as u64)),
-    //             Self::U32(MyRange::new(x as u32, x as u32)),
-    //         ],
-    //         U64_EDGE..U64_MAX => vec![
-    //             Self::I64(MyRange::new(x as i64, x as i64)),
-    //             Self::U64(MyRange::new(x as u64, x as u64)),
-    //         ],
-    //         U64_MAX => vec![Self::U64(MyRange::new(x as u64, x as u64))],
-    //         _ => panic!(),
-    //     }
-    // }
+        match x {
+            I64_MIN..I32_MIN => vec![Self::I64(MyRange::new(x as i64, x as i64))],
+            I32_MIN..I16_MIN => vec![
+                Self::I64(MyRange::new(x as i64, x as i64)),
+                Self::I32(MyRange::new(x as i32, x as i32)),
+            ],
+            I16_MIN..I8_MIN => vec![
+                Self::I64(MyRange::new(x as i64, x as i64)),
+                Self::I32(MyRange::new(x as i32, x as i32)),
+                Self::I16(MyRange::new(x as i16, x as i16)),
+            ],
+            I8_MIN..0 => vec![
+                Self::I64(MyRange::new(x as i64, x as i64)),
+                Self::I32(MyRange::new(x as i32, x as i32)),
+                Self::I16(MyRange::new(x as i16, x as i16)),
+                Self::I8(MyRange::new(x as i8, x as i8)),
+            ],
+            0..U8_MAX => vec![
+                Self::I64(MyRange::new(x as i64, x as i64)),
+                Self::I32(MyRange::new(x as i32, x as i32)),
+                Self::I16(MyRange::new(x as i16, x as i16)),
+                Self::I8(MyRange::new(x as i8, x as i8)),
+                Self::U64(MyRange::new(x as u64, x as u64)),
+                Self::U32(MyRange::new(x as u32, x as u32)),
+                Self::U16(MyRange::new(x as u16, x as u16)),
+                Self::U8(MyRange::new(x as u8, x as u8)),
+            ],
+            U8_MAX => vec![
+                Self::I64(MyRange::new(x as i64, x as i64)),
+                Self::I32(MyRange::new(x as i32, x as i32)),
+                Self::I16(MyRange::new(x as i16, x as i16)),
+                Self::U64(MyRange::new(x as u64, x as u64)),
+                Self::U32(MyRange::new(x as u32, x as u32)),
+                Self::U16(MyRange::new(x as u16, x as u16)),
+                Self::U8(MyRange::new(x as u8, x as u8)),
+            ],
+            U16_EDGE..U16_MAX => vec![
+                Self::I64(MyRange::new(x as i64, x as i64)),
+                Self::I32(MyRange::new(x as i32, x as i32)),
+                Self::I16(MyRange::new(x as i16, x as i16)),
+                Self::U64(MyRange::new(x as u64, x as u64)),
+                Self::U32(MyRange::new(x as u32, x as u32)),
+                Self::U16(MyRange::new(x as u16, x as u16)),
+            ],
+            U16_MAX => vec![
+                Self::I64(MyRange::new(x as i64, x as i64)),
+                Self::I32(MyRange::new(x as i32, x as i32)),
+                Self::U64(MyRange::new(x as u64, x as u64)),
+                Self::U32(MyRange::new(x as u32, x as u32)),
+                Self::U16(MyRange::new(x as u16, x as u16)),
+            ],
+            U32_EDGE..U32_MAX => vec![
+                Self::I64(MyRange::new(x as i64, x as i64)),
+                Self::I32(MyRange::new(x as i32, x as i32)),
+                Self::U64(MyRange::new(x as u64, x as u64)),
+                Self::U32(MyRange::new(x as u32, x as u32)),
+            ],
+            U32_MAX => vec![
+                Self::I64(MyRange::new(x as i64, x as i64)),
+                Self::U64(MyRange::new(x as u64, x as u64)),
+                Self::U32(MyRange::new(x as u32, x as u32)),
+            ],
+            U64_EDGE..U64_MAX => vec![
+                Self::I64(MyRange::new(x as i64, x as i64)),
+                Self::U64(MyRange::new(x as u64, x as u64)),
+            ],
+            U64_MAX => vec![Self::U64(MyRange::new(x as u64, x as u64))],
+            _ => panic!(),
+        }
+    }
+
+    // A 16bit feature that reduces the set of types to `u8`, `i8` `u16` and `i16` to make debugging easier.
+    #[cfg(feature = "16")]
     fn possible(x: i128) -> Vec<Self> {
         const I64_MIN: i128 = i64::MIN as i128;
         const I32_MIN: i128 = i32::MIN as i128;
@@ -953,60 +1119,63 @@ impl TypeValueInteger {
         }
     }
 }
-// fn possible_integer(x: i128) -> Vec<Type> {
-//     const I64_MIN: i128 = i64::MIN as i128;
-//     const I32_MIN: i128 = i32::MIN as i128;
-//     const I16_MIN: i128 = i16::MIN as i128;
-//     const I8_MIN: i128 = i8::MIN as i128;
-//     const U64_MAX: i128 = u64::MAX as i128;
-//     const U32_MAX: i128 = u32::MAX as i128;
-//     const U16_MAX: i128 = u16::MAX as i128;
-//     const U8_MAX: i128 = u8::MAX as i128;
-//     const U64_EDGE: i128 = u32::MAX as i128 + 1;
-//     const U32_EDGE: i128 = u16::MAX as i128 + 1;
-//     const U16_EDGE: i128 = u8::MAX as i128 + 1;
+#[cfg(not(feature = "16"))]
+fn possible_integer(x: i128) -> Vec<Type> {
+    const I64_MIN: i128 = i64::MIN as i128;
+    const I32_MIN: i128 = i32::MIN as i128;
+    const I16_MIN: i128 = i16::MIN as i128;
+    const I8_MIN: i128 = i8::MIN as i128;
+    const U64_MAX: i128 = u64::MAX as i128;
+    const U32_MAX: i128 = u32::MAX as i128;
+    const U16_MAX: i128 = u16::MAX as i128;
+    const U8_MAX: i128 = u8::MAX as i128;
+    const U64_EDGE: i128 = u32::MAX as i128 + 1;
+    const U32_EDGE: i128 = u16::MAX as i128 + 1;
+    const U16_EDGE: i128 = u8::MAX as i128 + 1;
 
-//     match x {
-//         I64_MIN..I32_MIN => vec![Type::I64],
-//         I32_MIN..I16_MIN => vec![Type::I64, Type::I32],
-//         I16_MIN..I8_MIN => vec![Type::I64, Type::I32, Type::I16],
-//         I8_MIN..0 => vec![Type::I64, Type::I32, Type::I16, Type::I8],
-//         0..U8_MAX => vec![
-//             Type::I64,
-//             Type::I32,
-//             Type::I16,
-//             Type::I8,
-//             Type::U64,
-//             Type::U32,
-//             Type::U16,
-//             Type::U8,
-//         ],
-//         U8_MAX => vec![
-//             Type::I64,
-//             Type::I32,
-//             Type::I16,
-//             Type::U64,
-//             Type::U32,
-//             Type::U16,
-//             Type::U8,
-//         ],
-//         U16_EDGE..U16_MAX => vec![
-//             Type::I64,
-//             Type::I32,
-//             Type::I16,
-//             Type::U64,
-//             Type::U32,
-//             Type::U16,
-//         ],
-//         U16_MAX => vec![Type::I64, Type::I32, Type::U64, Type::U32, Type::U16],
-//         U32_EDGE..U32_MAX => vec![Type::I64, Type::I32, Type::U64, Type::U32],
-//         U32_MAX => vec![Type::I64, Type::U64, Type::U32],
-//         U64_EDGE..U64_MAX => vec![Type::I64, Type::U64],
-//         U64_MAX => vec![Type::U64],
-//         _ => panic!(),
-//     }
-// }
+    match x {
+        I64_MIN..I32_MIN => vec![Type::I64],
+        I32_MIN..I16_MIN => vec![Type::I64, Type::I32],
+        I16_MIN..I8_MIN => vec![Type::I64, Type::I32, Type::I16],
+        I8_MIN..0 => vec![Type::I64, Type::I32, Type::I16, Type::I8],
+        0..U8_MAX => vec![
+            Type::I64,
+            Type::I32,
+            Type::I16,
+            Type::I8,
+            Type::U64,
+            Type::U32,
+            Type::U16,
+            Type::U8,
+        ],
+        U8_MAX => vec![
+            Type::I64,
+            Type::I32,
+            Type::I16,
+            Type::U64,
+            Type::U32,
+            Type::U16,
+            Type::U8,
+        ],
+        U16_EDGE..U16_MAX => vec![
+            Type::I64,
+            Type::I32,
+            Type::I16,
+            Type::U64,
+            Type::U32,
+            Type::U16,
+        ],
+        U16_MAX => vec![Type::I64, Type::I32, Type::U64, Type::U32, Type::U16],
+        U32_EDGE..U32_MAX => vec![Type::I64, Type::I32, Type::U64, Type::U32],
+        U32_MAX => vec![Type::I64, Type::U64, Type::U32],
+        U64_EDGE..U64_MAX => vec![Type::I64, Type::U64],
+        U64_MAX => vec![Type::U64],
+        _ => panic!(),
+    }
+}
 
+// A 16bit feature that reduces the set of types to `u8`, `i8` `u16` and `i16` to make debugging easier.
+#[cfg(feature = "16")]
 fn possible_integer(x: i128) -> Vec<Type> {
     const I64_MIN: i128 = i64::MIN as i128;
     const I32_MIN: i128 = i32::MIN as i128;
@@ -1216,6 +1385,53 @@ mod tests {
                 next: None,
             },
         ];
-        optimize(&nodes);
+        let optimized_nodes = optimize(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Special(Special::Type),
+                        arg: vec![Value::Variable(Variable::new("x")), Value::Type(Type::U8)]
+                    },
+                    child: None,
+                    next: Some(1)
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable::new("x")),
+                            Value::Literal(Literal::Integer(0))
+                        ]
+                    },
+                    child: None,
+                    next: Some(2)
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Intrinsic(Intrinsic::SubAssign),
+                        arg: vec![
+                            Value::Variable(Variable::new("x")),
+                            Value::Literal(Literal::Integer(1))
+                        ]
+                    },
+                    child: None,
+                    next: Some(3)
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal::Integer(0))]
+                    },
+                    child: None,
+                    next: None
+                }
+            ]
+        );
     }
 }

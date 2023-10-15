@@ -1,0 +1,23 @@
+[
+    [
+        (0, TypeValueState({[120]: Integer(U8(MyRange { start: 0, end: 0 }))})), 
+        (1, TypeValueState({[120]: Integer(U8(MyRange { start: 255, end: 255 }))})), 
+        (2, TypeValueState({[120]: Integer(U8(MyRange { start: 255, end: 255 }))})), 
+        (5, TypeValueState({[120]: Integer(U8(MyRange { start: 255, end: 255 }))})), 
+        (6, TypeValueState({[120]: Integer(U8(MyRange { start: 255, end: 255 }))}))
+    ],
+    [
+        (0, TypeValueState({[120]: Integer(I8(MyRange { start: 0, end: 0 }))})), 
+        (1, TypeValueState({[120]: Integer(I8(MyRange { start: -1, end: -1 }))})), 
+        (2, TypeValueState({[120]: Integer(I8(MyRange { start: -1, end: -1 }))})), 
+        (3, TypeValueState({[120]: Integer(I8(MyRange { start: -1, end: -1 }))})), 
+        (4, TypeValueState({[120]: Integer(I8(MyRange { start: -1, end: -1 }))}))
+    ], 
+    [
+        (0, TypeValueState({[120]: Integer(I16(MyRange { start: 0, end: 0 }))})), 
+        (1, TypeValueState({[120]: Integer(I16(MyRange { start: -1, end: -1 }))})), 
+        (2, TypeValueState({[120]: Integer(I16(MyRange { start: -1, end: -1 }))})), 
+        (3, TypeValueState({[120]: Integer(I16(MyRange { start: -1, end: -1 }))})), 
+        (4, TypeValueState({[120]: Integer(I16(MyRange { start: -1, end: -1 }))}))
+    ]
+]
