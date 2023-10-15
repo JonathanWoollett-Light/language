@@ -30,6 +30,14 @@ pub enum Value {
     Variable(Variable),
     Type(Type),
 }
+impl Value {
+    pub fn literal(&self) -> Option<&Literal> {
+        match self {
+            Self::Literal(literal) => Some(literal),
+            _ => None,
+        }
+    }
+}
 
 impl Default for Value {
     fn default() -> Self {
@@ -41,6 +49,15 @@ impl Default for Value {
 pub enum Literal {
     String(String),
     Integer(Integer),
+}
+
+impl Literal {
+    pub fn integer(&self) -> Option<&Integer> {
+        match self {
+            Self::Integer(integer) => Some(integer),
+            _ => None,
+        }
+    }
 }
 
 pub type Integer = i128;
@@ -179,6 +196,34 @@ pub enum Type {
     I16,
     I32,
     I64,
+    #[allow(dead_code)]
+    Array(Box<Array>),
+}
+impl Type {
+    pub fn bytes(&self) -> usize {
+        match self {
+            Self::U8 => 1,
+            Self::U16 => 2,
+            Self::U32 => 4,
+            Self::U64 => 8,
+            Self::I8 => 1,
+            Self::I16 => 2,
+            Self::I32 => 4,
+            Self::I64 => 8,
+            Self::Array(array) => array.bytes(),
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Default, Clone)]
+pub struct Array {
+    pub item: Type,
+    pub len: usize,
+}
+impl Array {
+    pub fn bytes(&self) -> usize {
+        self.len * self.item.bytes()
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Default, Clone)]

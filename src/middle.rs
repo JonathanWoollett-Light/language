@@ -1,4 +1,4 @@
-#![allow(warnings)]
+#![allow(dead_code)]
 use crate::ast::*;
 use num_traits::bounds::Bounded;
 use num_traits::identities::One;
@@ -6,355 +6,591 @@ use num_traits::identities::Zero;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use tracing::info;
-use tracing::instrument;
+use itertools::Itertools;
 
-// -------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------------------------
+pub fn optimize(nodes: &[Node]) -> Vec<Node> {
+    // Get all possible paths.
+    let (possbile_paths, start) = explore_paths(nodes);
 
-// An inclusive range that supports wrapping around.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MyRange<
-    T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
-> {
-    start: T,
-    end: T,
-}
-impl<
-        T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
-    > Ord for MyRange<T>
-{
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.len().cmp(&other.len())
-    }
+    // Get all complete paths.
+    let complete_paths = reduce_paths(nodes, &possbile_paths, start);
+
+    // Pick the best path.
+    let (best_path, type_state) = pick_best_path(complete_paths);
+
+    // Use the best path to apply optimizations to the nodes.
+    optimize_with_path(nodes, &best_path, type_state)
 }
 
-impl<
-        T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
-    > PartialOrd for MyRange<T>
-{
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<
-        T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
-    > MyRange<T>
-{
-    fn len(&self) -> T {
-        match self.start.cmp(&self.end) {
-            Ordering::Greater => (T::max_value() - self.start) + self.end + T::one(),
-            Ordering::Equal => T::zero(),
-            Ordering::Less => self.end - self.start,
-        }
-    }
-    fn new(start: T, end: T) -> Self {
-        Self { start, end }
-    }
-    fn less_than(&self, x: T) -> bool {
-        self.max() < x
-    }
-    fn greater_than(&self, x: T) -> bool {
-        self.min() > x
-    }
-    fn max(&self) -> T {
-        match self.start.cmp(&self.end) {
-            Ordering::Greater => T::max_value(),
-            Ordering::Equal => self.start,
-            Ordering::Less => self.end,
-        }
-    }
-    fn min(&self) -> T {
-        match self.start.cmp(&self.end) {
-            Ordering::Greater => T::min_value(),
-            Ordering::Equal => self.end,
-            Ordering::Less => self.start,
-        }
-    }
-    fn value(&self) -> Option<T> {
-        if self.start == self.end {
-            Some(self.start)
-        } else {
-            None
-        }
-    }
-}
-
-// Runs updates until there is no change.
-#[instrument(level = "TRACE", skip(nodes))]
-pub fn multi_update(nodes: &[Node]) -> Vec<Node> {
-    todo!()
-}
-
-// Optimizes the code using the given state.
-#[instrument(level = "TRACE", skip(nodes))]
-pub fn evaluate(nodes: &[Node], state: &TypeState) -> Vec<Node> {
-    todo!()
-}
-
-// Returns if a variable appears anywhere in the given nodes.
-#[instrument(level = "TRACE", skip(nodes))]
-pub fn appears(nodes: &[Node], current: &Node) -> bool {
-    let [Value::Variable(Variable {
-        identifier: current_identifier,
-        index: _,
-    }), ..] = current.statement.arg.as_slice()
-    else {
-        panic!()
-    };
-
-    let mut stack = Vec::new();
-    if let Some(next) = current.next {
-        stack.push(next);
-    }
-    if let Some(child) = current.child {
-        stack.push(child);
-    }
-    while let Some(i) = stack.pop() {
-        let node = &nodes[i];
-        let statement = &node.statement;
-        match statement.op {
-            Op::Intrinsic(Intrinsic::Assign) => match statement.arg.as_slice() {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), ..] => {
-                    if identifier == current_identifier {
-                        return true;
-                    }
-                }
-                _ => todo!(),
-            },
-            Op::Syscall(Syscall::Exit) => match statement.arg.as_slice() {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                })] => {
-                    if identifier == current_identifier {
-                        return true;
-                    }
-                }
-                [Value::Literal(_)] => continue,
-                _ => todo!(),
-            },
-            Op::Intrinsic(Intrinsic::AddAssign) => match statement.arg.as_slice() {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                })] => {
-                    if identifier == current_identifier {
-                        return true;
-                    }
-                }
-                _ => todo!(),
-            },
-            _ => todo!(),
-        }
-    }
-    false
-}
-
-pub fn explore_two(nodes: &[Node]) {
-    todo!()
-}
-// Given an incoming state and a node, outputs the possible outgoing states.
-pub fn evaluate_new(node: &Node, incoming_state: &TypeValueState) -> Vec<TypeValueState> {
-    todo!()
-}
-
-#[cfg_attr(test, instrument(level = "TRACE", ret, skip(nodes)))]
-pub fn explore(nodes: &[Node]) -> Vec<TypeValueState> {
-    let Some(node) = nodes.first() else {
-        return Vec::new();
-    };
-
-    let mut end_states = Vec::new();
-
-    let mut stack = Vec::new();
-    append_nodes(&TypeValueState::new(), node, &mut stack);
-    // info!("stack: {stack:?}");
-
-    while let Some(current) = stack.pop() {
-        match (current.next, current.child) {
-            (Some(next), Some(child)) => {
-                append_nodes(&current.state, &nodes[next], &mut stack);
-                append_nodes(&current.state, &nodes[child], &mut stack);
-            }
-            (Some(next), None) => append_nodes(&current.state, &nodes[next], &mut stack),
-            (None, Some(child)) => append_nodes(&current.state, &nodes[child], &mut stack),
-            // If a graph node is reached which has no succeding element, we managed to successfuly evaluate to a leaf of the computational graph, thus we have the full type state of the program.
-            (None, None) => end_states.push(current.state),
-        }
-    }
-    end_states
-}
-
-#[cfg_attr(test, instrument(level = "TRACE", skip(current, succeeding, stack)))]
-fn append_nodes(current: &TypeValueState, succeeding: &Node, stack: &mut Vec<GraphNode>) {
-    let (states, exit) = evaluate_states(current, &succeeding.statement);
-    for state in states {
-        stack.push(GraphNode {
-            state,
-            child: if exit { None } else { succeeding.child },
-            next: if exit { None } else { succeeding.next },
-        });
-    }
-}
-
-#[cfg_attr(test, instrument(level = "TRACE", skip(start, statement)))]
-fn evaluate_states(start: &TypeValueState, statement: &Statement) -> (Vec<TypeValueState>, bool) {
-    let mut exit = false;
-    let states = match statement {
-        Statement {
-            comptime: false,
-            op: Op::Syscall(Syscall::Exit),
-            arg
-        } => {
-            exit = true;
-            match arg.get(..) {
-                Some([Value::Literal(Literal::Integer(_))]) => vec![start.clone()],
-                Some([Value::Variable(Variable { identifier, index: None })]) => {
-                    match start.get(identifier) {
-                        Some(NewValue::Integer(NewValueInteger::I32(_))) => {
-                            vec![start.clone()]
-                        },
-                        None => {
-                            let mut state = start.clone();
-                            state.insert(identifier.clone(), NewValue::Integer(NewValueInteger::I32(MyRange::new(i32::MIN,i32::MAX))));
-                            vec![state]
-                        }
-                        Some(_) => Vec::new(),
-                    }
-                },
-                _ => panic!()
-            }
-        }
-        Statement {
-            comptime: false,
-            op: Op::Intrinsic(Intrinsic::Assign),
-            arg
-        } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
-            let possible = NewValueInteger::possible(*x);
-
-            match start.get(identifier) {
-                Some(NewValue::Integer(existing)) => {
-                    // If the current value in contained in the set of possible values for this
-                    // assignment, continue, else end as this path is invalid.
-                    if let Some(x) = possible.iter().find(|x|x.type_index()==existing.type_index()) {
-                        let mut state = start.clone();
-                        *state.get_mut(identifier).unwrap() = NewValue::Integer(x.clone());
-                        vec![state]
-                    }
-                    else {
-                        Vec::new()
-                    }
-                },
-                None => {
-                    possible.into_iter().map(|p| {
-                        let mut state = start.clone();
-                        state.insert(identifier.clone(), NewValue::Integer(p.clone()));
-                        state
-                    }).collect()
-                }
-            }
-        },
-        Statement {
-            comptime: false,
-            op: Op::Intrinsic(Intrinsic::AddAssign),
-            arg
-        } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
-            let Some(NewValue::Integer(existing)) = start.get(identifier) else {
-                panic!()
-            };
-            match existing.overflowing_add(*x) {
-                Ok(b) => {
-                    let mut state = start.clone();
-                    let Some(NewValue::Integer(c)) = state.get_mut(identifier) else {
-                        panic!()
-                    };
-                    *c = b;
-                    vec![state]
-                },
-                Err(_) => Vec::new()
-            }
-        }
-        Statement {
-            comptime: false,
-            op: Op::Special(Special::Require(Cmp::Gt)),
-            arg
-        } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
-            if let Some(NewValue::Integer(existing)) = start.get(identifier) && let Ok(true) = existing.greater_than(*x) {
-                vec![start.clone()]
-            }
-            else {
-                Vec::new()
-            }
-        }
-        Statement {
-            comptime: false,
-            op: Op::Special(Special::Require(Cmp::Lt)),
-            arg
-        } if let Some([Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(x))]) = arg.get(..) => {
-            if let Some(NewValue::Integer(existing)) = start.get(identifier) && let Ok(true) = existing.less_than(*x) {
-                vec![start.clone()]
-            }
-            else {
-                Vec::new()
-            }
-        }
-        _ => todo!()
-    };
-    (states, exit)
-}
-
-impl Statement {
-    fn is_require(&self) -> bool {
-        matches!(self.op, Op::Special(Special::Require(_)))
-    }
-    fn is_exit(&self) -> bool {
-        matches!(self.op, Op::Syscall(Syscall::Exit))
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct GraphNode {
+    node: usize,
     state: TypeValueState,
-    child: Option<usize>,
-    next: Option<usize>,
+    /// The options for the next node.
+    next: Vec<usize>,
+    /// The options for the other next node (e.g. we cannot evaluate an `if` at compile-time so we need to evaluate both paths).
+    other: Vec<usize>,
+    prev: Option<usize>,
 }
+
+// Applies typical optimizations. E.g. removing unused variables, unreachable code, etc.
+fn optimize_with_path(
+    nodes: &[Node],
+    path: &[Option<TypeValueState>],
+    type_state: TypeState,
+) -> Vec<Node> {
+    assert_eq!(nodes.len(), path.len());
+
+    // Remove unreachable nodes
+    // ---------------------------------------------------------------------------------------------
+    let mut new_nodes = nodes
+        .iter()
+        .cloned()
+        .zip(path.iter().cloned())
+        .map(|(n, p)| p.map(|x| (n, x)))
+        .collect::<Vec<_>>();
+
+    // TODO This is incomplete and currently only works for simple `next` links.
+
+    // Update node links
+    // ---------------------------------------------------------------------------------------------
+    {
+        let mut first = 0;
+        loop {
+            match new_nodes.get(first) {
+                None => unreachable!(),
+                Some(None) => {
+                    first += 1;
+                }
+                Some(Some(_)) => break,
+            }
+        }
+        'outer: loop {
+            let mut second = first;
+            loop {
+                second += 1;
+                match new_nodes.get(second) {
+                    None => {
+                        // In the case there are no next nodes for the `first` node to point to
+                        // (this can happen with an `exit`) set `next` and `child` to `None`.
+                        let (node, _state) = new_nodes[first].as_mut().unwrap();
+                        node.next = None;
+                        node.child = None;
+
+                        break 'outer;
+                    }
+                    Some(None) => continue,
+                    Some(Some(_)) => break,
+                }
+            }
+
+            let (node, _state) = new_nodes[first].as_mut().unwrap();
+            if let Some(next) = &mut node.next {
+                *next = second;
+            }
+            first = second;
+        }
+    }
+
+    // Remove `None` elements
+    // ---------------------------------------------------------------------------------------------
+    let flat = {
+        let mut decrement = 0;
+        for i in (0..new_nodes.len()).rev() {
+            let Some((node, _state)) = &mut new_nodes[i] else {
+                decrement += 1;
+                continue;
+            };
+            if let Some(next) = &mut node.next {
+                *next -= decrement;
+            }
+            if let Some(child) = &mut node.child {
+                *child -= decrement;
+            }
+            decrement = 0;
+        }
+        new_nodes
+            .into_iter()
+            .filter_map(|x| x.map(|(n, _)| n))
+            .collect::<Vec<_>>()
+    };
+
+    // Prepend variable definitions
+    // ---------------------------------------------------------------------------------------------
+    let n = type_state.len();
+    let definition = (1..)
+        .zip(type_state.into_iter())
+        .map(|(i, (identifier, type_value))| Node {
+            statement: Statement {
+                comptime: false,
+                op: Op::Special(Special::Type),
+                arg: vec![
+                    Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }),
+                    Value::Type(type_value),
+                ],
+            },
+            child: None,
+            next: Some(i),
+        });
+    let original = flat.into_iter().map(|mut node| {
+        if let Some(next) = &mut node.next {
+            *next += n;
+        }
+        if let Some(child) = &mut node.child {
+            *child += n;
+        }
+        node
+    });
+
+    definition.chain(original).collect()
+}
+
+fn pick_best_path(
+    paths: Vec<Vec<Option<TypeValueState>>>,
+) -> (Vec<Option<TypeValueState>>, TypeState) {
+    // TODO This is a bad heuristic to pick the best path, this should be improved.
+
+    let (mut min_len, mut min_path) = (paths[0].iter().filter(|x| x.is_some()).count(), 0);
+    for (i, path) in paths.iter().enumerate().skip(1) {
+        let len = path.iter().filter(|x| x.is_some()).count();
+        if len < min_len {
+            min_len = len;
+            min_path = i;
+        }
+    }
+    let type_state =
+        paths[min_path]
+            .iter()
+            .filter_map(|x| x.as_ref())
+            .fold(TypeState::new(), |mut acc, x| {
+                for (ident, value_type) in x.iter() {
+                    acc.insert(ident.clone(), value_type.type_value());
+                }
+                acc
+            });
+
+    (paths[min_path].clone(), type_state)
+}
+
+fn reduce_paths(
+    nodes: &[Node],
+    graph_nodes: &[GraphNode],
+    start: usize,
+) -> Vec<Vec<Option<TypeValueState>>> {
+    #[derive(Debug, Clone)]
+    struct Trace {
+        /// The stack of `GraphNode` that need to be visited to complete the trace, these are
+        /// indices into `graph_nodes`.
+        stack: Vec<usize>,
+        /// The type states for every `node` where `path[i]` corresponds to `nodes[i]`, this is
+        /// filled as the trace pops values from `self.stack`.
+        path: Vec<Option<TypeValueState>>,
+    }
+
+    // The stack of incomplete traces that need to be completed.
+    let mut stack = (0..start)
+        .map(|i| Trace {
+            stack: vec![i],
+            path: vec![None; nodes.len()],
+        })
+        .collect::<Vec<_>>();
+
+    // The set of complete paths. A complete path is a set of `TypeValueState` for every `Node` that
+    // could be encountered given the initial `TypeValueState`.
+    let mut paths = Vec::new();
+
+    while let Some(mut trace) = stack.pop() {
+        let front = trace.stack.pop().unwrap();
+        let graph = &graph_nodes[front];
+        let n = graph.node;
+        let node = &nodes[graph.node];
+
+        // If this node had been previously evaluated it would have a pre-existing state. Here
+        // it should not have been previously evaluated thus should not have a pre-existing state.
+        assert!(trace.path[n].is_none());
+
+        // Add next nodes that need to be evaluated to the trace stack.
+        match node.statement.op {
+            Op::Syscall(Syscall::Exit) => {
+                assert!(graph.next.is_empty());
+                assert!(graph.other.is_empty());
+
+                // Set the state at this node.
+                trace.path[n] = Some(graph.state.clone());
+
+                if trace.stack.is_empty() {
+                    paths.push(trace.path);
+                }
+            }
+            Op::Intrinsic(Intrinsic::If(_)) => {
+                if graph.next.is_empty() && graph.other.is_empty() {
+                    continue;
+                }
+                match (graph.next.is_empty(), graph.other.is_empty()) {
+                    // This condition occurs when a `require` fails.
+                    (true, true) => continue,
+                    (false, false) => {
+                        // Set the state at this node.
+                        trace.path[n] = Some(graph.state.clone());
+
+                        for (a, b) in graph.next.iter().cartesian_product(graph.other.iter()) {
+                            let mut temp = trace.clone();
+                            temp.stack.push(*a);
+                            temp.stack.push(*b);
+                            stack.push(temp);
+                        }
+                    }
+                    (false, true) => {
+                        // This statement can be omitted so we don't set the state.
+
+                        for a in graph.next.iter() {
+                            let mut temp = trace.clone();
+                            temp.stack.push(*a);
+                            stack.push(temp);
+                        }
+                    }
+                    (true, false) => {
+                        // This statement can be omitted so we don't set the state.
+
+                        for b in graph.other.iter() {
+                            let mut temp = trace.clone();
+                            temp.stack.push(*b);
+                            stack.push(temp);
+                        }
+                    }
+                }
+            }
+            Op::Special(Special::Require(_)) => {
+                // This condition occurs when a `require` fails.
+                if graph.next.is_empty() {
+                    continue;
+                }
+
+                // This statement can be omitted so we don't set the state.
+
+                assert!(graph.other.is_empty());
+                for state in graph.next.iter() {
+                    let mut temp = trace.clone();
+                    temp.stack.push(*state);
+                    stack.push(temp);
+                }
+            }
+            _ => {
+                // This condition occurs when a `require` fails.
+                if graph.next.is_empty() {
+                    continue;
+                }
+
+                // Set the state at this node.
+                trace.path[n] = Some(graph.state.clone());
+
+                assert!(graph.other.is_empty());
+                for state in graph.next.iter() {
+                    let mut temp = trace.clone();
+                    temp.stack.push(*state);
+                    stack.push(temp);
+                }
+            }
+        }
+    }
+
+    paths
+}
+
+fn explore_paths(nodes: &[Node]) -> (Vec<GraphNode>, usize) {
+    let initial_possible_states = get_possible_states(&nodes[0], &TypeValueState::new());
+    let number_of_initial_states = initial_possible_states.len();
+
+    let (mut graph_nodes, mut indices) = initial_possible_states
+        .into_iter()
+        .enumerate()
+        .map(|(i, state)| {
+            (
+                GraphNode {
+                    node: 0,
+                    state,
+                    next: Vec::new(),
+                    other: Vec::new(),
+                    prev: None,
+                },
+                i,
+            )
+        })
+        .unzip::<_, _, Vec<_>, Vec<_>>();
+
+    while let Some(index) = indices.pop() {
+        let n = graph_nodes[index].node;
+
+        let mut append =
+            |node_index: usize, graph_index: usize, graph_nodes: &mut Vec<GraphNode>| {
+                get_possible_states(&nodes[node_index], &graph_nodes[graph_index].state)
+                    .into_iter()
+                    .map(|state| {
+                        let j = graph_nodes.len();
+                        indices.push(j);
+                        graph_nodes.push(GraphNode {
+                            node: node_index,
+                            state,
+                            next: Vec::new(),
+                            other: Vec::new(),
+                            prev: Some(graph_index),
+                        });
+                        j
+                    })
+                    .collect()
+            };
+
+        // 1. Relies on the ordering of `nodes` (it will be `child -> next -> outer`).
+        // 2. Only `exit`s are allowed to have no following nodes, otherwise it is an error.
+        match nodes[n].statement.op {
+            Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => {
+                match nodes[n].statement.arg.as_slice() {
+                    [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] =>
+                    {
+                        let y = graph_nodes[index]
+                            .state
+                            .get(identifier)
+                            .unwrap()
+                            .integer()
+                            .unwrap();
+
+                        // If we know the if will be true at compile-time
+                        if y.value() == Some(*x) {
+                            // See 1 & 2
+                            graph_nodes[index].next = append(n + 1, index, &mut graph_nodes);
+                        }
+                        // If we know the if will be false at compile-time
+                        else if y.excludes(*x) {
+                            graph_nodes[index].next = if let Some(next) = nodes[n].next {
+                                append(next, index, &mut graph_nodes)
+                            } else {
+                                // See 2
+                                append(n + 1, index, &mut graph_nodes)
+                            };
+                        } else {
+                            if let Some(child) = nodes[n].child {
+                                graph_nodes[index].next = append(child, index, &mut graph_nodes);
+                            }
+                            graph_nodes[index].other = if let Some(next) = nodes[n].next {
+                                append(next, index, &mut graph_nodes)
+                            } else {
+                                // See 2
+                                append(n + 1, index, &mut graph_nodes)
+                            };
+                        }
+                    }
+                    _ => todo!(),
+                }
+            }
+            Op::Intrinsic(Intrinsic::If(Cmp::Lt)) => {
+                match nodes[n].statement.arg.as_slice() {
+                    [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] =>
+                    {
+                        let y = graph_nodes[index]
+                            .state
+                            .get(identifier)
+                            .unwrap()
+                            .integer()
+                            .unwrap();
+
+                        // If we know the if will be true at compile-time
+                        if y.max() < *x {
+                            // See 1 & 2
+                            graph_nodes[index].next = append(n + 1, index, &mut graph_nodes);
+                        }
+                        // If we know the if will be false at compile-time
+                        else if y.min() >= *x {
+                            graph_nodes[index].next = if let Some(next) = nodes[n].next {
+                                append(next, index, &mut graph_nodes)
+                            } else {
+                                // See 2
+                                append(n + 1, index, &mut graph_nodes)
+                            };
+                        } else {
+                            if let Some(child) = nodes[n].child {
+                                graph_nodes[index].next = append(child, index, &mut graph_nodes);
+                            }
+                            graph_nodes[index].other = if let Some(next) = nodes[n].next {
+                                append(next, index, &mut graph_nodes)
+                            } else {
+                                // See 2
+                                append(n + 1, index, &mut graph_nodes)
+                            };
+                        }
+                    }
+                    _ => todo!(),
+                }
+            }
+            // See 2
+            Op::Syscall(Syscall::Exit) => continue,
+            // See 1 & 2
+            _ => {
+                graph_nodes[index].next = append(n + 1, index, &mut graph_nodes);
+            }
+        }
+    }
+
+    (graph_nodes, number_of_initial_states)
+}
+
+/// Given an incoming state (`state`) and a node, outputs the possible outgoing states.
+fn get_possible_states(node: &Node, state: &TypeValueState) -> Vec<TypeValueState> {
+    let statement = &node.statement;
+    match statement.op {
+        Op::Syscall(Syscall::Exit) => match statement.arg.as_slice() {
+            // TODO Check the variable for `_integer` fits into i32.
+            [Value::Literal(Literal::Integer(_integer))] => vec![state.clone()],
+            // TODO Check the variable for `identifier` fits into i32.
+            [Value::Variable(Variable {
+                identifier: _,
+                index: None,
+            })] => vec![state.clone()],
+            _ => todo!(),
+        },
+        Op::Intrinsic(Intrinsic::Assign) => match statement.arg.as_slice() {
+            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
+                match state.get(identifier) {
+                    // Iterates over the set of integer types which could contain `x`, returning a new state for each possibility.
+                    None => TypeValueInteger::possible(*x)
+                        .into_iter()
+                        .map(|p| {
+                            let mut new_state = state.clone();
+                            new_state.insert(identifier.clone(), TypeValue::Integer(p));
+                            new_state
+                        })
+                        .collect(),
+                    _ => todo!(),
+                }
+            }
+            _ => todo!(),
+        },
+        Op::Intrinsic(Intrinsic::SubAssign) => match statement.arg.as_slice() {
+            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
+                match state.get(identifier) {
+                    Some(TypeValue::Integer(y)) => match y.overflowing_sub(*x) {
+                        Ok(z) => {
+                            let mut new_state = state.clone();
+                            *new_state
+                                .get_mut(identifier)
+                                .unwrap()
+                                .integer_mut()
+                                .unwrap() = z;
+                            vec![new_state]
+                        }
+                        _ => todo!(),
+                    },
+                    _ => todo!(),
+                }
+            }
+            _ => todo!(),
+        },
+        Op::Intrinsic(Intrinsic::AddAssign) => match statement.arg.as_slice() {
+            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
+                match state.get(identifier) {
+                    Some(TypeValue::Integer(y)) => match y.overflowing_add(*x) {
+                        Ok(z) => {
+                            let mut new_state = state.clone();
+                            *new_state
+                                .get_mut(identifier)
+                                .unwrap()
+                                .integer_mut()
+                                .unwrap() = z;
+                            vec![new_state]
+                        }
+                        _ => todo!(),
+                    },
+                    _ => todo!(),
+                }
+            }
+            _ => todo!(),
+        },
+        Op::Intrinsic(Intrinsic::If(_)) => match statement.arg.as_slice() {
+            [Value::Literal(Literal::Integer(_)), Value::Variable(Variable { identifier, .. })]
+            | [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(_))] => {
+                match state.get(identifier) {
+                    Some(TypeValue::Integer(_)) => vec![state.clone()],
+                    _ => todo!(),
+                }
+            }
+            _ => todo!(),
+        },
+        Op::Special(Special::Require(Cmp::Ge)) => match statement.arg.as_slice() {
+            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
+                match state.get(identifier) {
+                    Some(TypeValue::Integer(y)) => match y.greater_than_or_equal(*x) {
+                        true => {
+                            let mut new_state = state.clone();
+                            let integer = new_state
+                                .get_mut(identifier)
+                                .unwrap()
+                                .integer_mut()
+                                .unwrap();
+                            integer.set_min(*x).unwrap();
+                            vec![new_state]
+                        }
+                        false => Vec::new(),
+                    },
+                    _ => todo!(),
+                }
+            }
+            _ => todo!(),
+        },
+        Op::Special(Special::Require(Cmp::Le)) => match statement.arg.as_slice() {
+            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
+                match state.get(identifier) {
+                    Some(TypeValue::Integer(y)) => match y.less_than_or_equal(*x) {
+                        true => {
+                            let mut new_state = state.clone();
+                            let integer = new_state
+                                .get_mut(identifier)
+                                .unwrap()
+                                .integer_mut()
+                                .unwrap();
+                            integer.set_max(*x).unwrap();
+                            vec![new_state]
+                        }
+                        false => Vec::new(),
+                    },
+                    _ => todo!(),
+                }
+            }
+            _ => todo!(),
+        },
+        _ => todo!(),
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct TypeValueState(HashMap<Identifier, NewValue>);
+pub struct TypeValueState(HashMap<Identifier, TypeValue>);
 impl TypeValueState {
     fn new() -> Self {
         Self(HashMap::new())
     }
-    fn iter(&self) -> std::collections::hash_map::Iter<'_, Identifier, NewValue> {
+    fn iter(&self) -> std::collections::hash_map::Iter<'_, Identifier, TypeValue> {
         self.0.iter()
     }
-    fn into_iter(self) -> std::collections::hash_map::IntoIter<Identifier, NewValue> {
+    fn into_iter(self) -> std::collections::hash_map::IntoIter<Identifier, TypeValue> {
         self.0.into_iter()
     }
     fn len(&self) -> usize {
         self.0.len()
     }
-    fn get(&self, key: &Identifier) -> Option<&NewValue> {
+    fn get(&self, key: &Identifier) -> Option<&TypeValue> {
         self.0.get(key)
     }
-    fn get_mut(&mut self, key: &Identifier) -> Option<&mut NewValue> {
+    fn get_mut(&mut self, key: &Identifier) -> Option<&mut TypeValue> {
         self.0.get_mut(key)
     }
-    fn insert(&mut self, key: Identifier, value: NewValue) -> Option<NewValue> {
+    fn insert(&mut self, key: Identifier, value: TypeValue) -> Option<TypeValue> {
         self.0.insert(key, value)
     }
 }
-#[derive(Debug, Clone, Eq)]
-pub struct TypeState(HashMap<Identifier, Type>);
 
+#[derive(Debug, Clone)]
+struct TypeState(HashMap<Identifier, Type>);
 impl TypeState {
     fn new() -> Self {
         Self(HashMap::new())
@@ -379,80 +615,24 @@ impl TypeState {
     }
 }
 
-impl Ord for TypeState {
-    fn cmp(&self, other: &Self) -> Ordering {
-        let lhs = self.iter().map(|(_key, value)| value.cost()).sum::<u64>();
-        let rhs = other.iter().map(|(_key, value)| value.cost()).sum::<u64>();
-        lhs.cmp(&rhs)
-    }
-}
-
-impl PartialOrd for TypeState {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for TypeState {
-    fn eq(&self, other: &Self) -> bool {
-        self.len() == other.len()
-            && self.iter().all(
-                |(key, value)| matches!(other.get(key), Some(other_value) if value == other_value),
-            )
-    }
-}
-
-impl From<TypeValueState> for TypeState {
-    fn from(x: TypeValueState) -> Self {
-        Self(
-            x.into_iter()
-                .map(|(key, value)| (key, Type::from(value)))
-                .collect(),
-        )
-    }
-}
-
-impl From<NewValue> for Type {
-    fn from(x: NewValue) -> Type {
-        match x {
-            NewValue::Integer(NewValueInteger::U8(_)) => Self::U8,
-            NewValue::Integer(NewValueInteger::U16(_)) => Self::U16,
-            NewValue::Integer(NewValueInteger::U32(_)) => Self::U32,
-            NewValue::Integer(NewValueInteger::U64(_)) => Self::U64,
-            NewValue::Integer(NewValueInteger::I8(_)) => Self::I8,
-            NewValue::Integer(NewValueInteger::I16(_)) => Self::I16,
-            NewValue::Integer(NewValueInteger::I32(_)) => Self::I32,
-            NewValue::Integer(NewValueInteger::I64(_)) => Self::I64,
-        }
-    }
-}
-impl Type {
-    fn cost(&self) -> u64 {
-        match self {
-            Self::U8 => 0,
-            Self::U16 => 1,
-            Self::U32 => 2,
-            Self::U64 => 3,
-            Self::I8 => 4,
-            Self::I16 => 5,
-            Self::I32 => 6,
-            Self::I64 => 7,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NewValue {
-    Integer(NewValueInteger),
+enum TypeValue {
+    Integer(TypeValueInteger),
 }
 #[allow(unreachable_patterns)]
-impl NewValue {
+impl TypeValue {
+    fn integer_mut(&mut self) -> Option<&mut TypeValueInteger> {
+        match self {
+            Self::Integer(x) => Some(x),
+            _ => None,
+        }
+    }
     pub fn type_value(&self) -> Type {
         match self {
             Self::Integer(int) => int.type_value(),
         }
     }
-    fn integer(&self) -> Option<&NewValueInteger> {
+    fn integer(&self) -> Option<&TypeValueInteger> {
         match self {
             Self::Integer(integer) => Some(integer),
             _ => None,
@@ -461,7 +641,7 @@ impl NewValue {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NewValueInteger {
+enum TypeValueInteger {
     U8(MyRange<u8>),
     U16(MyRange<u16>),
     U32(MyRange<u32>),
@@ -471,7 +651,8 @@ pub enum NewValueInteger {
     I32(MyRange<i32>),
     I64(MyRange<i64>),
 }
-impl NewValueInteger {
+
+impl TypeValueInteger {
     pub fn type_value(&self) -> Type {
         match self {
             Self::U8(_) => Type::U8,
@@ -484,6 +665,187 @@ impl NewValueInteger {
             Self::I64(_) => Type::I64,
         }
     }
+
+    fn max(&self) -> i128 {
+        match self {
+            Self::U8(range) => range.max() as i128,
+            Self::U16(range) => range.max() as i128,
+            Self::U32(range) => range.max() as i128,
+            Self::U64(range) => range.max() as i128,
+            Self::I8(range) => range.max() as i128,
+            Self::I16(range) => range.max() as i128,
+            Self::I32(range) => range.max() as i128,
+            Self::I64(range) => range.max() as i128,
+        }
+    }
+
+    fn min(&self) -> i128 {
+        match self {
+            Self::U8(range) => range.min() as i128,
+            Self::U16(range) => range.min() as i128,
+            Self::U32(range) => range.min() as i128,
+            Self::U64(range) => range.min() as i128,
+            Self::I8(range) => range.min() as i128,
+            Self::I16(range) => range.min() as i128,
+            Self::I32(range) => range.min() as i128,
+            Self::I64(range) => range.min() as i128,
+        }
+    }
+
+    fn set_min(&mut self, rhs: i128) -> Result<(), ()> {
+        match self {
+            Self::U8(range) => match (rhs < u8::MIN as i128, rhs > u8::MAX as i128) {
+                (false, true) => Err(()),
+                (true, false) => Ok(()),
+                (false, false) => {
+                    range.set_min(rhs as u8);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+            Self::U16(range) => match (rhs < u16::MIN as i128, rhs > u16::MAX as i128) {
+                (false, true) => Err(()),
+                (true, false) => Ok(()),
+                (false, false) => {
+                    range.set_min(rhs as u16);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+            Self::U32(range) => match (rhs < u32::MIN as i128, rhs > u32::MAX as i128) {
+                (false, true) => Err(()),
+                (true, false) => Ok(()),
+                (false, false) => {
+                    range.set_min(rhs as u32);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+            Self::U64(range) => match (rhs < u64::MIN as i128, rhs > u64::MAX as i128) {
+                (false, true) => Err(()),
+                (true, false) => Ok(()),
+                (false, false) => {
+                    range.set_min(rhs as u64);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+            Self::I8(range) => match (rhs < i8::MIN as i128, rhs > i8::MAX as i128) {
+                (false, true) => Err(()),
+                (true, false) => Ok(()),
+                (false, false) => {
+                    range.set_min(rhs as i8);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+            Self::I16(range) => match (rhs < i16::MIN as i128, rhs > i16::MAX as i128) {
+                (false, true) => Err(()),
+                (true, false) => Ok(()),
+                (false, false) => {
+                    range.set_min(rhs as i16);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+            Self::I32(range) => match (rhs < i32::MIN as i128, rhs > i32::MAX as i128) {
+                (false, true) => Err(()),
+                (true, false) => Ok(()),
+                (false, false) => {
+                    range.set_min(rhs as i32);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+            Self::I64(range) => match (rhs < i64::MIN as i128, rhs > i64::MAX as i128) {
+                (false, true) => Err(()),
+                (true, false) => Ok(()),
+                (false, false) => {
+                    range.set_min(rhs as i64);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+        }
+    }
+
+    fn set_max(&mut self, rhs: i128) -> Result<(), ()> {
+        match self {
+            Self::U8(range) => match (rhs < u8::MIN as i128, rhs > u8::MAX as i128) {
+                (false, true) => Ok(()),
+                (true, false) => Err(()),
+                (false, false) => {
+                    range.set_max(rhs as u8);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+            Self::U16(range) => match (rhs < u16::MIN as i128, rhs > u16::MAX as i128) {
+                (false, true) => Ok(()),
+                (true, false) => Err(()),
+                (false, false) => {
+                    range.set_max(rhs as u16);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+            Self::U32(range) => match (rhs < u32::MIN as i128, rhs > u32::MAX as i128) {
+                (false, true) => Ok(()),
+                (true, false) => Err(()),
+                (false, false) => {
+                    range.set_max(rhs as u32);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+            Self::U64(range) => match (rhs < u64::MIN as i128, rhs > u64::MAX as i128) {
+                (false, true) => Ok(()),
+                (true, false) => Err(()),
+                (false, false) => {
+                    range.set_max(rhs as u64);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+            Self::I8(range) => match (rhs < i8::MIN as i128, rhs > i8::MAX as i128) {
+                (false, true) => Ok(()),
+                (true, false) => Err(()),
+                (false, false) => {
+                    range.set_max(rhs as i8);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+            Self::I16(range) => match (rhs < i16::MIN as i128, rhs > i16::MAX as i128) {
+                (false, true) => Ok(()),
+                (true, false) => Err(()),
+                (false, false) => {
+                    range.set_max(rhs as i16);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+            Self::I32(range) => match (rhs < i32::MIN as i128, rhs > i32::MAX as i128) {
+                (false, true) => Ok(()),
+                (true, false) => Err(()),
+                (false, false) => {
+                    range.set_max(rhs as i32);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+            Self::I64(range) => match (rhs < i64::MIN as i128, rhs > i64::MAX as i128) {
+                (false, true) => Ok(()),
+                (true, false) => Err(()),
+                (false, false) => {
+                    range.set_max(rhs as i64);
+                    Ok(())
+                }
+                (true, true) => unreachable!(),
+            },
+        }
+    }
+
     fn type_index(&self) -> u8 {
         match self {
             Self::U8(_) => 0,
@@ -496,78 +858,248 @@ impl NewValueInteger {
             Self::I64(_) => 7,
         }
     }
-    fn less_than(&self, rhs: i128) -> Result<bool, ()> {
+
+    fn contains(&self, rhs: i128) -> bool {
+        match self {
+            Self::U8(range) => match u8::try_from(rhs) {
+                Err(_) => false,
+                Ok(x) => range.contains(x),
+            },
+            Self::U16(range) => match u16::try_from(rhs) {
+                Err(_) => false,
+                Ok(x) => range.contains(x),
+            },
+            Self::U32(range) => match u32::try_from(rhs) {
+                Err(_) => false,
+                Ok(x) => range.contains(x),
+            },
+            Self::U64(range) => match u64::try_from(rhs) {
+                Err(_) => false,
+                Ok(x) => range.contains(x),
+            },
+            Self::I8(range) => match i8::try_from(rhs) {
+                Err(_) => false,
+                Ok(x) => range.contains(x),
+            },
+            Self::I16(range) => match i16::try_from(rhs) {
+                Err(_) => false,
+                Ok(x) => range.contains(x),
+            },
+            Self::I32(range) => match i32::try_from(rhs) {
+                Err(_) => false,
+                Ok(x) => range.contains(x),
+            },
+            Self::I64(range) => match i64::try_from(rhs) {
+                Err(_) => false,
+                Ok(x) => range.contains(x),
+            },
+        }
+    }
+
+    fn excludes(&self, rhs: i128) -> bool {
+        match self {
+            Self::U8(range) => match u8::try_from(rhs) {
+                Err(_) => true,
+                Ok(x) => range.excludes(x),
+            },
+            Self::U16(range) => match u16::try_from(rhs) {
+                Err(_) => true,
+                Ok(x) => range.excludes(x),
+            },
+            Self::U32(range) => match u32::try_from(rhs) {
+                Err(_) => true,
+                Ok(x) => range.excludes(x),
+            },
+            Self::U64(range) => match u64::try_from(rhs) {
+                Err(_) => true,
+                Ok(x) => range.excludes(x),
+            },
+            Self::I8(range) => match i8::try_from(rhs) {
+                Err(_) => true,
+                Ok(x) => range.excludes(x),
+            },
+            Self::I16(range) => match i16::try_from(rhs) {
+                Err(_) => true,
+                Ok(x) => range.excludes(x),
+            },
+            Self::I32(range) => match i32::try_from(rhs) {
+                Err(_) => true,
+                Ok(x) => range.excludes(x),
+            },
+            Self::I64(range) => match i64::try_from(rhs) {
+                Err(_) => true,
+                Ok(x) => range.excludes(x),
+            },
+        }
+    }
+
+    fn less_than_or_equal(&self, rhs: i128) -> bool {
+        match self {
+            Self::U8(range) => match (rhs < u8::MIN as i128, rhs > u8::MAX as i128) {
+                (false, true) => false,
+                (true, false) => true,
+                (false, false) => range.less_than_or_equal(rhs as u8),
+                (true, true) => unreachable!(),
+            },
+            Self::U16(range) => match (rhs < u16::MIN as i128, rhs > u16::MAX as i128) {
+                (false, true) => false,
+                (true, false) => true,
+                (false, false) => range.less_than_or_equal(rhs as u16),
+                (true, true) => unreachable!(),
+            },
+            Self::U32(range) => match (rhs < u32::MIN as i128, rhs > u32::MAX as i128) {
+                (false, true) => false,
+                (true, false) => true,
+                (false, false) => range.less_than_or_equal(rhs as u32),
+                (true, true) => unreachable!(),
+            },
+            Self::U64(range) => match (rhs < u64::MIN as i128, rhs > u64::MAX as i128) {
+                (false, true) => false,
+                (true, false) => true,
+                (false, false) => range.less_than_or_equal(rhs as u64),
+                (true, true) => unreachable!(),
+            },
+            Self::I8(range) => match (rhs < i8::MIN as i128, rhs > i8::MAX as i128) {
+                (false, true) => false,
+                (true, false) => true,
+                (false, false) => range.less_than_or_equal(rhs as i8),
+                (true, true) => unreachable!(),
+            },
+            Self::I16(range) => match (rhs < i16::MIN as i128, rhs > i16::MAX as i128) {
+                (false, true) => false,
+                (true, false) => true,
+                (false, false) => range.less_than_or_equal(rhs as i16),
+                (true, true) => unreachable!(),
+            },
+            Self::I32(range) => match (rhs < i32::MIN as i128, rhs > i32::MAX as i128) {
+                (false, true) => false,
+                (true, false) => true,
+                (false, false) => range.less_than_or_equal(rhs as i32),
+                (true, true) => unreachable!(),
+            },
+            Self::I64(range) => match (rhs < i64::MIN as i128, rhs > i64::MAX as i128) {
+                (false, true) => false,
+                (true, false) => true,
+                (false, false) => range.less_than_or_equal(rhs as i64),
+                (true, true) => unreachable!(),
+            },
+        }
+    }
+
+    fn greater_than_or_equal(&self, rhs: i128) -> bool {
+        match self {
+            Self::U8(range) => match (rhs < u8::MIN as i128, rhs > u8::MAX as i128) {
+                (false, true) => true,
+                (true, false) => false,
+                (false, false) => range.greater_than_or_equal(rhs as u8),
+                (true, true) => unreachable!(),
+            },
+            Self::U16(range) => match (rhs < u16::MIN as i128, rhs > u16::MAX as i128) {
+                (false, true) => true,
+                (true, false) => false,
+                (false, false) => range.greater_than_or_equal(rhs as u16),
+                (true, true) => unreachable!(),
+            },
+            Self::U32(range) => match (rhs < u32::MIN as i128, rhs > u32::MAX as i128) {
+                (false, true) => true,
+                (true, false) => false,
+                (false, false) => range.greater_than_or_equal(rhs as u32),
+                (true, true) => unreachable!(),
+            },
+            Self::U64(range) => match (rhs < u64::MIN as i128, rhs > u64::MAX as i128) {
+                (false, true) => true,
+                (true, false) => false,
+                (false, false) => range.greater_than_or_equal(rhs as u64),
+                (true, true) => unreachable!(),
+            },
+            Self::I8(range) => match (rhs < i8::MIN as i128, rhs > i8::MAX as i128) {
+                (false, true) => true,
+                (true, false) => false,
+                (false, false) => range.greater_than_or_equal(rhs as i8),
+                (true, true) => unreachable!(),
+            },
+            Self::I16(range) => match (rhs < i16::MIN as i128, rhs > i16::MAX as i128) {
+                (false, true) => true,
+                (true, false) => false,
+                (false, false) => range.greater_than_or_equal(rhs as i16),
+                (true, true) => unreachable!(),
+            },
+            Self::I32(range) => match (rhs < i32::MIN as i128, rhs > i32::MAX as i128) {
+                (false, true) => true,
+                (true, false) => false,
+                (false, false) => range.greater_than_or_equal(rhs as i32),
+                (true, true) => unreachable!(),
+            },
+            Self::I64(range) => match (rhs < i64::MIN as i128, rhs > i64::MAX as i128) {
+                (false, true) => true,
+                (true, false) => false,
+                (false, false) => range.greater_than_or_equal(rhs as i64),
+                (true, true) => unreachable!(),
+            },
+        }
+    }
+
+    fn overflowing_sub(&self, rhs: i128) -> Result<Self, ()> {
         match self {
             Self::U8(range) => {
                 let rhs = u8::try_from(rhs).map_err(drop)?;
-                Ok(range.less_than(rhs))
+                Ok(Self::U8(MyRange::new(
+                    range.start.overflowing_sub(rhs).0,
+                    range.end.overflowing_sub(rhs).0,
+                )))
             }
             Self::U16(range) => {
                 let rhs = u16::try_from(rhs).map_err(drop)?;
-                Ok(range.less_than(rhs))
+                Ok(Self::U16(MyRange::new(
+                    range.start.overflowing_sub(rhs).0,
+                    range.end.overflowing_sub(rhs).0,
+                )))
             }
             Self::U32(range) => {
                 let rhs = u32::try_from(rhs).map_err(drop)?;
-                Ok(range.less_than(rhs))
+                Ok(Self::U32(MyRange::new(
+                    range.start.overflowing_sub(rhs).0,
+                    range.end.overflowing_sub(rhs).0,
+                )))
             }
             Self::U64(range) => {
                 let rhs = u64::try_from(rhs).map_err(drop)?;
-                Ok(range.less_than(rhs))
+                Ok(Self::U64(MyRange::new(
+                    range.start.overflowing_sub(rhs).0,
+                    range.end.overflowing_sub(rhs).0,
+                )))
             }
             Self::I8(range) => {
                 let rhs = i8::try_from(rhs).map_err(drop)?;
-                Ok(range.less_than(rhs))
+                Ok(Self::I8(MyRange::new(
+                    range.start.overflowing_sub(rhs).0,
+                    range.end.overflowing_sub(rhs).0,
+                )))
             }
             Self::I16(range) => {
                 let rhs = i16::try_from(rhs).map_err(drop)?;
-                Ok(range.less_than(rhs))
+                Ok(Self::I16(MyRange::new(
+                    range.start.overflowing_sub(rhs).0,
+                    range.end.overflowing_sub(rhs).0,
+                )))
             }
             Self::I32(range) => {
                 let rhs = i32::try_from(rhs).map_err(drop)?;
-                Ok(range.less_than(rhs))
+                Ok(Self::I32(MyRange::new(
+                    range.start.overflowing_sub(rhs).0,
+                    range.end.overflowing_sub(rhs).0,
+                )))
             }
             Self::I64(range) => {
                 let rhs = i64::try_from(rhs).map_err(drop)?;
-                Ok(range.less_than(rhs))
+                Ok(Self::I64(MyRange::new(
+                    range.start.overflowing_sub(rhs).0,
+                    range.end.overflowing_sub(rhs).0,
+                )))
             }
         }
     }
-    fn greater_than(&self, rhs: i128) -> Result<bool, ()> {
-        match self {
-            Self::U8(range) => {
-                let rhs = u8::try_from(rhs).map_err(drop)?;
-                Ok(range.greater_than(rhs))
-            }
-            Self::U16(range) => {
-                let rhs = u16::try_from(rhs).map_err(drop)?;
-                Ok(range.greater_than(rhs))
-            }
-            Self::U32(range) => {
-                let rhs = u32::try_from(rhs).map_err(drop)?;
-                Ok(range.greater_than(rhs))
-            }
-            Self::U64(range) => {
-                let rhs = u64::try_from(rhs).map_err(drop)?;
-                Ok(range.greater_than(rhs))
-            }
-            Self::I8(range) => {
-                let rhs = i8::try_from(rhs).map_err(drop)?;
-                Ok(range.greater_than(rhs))
-            }
-            Self::I16(range) => {
-                let rhs = i16::try_from(rhs).map_err(drop)?;
-                Ok(range.greater_than(rhs))
-            }
-            Self::I32(range) => {
-                let rhs = i32::try_from(rhs).map_err(drop)?;
-                Ok(range.greater_than(rhs))
-            }
-            Self::I64(range) => {
-                let rhs = i64::try_from(rhs).map_err(drop)?;
-                Ok(range.greater_than(rhs))
-            }
-        }
-    }
+
     fn overflowing_add(&self, rhs: i128) -> Result<Self, ()> {
         match self {
             Self::U8(range) => {
@@ -628,6 +1160,8 @@ impl NewValueInteger {
             }
         }
     }
+
+    #[cfg(not(feature = "16"))]
     fn possible(x: i128) -> Vec<Self> {
         const I64_MIN: i128 = i64::MIN as i128;
         const I32_MIN: i128 = i32::MIN as i128;
@@ -711,6 +1245,47 @@ impl NewValueInteger {
             _ => panic!(),
         }
     }
+
+    // A 16bit feature that reduces the set of types to `u8`, `i8` `u16` and `i16` to make debugging easier.
+    #[cfg(feature = "16")]
+    fn possible(x: i128) -> Vec<Self> {
+        const I64_MIN: i128 = i64::MIN as i128;
+        const I32_MIN: i128 = i32::MIN as i128;
+        const I16_MIN: i128 = i16::MIN as i128;
+        const I8_MIN: i128 = i8::MIN as i128;
+        const U64_MAX: i128 = u64::MAX as i128;
+        const U32_MAX: i128 = u32::MAX as i128;
+        const U16_MAX: i128 = u16::MAX as i128;
+        const U8_MAX: i128 = u8::MAX as i128;
+        const U64_EDGE: i128 = u32::MAX as i128 + 1;
+        const U32_EDGE: i128 = u16::MAX as i128 + 1;
+        const U16_EDGE: i128 = u8::MAX as i128 + 1;
+
+        match x {
+            I16_MIN..I8_MIN => vec![Self::I16(MyRange::new(x as i16, x as i16))],
+            I8_MIN..0 => vec![
+                Self::I16(MyRange::new(x as i16, x as i16)),
+                Self::I8(MyRange::new(x as i8, x as i8)),
+            ],
+            0..U8_MAX => vec![
+                Self::I16(MyRange::new(x as i16, x as i16)),
+                Self::I8(MyRange::new(x as i8, x as i8)),
+                Self::U16(MyRange::new(x as u16, x as u16)),
+                Self::U8(MyRange::new(x as u8, x as u8)),
+            ],
+            U8_MAX => vec![
+                Self::I16(MyRange::new(x as i16, x as i16)),
+                Self::U16(MyRange::new(x as u16, x as u16)),
+                Self::U8(MyRange::new(x as u8, x as u8)),
+            ],
+            U16_EDGE..U16_MAX => vec![
+                Self::I16(MyRange::new(x as i16, x as i16)),
+                Self::U16(MyRange::new(x as u16, x as u16)),
+            ],
+            U16_MAX => vec![Self::U16(MyRange::new(x as u16, x as u16))],
+            _ => panic!(),
+        }
+    }
     fn value(&self) -> Option<i128> {
         match self {
             Self::U8(x) => x.value().map(i128::from),
@@ -724,6 +1299,7 @@ impl NewValueInteger {
         }
     }
 }
+#[cfg(not(feature = "16"))]
 fn possible_integer(x: i128) -> Vec<Type> {
     const I64_MIN: i128 = i64::MIN as i128;
     const I32_MIN: i128 = i32::MIN as i128;
@@ -778,34 +1354,131 @@ fn possible_integer(x: i128) -> Vec<Type> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn range_len() {
-        assert_eq!(
-            MyRange {
-                start: 0u8,
-                end: 255u8
-            }
-            .len(),
-            255u8
-        );
-        assert_eq!(
-            MyRange {
-                start: 1u8,
-                end: 0u8
-            }
-            .len(),
-            255u8
-        );
-        assert_eq!(
-            MyRange {
-                start: 11u8,
-                end: 10u8
-            }
-            .len(),
-            255u8
-        );
+// A 16bit feature that reduces the set of types to `u8`, `i8` `u16` and `i16` to make debugging easier.
+#[cfg(feature = "16")]
+fn possible_integer(x: i128) -> Vec<Type> {
+    const I64_MIN: i128 = i64::MIN as i128;
+    const I32_MIN: i128 = i32::MIN as i128;
+    const I16_MIN: i128 = i16::MIN as i128;
+    const I8_MIN: i128 = i8::MIN as i128;
+    const U64_MAX: i128 = u64::MAX as i128;
+    const U32_MAX: i128 = u32::MAX as i128;
+    const U16_MAX: i128 = u16::MAX as i128;
+    const U8_MAX: i128 = u8::MAX as i128;
+    const U64_EDGE: i128 = u32::MAX as i128 + 1;
+    const U32_EDGE: i128 = u16::MAX as i128 + 1;
+    const U16_EDGE: i128 = u8::MAX as i128 + 1;
+
+    match x {
+        I16_MIN..I8_MIN => vec![Type::I16],
+        I8_MIN..0 => vec![Type::I16, Type::I8],
+        0..U8_MAX => vec![Type::I16, Type::I8, Type::U16, Type::U8],
+        U8_MAX => vec![Type::I16, Type::U16, Type::U8],
+        U16_EDGE..U16_MAX => vec![Type::I16, Type::U16],
+        U16_MAX => vec![Type::U16],
+        _ => panic!(),
+    }
+}
+
+// An inclusive range that supports wrapping around.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MyRange<
+    T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
+> {
+    start: T,
+    end: T,
+}
+impl<
+        T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
+    > Ord for MyRange<T>
+{
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.len().cmp(&other.len())
+    }
+}
+
+impl<
+        T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
+    > PartialOrd for MyRange<T>
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<
+        T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
+    > MyRange<T>
+{
+    fn len(&self) -> T {
+        match self.start.cmp(&self.end) {
+            Ordering::Greater => (T::max_value() - self.start) + self.end + T::one(),
+            Ordering::Equal => T::zero(),
+            Ordering::Less => self.end - self.start,
+        }
+    }
+    fn new(start: T, end: T) -> Self {
+        Self { start, end }
+    }
+    fn less_than(&self, x: T) -> bool {
+        self.max() < x
+    }
+    fn greater_than(&self, x: T) -> bool {
+        self.min() > x
+    }
+    fn greater_than_or_equal(&self, x: T) -> bool {
+        self.min() >= x
+    }
+    fn less_than_or_equal(&self, x: T) -> bool {
+        self.max() <= x
+    }
+    fn contains(&self, x: T) -> bool {
+        self.min() <= x && self.max() >= x
+    }
+    fn excludes(&self, x: T) -> bool {
+        self.min() > x || self.max() < x
+    }
+    fn max(&self) -> T {
+        match self.start.cmp(&self.end) {
+            Ordering::Greater => T::max_value(),
+            Ordering::Equal => self.start,
+            Ordering::Less => self.end,
+        }
+    }
+    fn min(&self) -> T {
+        match self.start.cmp(&self.end) {
+            Ordering::Greater => T::min_value(),
+            Ordering::Equal => self.end,
+            Ordering::Less => self.start,
+        }
+    }
+    fn set_max(&mut self, x: T) {
+        match self.start.cmp(&self.end) {
+            Ordering::Greater => todo!(),
+            Ordering::Equal => match x.cmp(&self.start) {
+                Ordering::Greater => {}
+                Ordering::Equal => {}
+                Ordering::Less => todo!(),
+            },
+            Ordering::Less => todo!(),
+        }
+    }
+    fn set_min(&mut self, x: T) {
+        match self.start.cmp(&self.end) {
+            Ordering::Greater => todo!(),
+            Ordering::Equal => match x.cmp(&self.start) {
+                Ordering::Greater => todo!(),
+                Ordering::Equal => {}
+                Ordering::Less => {}
+            },
+            Ordering::Less => todo!(),
+        }
+    }
+    fn value(&self) -> Option<T> {
+        if self.start == self.end {
+            Some(self.start)
+        } else {
+            None
+        }
     }
 }

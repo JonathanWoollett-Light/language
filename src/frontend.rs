@@ -365,6 +365,27 @@ pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Node> {
     stack
 }
 
+pub fn get_cmp<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Cmp {
+    match bytes.next().map(Result::unwrap) {
+        Some(b'=') => Cmp::Eq,
+        Some(b'>') => match bytes.peek().map(|r| r.as_ref().unwrap()) {
+            Some(b'=') => {
+                bytes.next().unwrap().unwrap();
+                Cmp::Ge
+            }
+            _ => Cmp::Gt,
+        },
+        Some(b'<') => match bytes.peek().map(|r| r.as_ref().unwrap()) {
+            Some(b'=') => {
+                bytes.next().unwrap().unwrap();
+                Cmp::Le
+            }
+            _ => Cmp::Lt,
+        },
+        _ => panic!(),
+    }
+}
+
 #[cfg_attr(test, instrument(level = "TRACE", skip(bytes)))]
 pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
     let mut variable = get_variable(bytes);
@@ -396,18 +417,8 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             let lhs = get_value(bytes);
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
-            let op = match bytes.next().map(Result::unwrap) {
-                Some(b'=') => Op::Intrinsic(Intrinsic::If(Cmp::Eq)),
-                Some(b'>') => Op::Intrinsic(Intrinsic::If(Cmp::Gt)),
-                Some(b'<') => Op::Intrinsic(Intrinsic::If(Cmp::Lt)),
-                _ => panic!(),
-            };
-            assert_eq!(
-                bytes.next().map(Result::unwrap),
-                Some(b' '),
-                "{:?}",
-                std::str::from_utf8(&bytes.map(Result::unwrap).collect::<Vec<_>>())
-            );
+            let op = Op::Intrinsic(Intrinsic::If(get_cmp(bytes)));
+            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             let rhs = get_value(bytes);
             let arg = vec![lhs, rhs];
             Statement { comptime, op, arg }
@@ -417,6 +428,16 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             op: Op::Intrinsic(Intrinsic::Break),
             arg: Vec::new(),
         },
+        (b"require", None) => {
+            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+            let lhs = get_value(bytes);
+            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+            let op = Op::Special(Special::Require(get_cmp(bytes)));
+            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+            let rhs = get_value(bytes);
+            let arg = vec![lhs, rhs];
+            Statement { comptime, op, arg }
+        }
         _ => {
             let lhs = Value::Variable(variable);
             assert_eq!(
