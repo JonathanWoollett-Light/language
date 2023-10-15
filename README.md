@@ -1,6 +1,6 @@
 # language
 
-![GitHub deployments](https://img.shields.io/github/deployments/jonathanwoollett-light/language/github-pages?label=website)
+[![GitHub deployments](https://img.shields.io/github/deployments/jonathanwoollett-light/language/github-pages?label=website)](https://jonathanwoollett-light.github.io/language/)
 
 - **Simple**
   Python-like syntax with fewer keywords than C.
