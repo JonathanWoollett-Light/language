@@ -139,10 +139,58 @@ pub fn instruction_from_node(
                 }
 
                 [Value::Variable(Variable {
-                    identifier: _,
+                    identifier,
                     index: None,
-                }), Value::Literal(Literal::String(_))] => {
-                    todo!()
+                }), Value::Literal(Literal::String(string))] => {
+                    let bytes = string.as_bytes();
+                    let Type::Array(box Array {
+                        item: Type::U8,
+                        len,
+                    }) = type_data.get(identifier).unwrap()
+                    else {
+                        panic!("Can't assign string to non-U8 array")
+                    };
+                    assert_eq!(*len, bytes.len());
+
+                    // Loads the address of the array.
+                    writeln!(
+                        assembly,
+                        "ldr x0, ={}",
+                        std::str::from_utf8(identifier).unwrap()
+                    )
+                    .unwrap();
+
+                    // Packs 2 bytes into stores of the full 32 bit register.
+                    let mut chunks = bytes.array_chunks::<2>();
+                    let full_chunks = (0..).step_by(2).zip(chunks.by_ref());
+                    for (offset, [a, b]) in full_chunks {
+                        let d = (*b as u32) << 8;
+                        let c = *a as u32;
+                        let overall = c | d;
+
+                        write!(
+                            assembly,
+                            "\
+                            mov w1, #{overall}\n\
+                            str w1, [x0, {offset}]\n\
+                        ",
+                        )
+                        .unwrap();
+                    }
+
+                    // Does individual stores for remaining bytes.
+                    let rem_offset = 2 * (bytes.len() / 2);
+                    for (offset, x) in chunks.remainder().iter().enumerate() {
+                        write!(
+                            assembly,
+                            "\
+                            mov w1, #{x}\n\
+                            strb w1, [x0, {}]\n\
+                            ",
+                            rem_offset + offset
+                        )
+                        .unwrap();
+                    }
                 }
                 [Value::Variable(Variable {
                     identifier,
@@ -162,35 +210,33 @@ pub fn instruction_from_node(
                         )
                         .unwrap();
 
-                        // Packs 4 bytes into stores of the full 64 bit register.
-                        let mut chunks = rest.array_chunks::<4>();
-                        let full_chunks = (0..).step_by(4).zip(chunks.by_ref());
-                        for (offset, [a, b, c, d]) in full_chunks {
-                            let e = (*a.literal().unwrap().integer().unwrap() as u64) << 24;
-                            let f = (*b.literal().unwrap().integer().unwrap() as u64) << 16;
-                            let g = (*c.literal().unwrap().integer().unwrap() as u64) << 8;
-                            let h = *d.literal().unwrap().integer().unwrap() as u64;
-                            let overall = e & f & g & h;
+                        // Packs 2 bytes into stores of the full 32 bit register.
+                        let mut chunks = rest.array_chunks::<2>();
+                        let full_chunks = (0..).step_by(2).zip(chunks.by_ref());
+                        for (offset, [a, b]) in full_chunks {
+                            let d = (*b.literal().unwrap().integer().unwrap() as u32) << 8;
+                            let c = *a.literal().unwrap().integer().unwrap() as u32;
+                            let overall = c | d;
 
                             write!(
                                 assembly,
                                 "\
-                                mov x1, #{overall}\n\
-                                str x1, [x0, #{offset}]\n\
+                                mov w1, #{overall}\n\
+                                str w1, [x0, {offset}]\n\
                             ",
                             )
                             .unwrap();
                         }
 
                         // Does individual stores for remaining bytes.
-                        let rem_offset = 4 * (rest.len() / 4);
+                        let rem_offset = 2 * (rest.len() / 2);
                         for (offset, x) in chunks.remainder().iter().enumerate() {
                             let y = *x.literal().unwrap().integer().unwrap() as u8;
                             write!(
                                 assembly,
                                 "\
-                                mov x1 #{y}\n\
-                                strb w1, [x0 #{}] 
+                                mov w1, #{y}\n\
+                                strb w1, [x0, {}]\n\
                                 ",
                                 rem_offset + offset
                             )
@@ -353,42 +399,38 @@ pub fn instruction_from_node(
                 [Value::Variable(Variable {
                     identifier,
                     index: None,
-                })] => {
-                    write!(
-                        &mut assembly,
-                        "\
-                        mov x8, #{}\n\
-                        ldr x0, =empty\n\
-                        mov x1, #0\n\
-                        svc #0\n\
-                        ldr x1, ={}\n\
-                        str x0, [x1]\n\
-                    ",
-                        libc::SYS_memfd_create,
-                        std::str::from_utf8(identifier).unwrap()
-                    )
-                    .unwrap();
-                    if !*empty {
+                })] => match type_data.get(identifier) {
+                    Some(Type::I64) => {
                         write!(
-                            data,
+                            &mut assembly,
                             "\
-                            empty:\n\
-                            .word 0\n\
-                        "
+                            mov x8, #{}\n\
+                            ldr x0, =empty\n\
+                            mov x1, #0\n\
+                            svc #0\n\
+                            ldr x1, ={}\n\
+                            str w0, [x1, 4]\n\
+                        ",
+                            libc::SYS_memfd_create,
+                            std::str::from_utf8(identifier).unwrap()
                         )
                         .unwrap();
-                        *empty = true;
+
+                        // Define an empty null terminated string.
+                        if !*empty {
+                            write!(
+                                data,
+                                "\
+                                empty:\n\
+                                .word 0\n\
+                            "
+                            )
+                            .unwrap();
+                            *empty = true;
+                        }
                     }
-                    write!(
-                        bss,
-                        "\
-                        {}:\n\
-                        .skip 4\n\
-                    ",
-                        std::str::from_utf8(identifier).unwrap()
-                    )
-                    .unwrap();
-                }
+                    _ => todo!(),
+                },
                 _ => todo!(),
             },
             _ => todo!(),

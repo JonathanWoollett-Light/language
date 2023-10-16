@@ -440,6 +440,21 @@ fn explore_paths(nodes: &[Node]) -> (Vec<GraphNode>, usize) {
 fn get_possible_states(node: &Node, state: &TypeValueState) -> Vec<TypeValueState> {
     let statement = &node.statement;
     match statement.op {
+        Op::Special(Special::Type) => match statement.arg.as_slice() {
+            [Value::Variable(Variable {
+                identifier,
+                index: None,
+            }), Value::Type(x)] => match state.get(identifier) {
+                // You can't redefine a static.
+                Some(_) => Vec::new(),
+                None => {
+                    let mut new_state = state.clone();
+                    new_state.insert(identifier.clone(), TypeValue::from(x.clone()));
+                    vec![new_state]
+                }
+            },
+            _ => todo!(),
+        },
         Op::Syscall(Syscall::Exit) => match statement.arg.as_slice() {
             // TODO Check the variable for `_integer` fits into i32.
             [Value::Literal(Literal::Integer(_integer))] => vec![state.clone()],
@@ -464,6 +479,7 @@ fn get_possible_states(node: &Node, state: &TypeValueState) -> Vec<TypeValueStat
                     _ => Vec::new(),
                 },
                 None => Vec::new(),
+                _ => todo!(),
             },
             _ => todo!(),
         },
@@ -479,6 +495,58 @@ fn get_possible_states(node: &Node, state: &TypeValueState) -> Vec<TypeValueStat
                             new_state
                         })
                         .collect(),
+                    _ => todo!(),
+                }
+            }
+            [Value::Variable(Variable { identifier, .. }), outer @ Value::Literal(Literal::Integer(first)), tail @ ..] => {
+                match state.get(identifier) {
+                    None => {
+                        let possible = tail.iter().fold(Type::possible(*first), |acc, x| {
+                            let next = Type::possible(*x.literal().unwrap().integer().unwrap());
+                            acc.into_iter().filter(|y| next.contains(y)).collect()
+                        });
+                        possible
+                            .into_iter()
+                            .map(|item| {
+                                let mut new_state = state.clone();
+                                let values = std::iter::repeat(item.clone())
+                                    .zip(
+                                        std::iter::once(outer)
+                                            .chain(tail)
+                                            .map(|v| *v.literal().unwrap().integer().unwrap()),
+                                    )
+                                    .map(TypeValue::from)
+                                    .collect::<Vec<_>>();
+
+                                new_state.insert(
+                                    identifier.clone(),
+                                    TypeValue::Array(TypeValueArray { item, values }),
+                                );
+                                new_state
+                            })
+                            .collect()
+                    }
+                    _ => todo!(),
+                }
+            }
+            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::String(s))] => {
+                match state.get(identifier) {
+                    None => {
+                        let mut new_state = state.clone();
+                        let values = std::iter::repeat(Type::U8)
+                            .zip(s.as_bytes().iter().map(|v| *v as i128))
+                            .map(TypeValue::from)
+                            .collect::<Vec<_>>();
+
+                        new_state.insert(
+                            identifier.clone(),
+                            TypeValue::Array(TypeValueArray {
+                                item: Type::U8,
+                                values,
+                            }),
+                        );
+                        vec![new_state]
+                    }
                     _ => todo!(),
                 }
             }
@@ -608,6 +676,23 @@ fn get_possible_states(node: &Node, state: &TypeValueState) -> Vec<TypeValueStat
             }
             _ => todo!(),
         },
+        Op::Syscall(Syscall::MemfdCreate) => match statement.arg.as_slice() {
+            [Value::Variable(Variable { identifier, .. })] => match state.get(identifier) {
+                None => [
+                    TypeValueInteger::I32(MyRange::any()),
+                    TypeValueInteger::I64(MyRange::any()),
+                ]
+                .into_iter()
+                .map(|p| {
+                    let mut new_state = state.clone();
+                    new_state.insert(identifier.clone(), TypeValue::Integer(p));
+                    new_state
+                })
+                .collect(),
+                _ => todo!(),
+            },
+            _ => todo!(),
+        },
         _ => todo!(),
     }
 }
@@ -667,6 +752,7 @@ impl TypeState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TypeValue {
     Integer(TypeValueInteger),
+    Array(TypeValueArray),
 }
 #[allow(unreachable_patterns)]
 impl TypeValue {
@@ -679,6 +765,7 @@ impl TypeValue {
     pub fn type_value(&self) -> Type {
         match self {
             Self::Integer(int) => int.type_value(),
+            Self::Array(array) => array.type_value(),
         }
     }
     fn integer(&self) -> Option<&TypeValueInteger> {
@@ -686,6 +773,54 @@ impl TypeValue {
             Self::Integer(integer) => Some(integer),
             _ => None,
         }
+    }
+}
+impl From<(Type, i128)> for TypeValue {
+    fn from((x, y): (Type, i128)) -> TypeValue {
+        match x {
+            Type::U8 => TypeValue::Integer(TypeValueInteger::U8(MyRange::from(y as u8))),
+            Type::U16 => TypeValue::Integer(TypeValueInteger::U16(MyRange::from(y as u16))),
+            Type::U32 => TypeValue::Integer(TypeValueInteger::U32(MyRange::from(y as u32))),
+            Type::U64 => TypeValue::Integer(TypeValueInteger::U64(MyRange::from(y as u64))),
+            Type::I8 => TypeValue::Integer(TypeValueInteger::I8(MyRange::from(y as i8))),
+            Type::I16 => TypeValue::Integer(TypeValueInteger::I16(MyRange::from(y as i16))),
+            Type::I32 => TypeValue::Integer(TypeValueInteger::I32(MyRange::from(y as i32))),
+            Type::I64 => TypeValue::Integer(TypeValueInteger::I64(MyRange::from(y as i64))),
+            Type::Array(_) => unreachable!(),
+        }
+    }
+}
+
+impl From<Type> for TypeValue {
+    fn from(x: Type) -> TypeValue {
+        match x {
+            Type::U8 => TypeValue::Integer(TypeValueInteger::U8(MyRange::any())),
+            Type::U16 => TypeValue::Integer(TypeValueInteger::U16(MyRange::any())),
+            Type::U32 => TypeValue::Integer(TypeValueInteger::U32(MyRange::any())),
+            Type::U64 => TypeValue::Integer(TypeValueInteger::U64(MyRange::any())),
+            Type::I8 => TypeValue::Integer(TypeValueInteger::I8(MyRange::any())),
+            Type::I16 => TypeValue::Integer(TypeValueInteger::I16(MyRange::any())),
+            Type::I32 => TypeValue::Integer(TypeValueInteger::I32(MyRange::any())),
+            Type::I64 => TypeValue::Integer(TypeValueInteger::I64(MyRange::any())),
+            Type::Array(box Array { item, len }) => TypeValue::Array(TypeValueArray {
+                item: item.clone(),
+                values: std::iter::repeat(TypeValue::from(item)).take(len).collect(),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TypeValueArray {
+    item: Type,
+    values: Vec<TypeValue>,
+}
+impl TypeValueArray {
+    fn type_value(&self) -> Type {
+        Type::Array(Box::new(Array {
+            item: self.item.clone(),
+            len: self.values.len(),
+        }))
     }
 }
 
@@ -1450,6 +1585,16 @@ struct MyRange<
     start: T,
     end: T,
 }
+
+impl<
+        T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
+    > From<T> for MyRange<T>
+{
+    fn from(x: T) -> Self {
+        Self { start: x, end: x }
+    }
+}
+
 impl<
         T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
     > Ord for MyRange<T>

@@ -60,7 +60,14 @@ mod tests {
 
     fn assemble(nodes: &[Node], expected_assembly: &str, expected_exitcode: i32) {
         let assembly = assembly_from_node(nodes);
+
+        for (a, b) in assembly.chars().zip(expected_assembly.chars()) {
+            if a != b {
+                println!("{a} != {b}");
+            }
+        }
         assert_eq!(assembly, expected_assembly);
+
         let path = format!("/tmp/{}", Uuid::new_v4());
         let assembly_path = format!("{path}.s");
         let mut file = OpenOptions::new()
@@ -1040,6 +1047,92 @@ mod tests {
         }
     }
 
+    const THIRTEEN: &str = "x := memfd_create\nexit 0";
+
+    #[test]
+    fn test_thirteen() {
+        // Parse code to AST
+        let nodes = parse(THIRTEEN);
+        assert_eq!(
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::MemfdCreate),
+                        arg: vec![Value::Variable(Variable::new("x")),]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal::Integer(0))]
+                    },
+                    child: None,
+                    next: None,
+                }
+            ]
+        );
+        let optimized_nodes = optimize(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Special(Special::Type),
+                        arg: vec![Value::Variable(Variable::new("x")), Value::Type(Type::I64)]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::MemfdCreate),
+                        arg: vec![Value::Variable(Variable::new("x")),]
+                    },
+                    child: None,
+                    next: Some(2),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal::Integer(0))]
+                    },
+                    child: None,
+                    next: None,
+                }
+            ]
+        );
+
+        // Parse AST to assembly
+        let expected_assembly = "\
+            .global _start\n\
+            _start:\n\
+            mov x8, #279\n\
+            ldr x0, =empty\n\
+            mov x1, #0\n\
+            svc #0\n\
+            ldr x1, =x\n\
+            str w0, [x1, 4]\n\
+            mov x8, #93\n\
+            mov x0, #0\n\
+            svc #0\n\
+            .data\n\
+            empty:\n\
+            .word 0\n\
+            .bss\n\
+            x:\n\
+            .skip 8\n\
+        ";
+        assemble(&optimized_nodes, expected_assembly, 0);
+    }
+
     const FOURTEEN: &str = "\
         x := 0\n\
         x -= 1\n\
@@ -1202,182 +1295,9 @@ mod tests {
         ";
         assemble(&optimized_nodes, expected_assembly, 0);
     }
-}
-
-#[cfg(feature = "false")]
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs::remove_file;
-    use std::fs::OpenOptions;
-    use std::io::Write;
-    use std::process::Command;
-    use test::Bencher;
-    use uuid::Uuid;
-
-    fn parse(text: &str) -> Vec<Node> {
-        let reader = std::io::BufReader::new(text.as_bytes());
-        let mut iter = reader.bytes().peekable();
-        get_nodes(&mut iter)
-    }
-
-    fn assemble(nodes: &[Node], expected_assembly: &str, expected_exitcode: i32) {
-        let assembly = assembly_from_node(nodes);
-        assert_eq!(assembly, expected_assembly);
-        let path = format!("/tmp/{}", Uuid::new_v4());
-        let assembly_path = format!("{path}.s");
-        let mut file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open(&assembly_path)
-            .unwrap();
-        file.write_all(assembly.as_bytes()).unwrap();
-        let object_path = format!("{path}.o");
-        let output = Command::new("as")
-            .args(["-o", &object_path, &assembly_path])
-            .output()
-            .unwrap();
-        assert_eq!(
-            output.stdout,
-            [],
-            "{}",
-            std::str::from_utf8(&output.stdout).unwrap()
-        );
-        assert_eq!(
-            output.stderr,
-            [],
-            "{}",
-            std::str::from_utf8(&output.stderr).unwrap()
-        );
-        assert_eq!(output.status.code(), Some(0));
-        remove_file(assembly_path).unwrap();
-
-        let output = Command::new("ld")
-            .args(["-s", "-o", &path, &object_path])
-            .output()
-            .unwrap();
-        assert_eq!(
-            output.stdout,
-            [],
-            "{}",
-            std::str::from_utf8(&output.stdout).unwrap()
-        );
-        assert_eq!(
-            output.stderr,
-            [],
-            "{}",
-            std::str::from_utf8(&output.stderr).unwrap()
-        );
-        assert_eq!(output.status.code(), Some(0));
-        remove_file(object_path).unwrap();
-
-        let output = Command::new(&path).output().unwrap();
-        assert_eq!(
-            output.stdout,
-            [],
-            "{}",
-            std::str::from_utf8(&output.stdout).unwrap()
-        );
-        assert_eq!(
-            output.stderr,
-            [],
-            "{}",
-            std::str::from_utf8(&output.stderr).unwrap()
-        );
-        assert_eq!(output.status.code(), Some(expected_exitcode));
-        remove_file(path).unwrap();
-    }
-
-    impl Variable {
-        pub fn new(s: &str) -> Self {
-            Self {
-                identifier: Vec::from(s.as_bytes()),
-                index: None,
-            }
-        }
-    }
-
-    use std::mem::size_of;
-
-    const THIRTEEN: &str = "x := memfd_create\nexit 0";
 
     #[test]
-    fn test_thirteen() {
-        // Parse code to AST
-        let nodes = parse(THIRTEEN);
-        assert_eq!(
-            nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::MemfdCreate),
-                        arg: vec![Value::Variable(Variable::new("x")),]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Literal(Literal::Integer(0))]
-                    },
-                    child: None,
-                    next: None,
-                }
-            ]
-        );
-        let optimized_nodes = optimize_nodes(&nodes);
-        assert_eq!(
-            optimized_nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::MemfdCreate),
-                        arg: vec![Value::Variable(Variable::new("x")),]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Literal(Literal::Integer(0))]
-                    },
-                    child: None,
-                    next: None,
-                }
-            ]
-        );
-
-        // Parse AST to assembly
-        let expected_assembly = "\
-            .global _start\n\
-            _start:\n\
-            mov x8, #279\n\
-            ldr x0, =empty\n\
-            mov x1, #0\n\
-            svc #0\n\
-            ldr x1, =x\n\
-            str x0, [x1]\n\
-            mov x8, #93\n\
-            mov x0, #0\n\
-            svc #0\n\
-            .data\n\
-            empty:\n\
-            .word 0\n\
-            .bss\n\
-            x:\n\
-            .skip 4\n\
-        ";
-        assemble(&optimized_nodes, expected_assembly, 0);
-    }
-
-    #[test]
-    fn test_helloworld() {
+    fn hello_world() {
         // Create pipe
         let mut pipe_out = [0, 0];
         let res = unsafe { libc::pipe(pipe_out.as_mut_ptr()) };
@@ -1441,10 +1361,25 @@ mod tests {
                 }
             ]
         );
-        let optimized_nodes = optimize_nodes(&nodes);
+        let optimized_nodes = optimize(&nodes);
         assert_eq!(
             optimized_nodes,
             [
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Special(Special::Type),
+                        arg: vec![
+                            Value::Variable(Variable::new("x")),
+                            Value::Type(Type::Array(Box::new(Array {
+                                item: Type::U8,
+                                len: 14
+                            })))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
                 Node {
                     statement: Statement {
                         comptime: false,
@@ -1468,7 +1403,7 @@ mod tests {
                         ]
                     },
                     child: None,
-                    next: Some(1),
+                    next: Some(2),
                 },
                 Node {
                     statement: Statement {
@@ -1478,11 +1413,10 @@ mod tests {
                             Value::Variable(Variable::new("_")),
                             Value::Literal(Literal::Integer(write as _)),
                             Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(14))
                         ]
                     },
                     child: None,
-                    next: Some(2),
+                    next: Some(3),
                 },
                 Node {
                     statement: Statement {
@@ -1501,6 +1435,21 @@ mod tests {
             "\
             .global _start\n\
             _start:\n\
+            ldr x0, =x\n\
+            mov w1, #25928\n\
+            str w1, [x0, 0]\n\
+            mov w1, #27756\n\
+            str w1, [x0, 2]\n\
+            mov w1, #11375\n\
+            str w1, [x0, 4]\n\
+            mov w1, #22304\n\
+            str w1, [x0, 6]\n\
+            mov w1, #29295\n\
+            str w1, [x0, 8]\n\
+            mov w1, #25708\n\
+            str w1, [x0, 10]\n\
+            mov w1, #2593\n\
+            str w1, [x0, 12]\n\
             mov x8, #64\n\
             mov x0, #{write}\n\
             ldr x1, =x\n\
@@ -1509,19 +1458,18 @@ mod tests {
             mov x8, #93\n\
             mov x0, #0\n\
             svc #0\n\
-            .data\n\
+            .bss\n\
             x:\n\
-            .byte 72,101,108,108,111,44,32,87,111,114,108,100,33,10\n\
+            .skip 14\n\
         "
         );
         assemble(&optimized_nodes, &expected_assembly, 0);
 
         // Read the value from pipe
-        let expected_out = b"Hello, World!\n";
         let mut buffer = [0u8; 14];
         let res = unsafe { libc::read(read, buffer.as_mut_ptr().cast(), 14) };
         assert_eq!(res, 14);
-        assert_eq!(&buffer, expected_out);
+        assert_eq!(std::str::from_utf8(&buffer).unwrap(), "Hello, World!\n");
         unsafe {
             libc::close(read);
             libc::close(write);
@@ -1529,7 +1477,7 @@ mod tests {
     }
 
     #[test]
-    fn test_helloworld_str() {
+    fn hello_world_str() {
         // Create pipe
         let mut pipe_out = [0, 0];
         let res = unsafe { libc::pipe(pipe_out.as_mut_ptr()) };
@@ -1578,10 +1526,25 @@ mod tests {
                 }
             ]
         );
-        let optimized_nodes = optimize_nodes(&nodes);
+        let optimized_nodes = optimize(&nodes);
         assert_eq!(
             optimized_nodes,
             [
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Special(Special::Type),
+                        arg: vec![
+                            Value::Variable(Variable::new("x")),
+                            Value::Type(Type::Array(Box::new(Array {
+                                item: Type::U8,
+                                len: 14
+                            })))
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
                 Node {
                     statement: Statement {
                         comptime: false,
@@ -1592,7 +1555,7 @@ mod tests {
                         ]
                     },
                     child: None,
-                    next: Some(1),
+                    next: Some(2),
                 },
                 Node {
                     statement: Statement {
@@ -1602,11 +1565,10 @@ mod tests {
                             Value::Variable(Variable::new("_")),
                             Value::Literal(Literal::Integer(write as _)),
                             Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(14))
                         ]
                     },
                     child: None,
-                    next: Some(2),
+                    next: Some(3),
                 },
                 Node {
                     statement: Statement {
@@ -1625,6 +1587,21 @@ mod tests {
             "\
             .global _start\n\
             _start:\n\
+            ldr x0, =x\n\
+            mov w1, #25928\n\
+            str w1, [x0, 0]\n\
+            mov w1, #27756\n\
+            str w1, [x0, 2]\n\
+            mov w1, #11375\n\
+            str w1, [x0, 4]\n\
+            mov w1, #22304\n\
+            str w1, [x0, 6]\n\
+            mov w1, #29295\n\
+            str w1, [x0, 8]\n\
+            mov w1, #25708\n\
+            str w1, [x0, 10]\n\
+            mov w1, #2593\n\
+            str w1, [x0, 12]\n\
             mov x8, #64\n\
             mov x0, #{write}\n\
             ldr x1, =x\n\
@@ -1633,25 +1610,28 @@ mod tests {
             mov x8, #93\n\
             mov x0, #0\n\
             svc #0\n\
-            .data\n\
+            .bss\n\
             x:\n\
-            .byte 72,101,108,108,111,44,32,87,111,114,108,100,33,10\n\
+            .skip 14\n\
         "
         );
         assemble(&optimized_nodes, &expected_assembly, 0);
 
         // Read the value from pipe
-        let expected_out = b"Hello, World!\n";
         let mut buffer = [0u8; 14];
         let res = unsafe { libc::read(read, buffer.as_mut_ptr().cast(), 14) };
         assert_eq!(res, 14);
-        assert_eq!(&buffer, expected_out);
+        assert_eq!(std::str::from_utf8(&buffer).unwrap(), "Hello, World!\n");
         unsafe {
             libc::close(read);
             libc::close(write);
         }
     }
+}
 
+#[cfg(feature = "false")]
+#[cfg(test)]
+mod tests {
     // `target` is an integer in the range -10^9..10^9.
     // `nums` is a set of integers each in the range -10^9..10^9.
     // `length` is an integer in the range 2..10^4 that gives the number of values in `nums`.
@@ -2404,63 +2384,5 @@ exit 1"#
         //     libc::close(output_read);
         //     libc::close(output_write);
         // }
-    }
-
-    #[test]
-    fn test_verify() {
-        let nodes = [
-            Node {
-                statement: Statement {
-                    comptime: false,
-                    op: Op::Intrinsic(Intrinsic::Assign),
-                    arg: vec![
-                        Value::Variable(Variable::new("x")),
-                        Value::Literal(Literal::Integer(254)),
-                    ],
-                },
-                child: None,
-                next: Some(1),
-            },
-            Node {
-                statement: Statement {
-                    comptime: false,
-                    op: Op::Intrinsic(Intrinsic::AddAssign),
-                    arg: vec![
-                        Value::Variable(Variable::new("x")),
-                        Value::Literal(Literal::Integer(1)),
-                    ],
-                },
-                child: None,
-                next: Some(2),
-            },
-            Node {
-                statement: Statement {
-                    comptime: false,
-                    op: Op::Intrinsic(Intrinsic::AddAssign),
-                    arg: vec![
-                        Value::Variable(Variable::new("x")),
-                        Value::Literal(Literal::Integer(1)),
-                    ],
-                },
-                child: None,
-                next: Some(3),
-            },
-            Node {
-                statement: Statement {
-                    comptime: false,
-                    op: Op::Special(Special::Require(Cmp::Gt)),
-                    arg: vec![
-                        Value::Variable(Variable::new("x")),
-                        Value::Literal(Literal::Integer(255)),
-                    ],
-                },
-                child: None,
-                next: None,
-            },
-        ];
-        let states = explore(&nodes);
-        println!("states: {states:?}");
-        let best_state = states.into_iter().min();
-        println!("best_state: {best_state:?}");
     }
 }
