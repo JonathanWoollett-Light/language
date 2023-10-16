@@ -48,6 +48,7 @@ mod tests {
     use std::fs::remove_file;
     use std::fs::OpenOptions;
     use std::io::Write;
+    use std::mem::size_of;
     use std::process::Command;
     use uuid::Uuid;
 
@@ -791,6 +792,112 @@ mod tests {
         assemble(&optimized_nodes, expected_assembly, 1);
     }
 
+    #[test]
+    fn test_eleven() {
+        // Create pipe and write an i32 to it.
+        let mut pipe_out = [0, 0];
+        let res = unsafe { libc::pipe(pipe_out.as_mut_ptr()) };
+        assert_eq!(res, 0);
+        let [read, write] = pipe_out;
+        let data = 27i32;
+        let bytes = data.to_ne_bytes();
+        let res = unsafe { libc::write(write, bytes.as_ptr().cast(), size_of::<i32>() as _) };
+        assert_eq!(res, size_of::<i32>() as _);
+
+        // Format code
+        let eleven = format!("x := read {read}\nexit x");
+
+        // Parse code to AST
+        let nodes = parse(&eleven);
+        assert_eq!(
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::Read),
+                        arg: vec![
+                            Value::Variable(Variable::new("x")),
+                            Value::Literal(Literal::Integer(read as _)),
+                        ]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Variable(Variable::new("x"))]
+                    },
+                    child: None,
+                    next: None,
+                }
+            ]
+        );
+        let optimized_nodes = optimize(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Special(Special::Type),
+                        arg: vec![Value::Variable(Variable::new("x")), Value::Type(Type::I32)]
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::Read),
+                        arg: vec![
+                            Value::Variable(Variable::new("x")),
+                            Value::Literal(Literal::Integer(read as _)),
+                        ]
+                    },
+                    child: None,
+                    next: Some(2),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Variable(Variable::new("x"))]
+                    },
+                    child: None,
+                    next: None,
+                }
+            ]
+        );
+
+        // Parse AST to assembly
+        let expected_assembly = format!(
+            "\
+            .global _start\n\
+            _start:\n\
+            mov x8, #63\n\
+            mov x0, #{read}\n\
+            ldr x1, =x\n\
+            mov x2, #4\n\
+            svc #0\n\
+            mov x8, #93\n\
+            ldr x0, =x\n\
+            ldr x0, [x0]\n\
+            svc #0\n\
+            .bss\n\
+            x:\n\
+            .skip 4\n\
+        "
+        );
+        assemble(&optimized_nodes, &expected_assembly, data);
+        unsafe {
+            libc::close(read);
+            libc::close(write);
+        }
+    }
+
     const FOURTEEN: &str = "\
         x := 0\n\
         x -= 1\n\
@@ -1049,103 +1156,6 @@ mod tests {
     }
 
     use std::mem::size_of;
-    #[test]
-    fn test_eleven() {
-        // Create pipe and write an i32 to it.
-        let mut pipe_out = [0, 0];
-        let res = unsafe { libc::pipe(pipe_out.as_mut_ptr()) };
-        assert_eq!(res, 0);
-        let [read, write] = pipe_out;
-        let data = 27i32;
-        let bytes = data.to_ne_bytes();
-        let res = unsafe { libc::write(write, bytes.as_ptr().cast(), size_of::<i32>() as _) };
-        assert_eq!(res, size_of::<i32>() as _);
-
-        // Format code
-        let eleven = format!("x := read {read}\nexit x");
-
-        // Parse code to AST
-        let nodes = parse(&eleven);
-        assert_eq!(
-            nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Read),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(read as _)),
-                        ]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Variable(Variable::new("x"))]
-                    },
-                    child: None,
-                    next: None,
-                }
-            ]
-        );
-        let optimized_nodes = optimize_nodes(&nodes);
-        assert_eq!(
-            optimized_nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Read),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(read as _)),
-                            Value::Literal(Literal::Integer(4))
-                        ]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Variable(Variable::new("x"))]
-                    },
-                    child: None,
-                    next: None,
-                }
-            ]
-        );
-
-        // Parse AST to assembly
-        let expected_assembly = format!(
-            "\
-            .global _start\n\
-            _start:\n\
-            mov x8, #63\n\
-            mov x0, #{read}\n\
-            ldr x1, =x\n\
-            mov x2, #4\n\
-            svc #0\n\
-            mov x8, #93\n\
-            ldr x0, =x\n\
-            ldr x0, [x0]\n\
-            svc #0\n\
-            .bss\n\
-            x:\n\
-            .skip 4\n\
-        "
-        );
-        assemble(&optimized_nodes, &expected_assembly, data);
-        unsafe {
-            libc::close(read);
-            libc::close(write);
-        }
-    }
 
     #[test]
     fn test_twelve() {

@@ -306,27 +306,19 @@ pub fn instruction_from_node(
                 [Value::Variable(Variable {
                     identifier,
                     index: None,
-                }), Value::Literal(Literal::Integer(fd)), Value::Literal(Literal::Integer(n))] => {
+                }), Value::Literal(Literal::Integer(fd))] => {
                     write!(
                         &mut assembly,
                         "\
                         mov x8, #{}\n\
                         mov x0, #{fd}\n\
                         ldr x1, ={}\n\
-                        mov x2, #{n}\n\
+                        mov x2, #{}\n\
                         svc #0\n\
                     ",
                         libc::SYS_read,
-                        std::str::from_utf8(identifier).unwrap()
-                    )
-                    .unwrap();
-                    write!(
-                        bss,
-                        "\
-                        {}:\n\
-                        .skip {n}\n\
-                    ",
-                        std::str::from_utf8(identifier).unwrap()
+                        std::str::from_utf8(identifier).unwrap(),
+                        type_data.get(identifier).unwrap().bytes()
                     )
                     .unwrap();
                 }

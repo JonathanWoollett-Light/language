@@ -445,9 +445,26 @@ fn get_possible_states(node: &Node, state: &TypeValueState) -> Vec<TypeValueStat
             [Value::Literal(Literal::Integer(_integer))] => vec![state.clone()],
             // TODO Check the variable for `identifier` fits into i32.
             [Value::Variable(Variable {
-                identifier: _,
+                identifier,
                 index: None,
-            })] => vec![state.clone()],
+            })] => match state.get(identifier) {
+                Some(TypeValue::Integer(integer)) => match integer {
+                    TypeValueInteger::I8(_) => vec![state.clone()],
+                    TypeValueInteger::U8(_) => vec![state.clone()],
+                    TypeValueInteger::I16(_) => vec![state.clone()],
+                    TypeValueInteger::U16(_) => vec![state.clone()],
+                    TypeValueInteger::I32(_) => vec![state.clone()],
+                    TypeValueInteger::U32(x) if x.max() <= (i32::MAX as u32) => vec![state.clone()],
+                    TypeValueInteger::I64(x)
+                        if x.max() <= (i32::MAX as i64) && x.min() >= (i32::MIN as i64) =>
+                    {
+                        vec![state.clone()]
+                    }
+                    TypeValueInteger::U64(x) if x.max() <= (i32::MAX as u64) => vec![state.clone()],
+                    _ => Vec::new(),
+                },
+                None => Vec::new(),
+            },
             _ => todo!(),
         },
         Op::Intrinsic(Intrinsic::Assign) => match statement.arg.as_slice() {
@@ -559,6 +576,23 @@ fn get_possible_states(node: &Node, state: &TypeValueState) -> Vec<TypeValueStat
             }
             _ => todo!(),
         },
+        Op::Syscall(Syscall::Read) => match statement.arg.as_slice() {
+            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(_))] => {
+                match state.get(identifier) {
+                    // Iterates over the set of integer types which could contain `x`, returning a new state for each possibility.
+                    None => TypeValueInteger::any()
+                        .into_iter()
+                        .map(|p| {
+                            let mut new_state = state.clone();
+                            new_state.insert(identifier.clone(), TypeValue::Integer(p));
+                            new_state
+                        })
+                        .collect(),
+                    _ => todo!(),
+                }
+            }
+            _ => todo!(),
+        },
         _ => todo!(),
     }
 }
@@ -653,6 +687,19 @@ enum TypeValueInteger {
 }
 
 impl TypeValueInteger {
+    pub fn any() -> [Self; 8] {
+        [
+            Self::U8(MyRange::any()),
+            Self::U16(MyRange::any()),
+            Self::U32(MyRange::any()),
+            Self::U64(MyRange::any()),
+            Self::I8(MyRange::any()),
+            Self::I16(MyRange::any()),
+            Self::I32(MyRange::any()),
+            Self::I64(MyRange::any()),
+        ]
+    }
+
     pub fn type_value(&self) -> Type {
         match self {
             Self::U8(_) => Type::U8,
@@ -1437,6 +1484,9 @@ impl<
     }
     fn excludes(&self, x: T) -> bool {
         self.min() > x || self.max() < x
+    }
+    fn any() -> Self {
+        Self::new(T::min_value(), T::max_value())
     }
     fn max(&self) -> T {
         match self.start.cmp(&self.end) {
