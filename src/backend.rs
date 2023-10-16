@@ -329,22 +329,21 @@ pub fn instruction_from_node(
                     identifier: v,
                     index: None,
                 }), Value::Literal(Literal::Integer(fd)), Value::Variable(Variable {
-                    identifier: x,
+                    identifier,
                     index: None,
-                }), Value::Literal(Literal::Integer(n))]
-                    if v == b"_" =>
-                {
+                })] if v == b"_" => {
                     write!(
                         &mut assembly,
                         "\
                         mov x8, #{}\n\
                         mov x0, #{fd}\n\
                         ldr x1, ={}\n\
-                        mov x2, #{n}\n\
+                        mov x2, #{}\n\
                         svc #0\n\
                     ",
                         libc::SYS_write,
-                        std::str::from_utf8(x).unwrap()
+                        std::str::from_utf8(identifier).unwrap(),
+                        type_data.get(identifier).unwrap().bytes()
                     )
                     .unwrap();
                 }
@@ -394,6 +393,7 @@ pub fn instruction_from_node(
             },
             _ => todo!(),
         }
+
         if let Some(next) = current.next {
             current = &nodes[next];
         } else {

@@ -593,6 +593,21 @@ fn get_possible_states(node: &Node, state: &TypeValueState) -> Vec<TypeValueStat
             }
             _ => todo!(),
         },
+        Op::Syscall(Syscall::Write) => match statement.arg.as_slice() {
+            [Value::Variable(Variable {
+                identifier: empty, ..
+            }), Value::Literal(Literal::Integer(_)), Value::Variable(Variable { identifier, .. })]
+                if empty == b"_" =>
+            {
+                match state.get(identifier) {
+                    // All defined values have known sizes so can be written.
+                    Some(_) => vec![state.clone()],
+                    // You cannot write an undefined value.
+                    None => Vec::new(),
+                }
+            }
+            _ => todo!(),
+        },
         _ => todo!(),
     }
 }
