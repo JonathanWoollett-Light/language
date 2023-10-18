@@ -110,9 +110,9 @@ pub fn instruction_from_node(
                         Type::I64 => format!(".8byte {}", literal.integer().unwrap()),
                     };
 
-                    write!(
+                    writeln!(
                         data,
-                        "{}: {data_value}\n",
+                        "{}: {data_value}",
                         std::str::from_utf8(identifier).unwrap(),
                     )
                     .unwrap();
@@ -156,9 +156,9 @@ pub fn instruction_from_node(
                         _ => todo!(),
                     };
 
-                    write!(
+                    writeln!(
                         data,
-                        "{}: {data_value}\n",
+                        "{}: {data_value}",
                         std::str::from_utf8(identifier).unwrap(),
                     )
                     .unwrap();

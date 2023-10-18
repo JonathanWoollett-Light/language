@@ -115,6 +115,7 @@ fn promote_assignments(nodes: &mut Vec<(Node, TypeValueState)>, type_state: &Typ
     }
 }
 
+#[allow(clippy::ptr_arg)]
 fn unroll_loops(_nodes: &mut Vec<(Node, TypeValueState)>) {}
 
 fn remove_unreachable_nodes(
@@ -172,7 +173,8 @@ fn remove_unreachable_nodes(
 
     // Remove `None` elements
     // ---------------------------------------------------------------------------------------------
-    let flat = {
+
+    {
         let mut decrement = 0;
         for i in (0..new_nodes.len()).rev() {
             let Some((node, _state)) = &mut new_nodes[i] else {
@@ -187,9 +189,8 @@ fn remove_unreachable_nodes(
             }
             decrement = 0;
         }
-        new_nodes.into_iter().filter_map(|x| x).collect::<Vec<_>>()
-    };
-    flat
+        new_nodes.into_iter().flatten().collect::<Vec<_>>()
+    }
 }
 
 // Applies typical optimizations. E.g. removing unused variables, unreachable code, etc.
