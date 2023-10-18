@@ -7,6 +7,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use itertools::Itertools;
+use std::collections::HashSet;
 
 pub fn optimize(nodes: &[Node]) -> Vec<Node> {
     // Get all possible paths.
@@ -33,16 +34,94 @@ struct GraphNode {
     prev: Option<usize>,
 }
 
-// Applies typical optimizations. E.g. removing unused variables, unreachable code, etc.
-fn optimize_with_path(
+// Promotes assignments to data allocations.
+fn promote_assignments(nodes: &mut Vec<(Node, TypeValueState)>, type_state: &TypeState) {
+    let mut allocated = HashSet::new();
+    let mut stack = vec![0];
+    let mut bss: Vec<_> = Vec::new();
+    while let Some(i) = stack.pop() {
+        let (node, _state) = &mut nodes[i];
+
+        let mut bss_fn = |identifier: &Vec<u8>| {
+            if allocated.insert(identifier.clone()) {
+                let value = type_state.get(identifier).unwrap().clone();
+                bss.push(Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Special(Special::Type),
+                        arg: vec![
+                            Value::Variable(Variable {
+                                identifier: identifier.clone(),
+                                index: None,
+                            }),
+                            Value::Type(value),
+                        ],
+                    },
+                    child: None,
+                    next: Some(bss.len() + 1),
+                });
+            }
+        };
+
+        match node.statement.op {
+            Op::Intrinsic(Intrinsic::Assign) => match node.statement.arg.as_slice() {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), Value::Literal(_), ..] => {
+                    if allocated.insert(identifier.clone()) {
+                        node.statement.op = Op::Special(Special::Type);
+                        let value = type_state.get(identifier).unwrap().clone();
+                        node.statement.arg.insert(1, Value::Type(value));
+                    }
+                }
+                _ => todo!(),
+            },
+            Op::Syscall(Syscall::Read) => match node.statement.arg.as_slice() {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), _] => bss_fn(identifier),
+                _ => todo!(),
+            },
+            Op::Syscall(Syscall::MemfdCreate) => match node.statement.arg.as_slice() {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                })] => bss_fn(identifier),
+                _ => todo!(),
+            },
+            _ => {}
+        }
+
+        if let Some(next) = node.next {
+            stack.push(next);
+        }
+        if let Some(child) = node.child {
+            stack.push(child);
+        }
+    }
+
+    for (node, _) in nodes.iter_mut() {
+        if let Some(next) = &mut node.next {
+            *next += bss.len();
+        }
+        if let Some(child) = &mut node.child {
+            *child += bss.len();
+        }
+    }
+    for item in bss.into_iter().rev() {
+        nodes.insert(0, (item, TypeValueState::new()));
+    }
+}
+
+fn unroll_loops(_nodes: &mut Vec<(Node, TypeValueState)>) {}
+
+fn remove_unreachable_nodes(
     nodes: &[Node],
     path: &[Option<TypeValueState>],
-    type_state: TypeState,
-) -> Vec<Node> {
-    assert_eq!(nodes.len(), path.len());
-
+) -> Vec<(Node, TypeValueState)> {
     // Remove unreachable nodes
-    // ---------------------------------------------------------------------------------------------
     let mut new_nodes = nodes
         .iter()
         .cloned()
@@ -53,7 +132,6 @@ fn optimize_with_path(
     // TODO This is incomplete and currently only works for simple `next` links.
 
     // Update node links
-    // ---------------------------------------------------------------------------------------------
     {
         let mut first = 0;
         loop {
@@ -109,43 +187,29 @@ fn optimize_with_path(
             }
             decrement = 0;
         }
-        new_nodes
-            .into_iter()
-            .filter_map(|x| x.map(|(n, _)| n))
-            .collect::<Vec<_>>()
+        new_nodes.into_iter().filter_map(|x| x).collect::<Vec<_>>()
     };
+    flat
+}
 
-    // Prepend variable definitions
-    // ---------------------------------------------------------------------------------------------
-    let n = type_state.len();
-    let definition = (1..)
-        .zip(type_state.into_iter())
-        .map(|(i, (identifier, type_value))| Node {
-            statement: Statement {
-                comptime: false,
-                op: Op::Special(Special::Type),
-                arg: vec![
-                    Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    }),
-                    Value::Type(type_value),
-                ],
-            },
-            child: None,
-            next: Some(i),
-        });
-    let original = flat.into_iter().map(|mut node| {
-        if let Some(next) = &mut node.next {
-            *next += n;
-        }
-        if let Some(child) = &mut node.child {
-            *child += n;
-        }
-        node
-    });
+// Applies typical optimizations. E.g. removing unused variables, unreachable code, etc.
+fn optimize_with_path(
+    nodes: &[Node],
+    path: &[Option<TypeValueState>],
+    type_state: TypeState,
+) -> Vec<Node> {
+    assert_eq!(nodes.len(), path.len());
 
-    definition.chain(original).collect()
+    // Remove unreachable nodes.
+    let mut reachable_nodes = remove_unreachable_nodes(nodes, path);
+
+    // Unroll loosp
+    unroll_loops(&mut reachable_nodes);
+
+    // Find assignments that can be promoted to allocations.
+    promote_assignments(&mut reachable_nodes, &type_state);
+
+    reachable_nodes.into_iter().map(|(n, _)| n).collect()
 }
 
 fn pick_best_path(

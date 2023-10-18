@@ -61,11 +61,11 @@ mod tests {
     fn assemble(nodes: &[Node], expected_assembly: &str, expected_exitcode: i32) {
         let assembly = assembly_from_node(nodes);
 
-        for (a, b) in assembly.chars().zip(expected_assembly.chars()) {
-            if a != b {
-                println!("{a} != {b}");
-            }
-        }
+        // for (a, b) in assembly.chars().zip(expected_assembly.chars()) {
+        //     if a != b {
+        //         println!("{a} != {b}");
+        //     }
+        // }
         assert_eq!(assembly, expected_assembly);
 
         let path = format!("/tmp/{}", Uuid::new_v4());
@@ -351,22 +351,14 @@ mod tests {
                     statement: Statement {
                         comptime: false,
                         op: Op::Special(Special::Type),
-                        arg: vec![Value::Variable(Variable::new("x")), Value::Type(Type::U8)]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
+                            Value::Type(Type::U8),
                             Value::Literal(Literal::Integer(1))
                         ]
                     },
                     child: None,
-                    next: Some(2),
+                    next: Some(1),
                 },
                 Node {
                     statement: Statement {
@@ -382,15 +374,11 @@ mod tests {
         let expected_assembly = "\
             .global _start\n\
             _start:\n\
-            ldr x0, =x\n\
-            mov w1, #1\n\
-            strb w1, [x0]\n\
             mov x8, #93\n\
             mov x0, #0\n\
             svc #0\n\
-            .bss\n\
-            x:\n\
-            .skip 1\n\
+            .data\n\
+            x: .byte 1\n\
         ";
         assemble(&optimized_nodes, expected_assembly, 0);
     }
@@ -434,22 +422,14 @@ mod tests {
                     statement: Statement {
                         comptime: false,
                         op: Op::Special(Special::Type),
-                        arg: vec![Value::Variable(Variable::new("x")), Value::Type(Type::U8)]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
+                            Value::Type(Type::U8),
                             Value::Literal(Literal::Integer(1))
                         ]
                     },
                     child: None,
-                    next: Some(2),
+                    next: Some(1),
                 },
                 Node {
                     statement: Statement {
@@ -465,16 +445,12 @@ mod tests {
         let expected_assembly = "\
             .global _start\n\
             _start:\n\
-            ldr x0, =x\n\
-            mov w1, #1\n\
-            strb w1, [x0]\n\
             mov x8, #93\n\
             ldr x0, =x\n\
             ldr x0, [x0]\n\
             svc #0\n\
-            .bss\n\
-            x:\n\
-            .skip 1\n\
+            .data\n\
+            x: .byte 1\n\
         ";
         assemble(&optimized_nodes, expected_assembly, 1);
     }
@@ -530,22 +506,14 @@ mod tests {
                     statement: Statement {
                         comptime: false,
                         op: Op::Special(Special::Type),
-                        arg: vec![Value::Variable(Variable::new("x")), Value::Type(Type::U8)]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
+                            Value::Type(Type::U8),
                             Value::Literal(Literal::Integer(1))
                         ]
                     },
                     child: None,
-                    next: Some(2),
+                    next: Some(1),
                 },
                 Node {
                     statement: Statement {
@@ -557,7 +525,7 @@ mod tests {
                         ]
                     },
                     child: None,
-                    next: Some(3),
+                    next: Some(2),
                 },
                 Node {
                     statement: Statement {
@@ -574,9 +542,6 @@ mod tests {
             .global _start\n\
             _start:\n\
             ldr x0, =x\n\
-            mov w1, #1\n\
-            strb w1, [x0]\n\
-            ldr x0, =x\n\
             ldr w1, [x0]\n\
             add w1, w1, #1\n\
             strb w1, [x0]\n\
@@ -584,9 +549,8 @@ mod tests {
             ldr x0, =x\n\
             ldr x0, [x0]\n\
             svc #0\n\
-            .bss\n\
-            x:\n\
-            .skip 1\n\
+            .data\n\
+            x: .byte 1\n\
         ";
         assemble(&optimized_nodes, expected_assembly, 2);
     }
@@ -651,22 +615,14 @@ mod tests {
                     statement: Statement {
                         comptime: false,
                         op: Op::Special(Special::Type),
-                        arg: vec![Value::Variable(Variable::new("x")), Value::Type(Type::U8)]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
+                            Value::Type(Type::U8),
                             Value::Literal(Literal::Integer(1))
                         ]
                     },
                     child: None,
-                    next: Some(2),
+                    next: Some(1),
                 },
                 Node {
                     statement: Statement {
@@ -682,15 +638,11 @@ mod tests {
         let expected_assembly = "\
             .global _start\n\
             _start:\n\
-            ldr x0, =x\n\
-            mov w1, #1\n\
-            strb w1, [x0]\n\
             mov x8, #93\n\
             mov x0, #0\n\
             svc #0\n\
-            .bss\n\
-            x:\n\
-            .skip 1\n\
+            .data\n\
+            x: .byte 1\n\
         ";
         assemble(&optimized_nodes, expected_assembly, 0);
     }
@@ -755,22 +707,14 @@ mod tests {
                     statement: Statement {
                         comptime: false,
                         op: Op::Special(Special::Type),
-                        arg: vec![Value::Variable(Variable::new("x")), Value::Type(Type::U8)]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
+                            Value::Type(Type::U8),
                             Value::Literal(Literal::Integer(2))
                         ]
                     },
                     child: None,
-                    next: Some(2),
+                    next: Some(1),
                 },
                 Node {
                     statement: Statement {
@@ -786,21 +730,17 @@ mod tests {
         let expected_assembly = "\
             .global _start\n\
             _start:\n\
-            ldr x0, =x\n\
-            mov w1, #2\n\
-            strb w1, [x0]\n\
             mov x8, #93\n\
             mov x0, #1\n\
             svc #0\n\
-            .bss\n\
-            x:\n\
-            .skip 1\n\
+            .data\n\
+            x: .byte 2\n\
         ";
         assemble(&optimized_nodes, expected_assembly, 1);
     }
 
     #[test]
-    fn test_eleven() {
+    fn eleven() {
         // Create pipe and write an i32 to it.
         let mut pipe_out = [0, 0];
         let res = unsafe { libc::pipe(pipe_out.as_mut_ptr()) };
@@ -906,7 +846,7 @@ mod tests {
     }
 
     #[test]
-    fn test_twelve() {
+    fn twelve() {
         // Create pipe and write an i32 to it.
         let mut pipe_out = [0, 0];
         let res = unsafe { libc::pipe(pipe_out.as_mut_ptr()) };
@@ -1050,7 +990,7 @@ mod tests {
     const THIRTEEN: &str = "x := memfd_create\nexit 0";
 
     #[test]
-    fn test_thirteen() {
+    fn thirteen() {
         // Parse code to AST
         let nodes = parse(THIRTEEN);
         assert_eq!(
@@ -1236,22 +1176,14 @@ mod tests {
                     statement: Statement {
                         comptime: false,
                         op: Op::Special(Special::Type),
-                        arg: vec![Value::Variable(Variable::new("x")), Value::Type(Type::U8)]
-                    },
-                    child: None,
-                    next: Some(1)
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Intrinsic(Intrinsic::Assign),
                         arg: vec![
                             Value::Variable(Variable::new("x")),
+                            Value::Type(Type::U8),
                             Value::Literal(Literal::Integer(0))
                         ]
                     },
                     child: None,
-                    next: Some(2)
+                    next: Some(1)
                 },
                 Node {
                     statement: Statement {
@@ -1263,7 +1195,7 @@ mod tests {
                         ]
                     },
                     child: None,
-                    next: Some(3)
+                    next: Some(2)
                 },
                 Node {
                     statement: Statement {
@@ -1280,24 +1212,20 @@ mod tests {
             .global _start\n\
             _start:\n\
             ldr x0, =x\n\
-            mov w1, #0\n\
-            strb w1, [x0]\n\
-            ldr x0, =x\n\
             ldr w1, [x0]\n\
             sub w1, w1, #1\n\
             strb w1, [x0]\n\
             mov x8, #93\n\
             mov x0, #0\n\
             svc #0\n\
-            .bss\n\
-            x:\n\
-            .skip 1\n\
+            .data\n\
+            x: .byte 0\n\
         ";
         assemble(&optimized_nodes, expected_assembly, 0);
     }
 
     #[test]
-    fn hello_world() {
+    fn hello_world_arr() {
         // Create pipe
         let mut pipe_out = [0, 0];
         let res = unsafe { libc::pipe(pipe_out.as_mut_ptr()) };
@@ -1374,18 +1302,7 @@ mod tests {
                             Value::Type(Type::Array(Box::new(Array {
                                 item: Type::U8,
                                 len: 14
-                            })))
-                        ]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Intrinsic(Intrinsic::Assign),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
+                            }))),
                             Value::Literal(Literal::Integer(72)),
                             Value::Literal(Literal::Integer(101)),
                             Value::Literal(Literal::Integer(108)),
@@ -1403,7 +1320,7 @@ mod tests {
                         ]
                     },
                     child: None,
-                    next: Some(2),
+                    next: Some(1),
                 },
                 Node {
                     statement: Statement {
@@ -1416,7 +1333,7 @@ mod tests {
                         ]
                     },
                     child: None,
-                    next: Some(3),
+                    next: Some(2),
                 },
                 Node {
                     statement: Statement {
@@ -1435,21 +1352,6 @@ mod tests {
             "\
             .global _start\n\
             _start:\n\
-            ldr x0, =x\n\
-            mov w1, #25928\n\
-            str w1, [x0, 0]\n\
-            mov w1, #27756\n\
-            str w1, [x0, 2]\n\
-            mov w1, #11375\n\
-            str w1, [x0, 4]\n\
-            mov w1, #22304\n\
-            str w1, [x0, 6]\n\
-            mov w1, #29295\n\
-            str w1, [x0, 8]\n\
-            mov w1, #25708\n\
-            str w1, [x0, 10]\n\
-            mov w1, #2593\n\
-            str w1, [x0, 12]\n\
             mov x8, #64\n\
             mov x0, #{write}\n\
             ldr x1, =x\n\
@@ -1458,9 +1360,8 @@ mod tests {
             mov x8, #93\n\
             mov x0, #0\n\
             svc #0\n\
-            .bss\n\
-            x:\n\
-            .skip 14\n\
+            .data\n\
+            x: .byte 72,101,108,108,111,44,32,87,111,114,108,100,33,10\n\
         "
         );
         assemble(&optimized_nodes, &expected_assembly, 0);
@@ -1539,23 +1440,12 @@ mod tests {
                             Value::Type(Type::Array(Box::new(Array {
                                 item: Type::U8,
                                 len: 14
-                            })))
+                            }))),
+                            Value::Literal(Literal::String(String::from("Hello, World!\n")))
                         ]
                     },
                     child: None,
                     next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Intrinsic(Intrinsic::Assign),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::String(String::from("Hello, World!\n"))),
-                        ]
-                    },
-                    child: None,
-                    next: Some(2),
                 },
                 Node {
                     statement: Statement {
@@ -1568,7 +1458,7 @@ mod tests {
                         ]
                     },
                     child: None,
-                    next: Some(3),
+                    next: Some(2),
                 },
                 Node {
                     statement: Statement {
@@ -1587,21 +1477,6 @@ mod tests {
             "\
             .global _start\n\
             _start:\n\
-            ldr x0, =x\n\
-            mov w1, #25928\n\
-            str w1, [x0, 0]\n\
-            mov w1, #27756\n\
-            str w1, [x0, 2]\n\
-            mov w1, #11375\n\
-            str w1, [x0, 4]\n\
-            mov w1, #22304\n\
-            str w1, [x0, 6]\n\
-            mov w1, #29295\n\
-            str w1, [x0, 8]\n\
-            mov w1, #25708\n\
-            str w1, [x0, 10]\n\
-            mov w1, #2593\n\
-            str w1, [x0, 12]\n\
             mov x8, #64\n\
             mov x0, #{write}\n\
             ldr x1, =x\n\
@@ -1610,9 +1485,8 @@ mod tests {
             mov x8, #93\n\
             mov x0, #0\n\
             svc #0\n\
-            .bss\n\
-            x:\n\
-            .skip 14\n\
+            .data\n\
+            x: .byte 72,101,108,108,111,44,32,87,111,114,108,100,33,10\n\
         "
         );
         assemble(&optimized_nodes, &expected_assembly, 0);

@@ -58,6 +58,12 @@ impl Literal {
             _ => None,
         }
     }
+    pub fn string(&self) -> Option<&String> {
+        match self {
+            Self::String(string) => Some(string),
+            _ => None,
+        }
+    }
 }
 
 pub type Integer = i128;
