@@ -11,7 +11,11 @@
 - **Interpretable**
   Compile-time evaluation of syscalls. No build scripts. No macros.
 
+
+
 ### Hello, World!
+
+Rust's `Hello World!` binary from `cargo new` is almost 5mb, in this language its 512 bytes.
 
 #### Source
 
