@@ -1224,6 +1224,173 @@ mod tests {
         assemble(&optimized_nodes, expected_assembly, 0);
     }
 
+    const LOOP_ONE: &str = "\
+        x := 0\n\
+        loop\n\
+        \x20   x += 1\n\
+        \x20   if x = 3\n\
+        \x20       break\n\
+        exit 0\n\
+    ";
+
+    #[test]
+    fn loop_one() {
+        let nodes = parse(LOOP_ONE);
+
+        assert_eq!(
+            nodes,
+            [
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable::new("x")),
+                            Value::Literal(Literal::Integer(0)),
+                        ],
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Intrinsic(Intrinsic::Loop),
+                        arg: vec![],
+                    },
+                    child: Some(2),
+                    next: Some(5),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Intrinsic(Intrinsic::AddAssign),
+                        arg: vec![
+                            Value::Variable(Variable::new("x")),
+                            Value::Literal(Literal::Integer(1)),
+                        ],
+                    },
+                    child: None,
+                    next: Some(3),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Intrinsic(Intrinsic::If(Cmp::Eq)),
+                        arg: vec![
+                            Value::Variable(Variable::new("x")),
+                            Value::Literal(Literal::Integer(3)),
+                        ],
+                    },
+                    child: Some(4),
+                    next: None,
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Intrinsic(Intrinsic::Break),
+                        arg: vec![],
+                    },
+                    child: None,
+                    next: None,
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal::Integer(0)),],
+                    },
+                    child: None,
+                    next: None,
+                },
+            ]
+        );
+        let optimized_nodes = optimize(&nodes);
+        assert_eq!(
+            optimized_nodes,
+            [
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Special(Special::Type),
+                        arg: vec![
+                            Value::Variable(Variable::new("x")),
+                            Value::Type(Type::I32),
+                            Value::Literal(Literal::Integer(0)),
+                        ],
+                    },
+                    child: None,
+                    next: Some(1),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Intrinsic(Intrinsic::Loop),
+                        arg: vec![],
+                    },
+                    child: Some(2),
+                    next: Some(6),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Intrinsic(Intrinsic::AddAssign),
+                        arg: vec![
+                            Value::Variable(Variable::new("x")),
+                            Value::Literal(Literal::Integer(1)),
+                        ],
+                    },
+                    child: None,
+                    next: Some(3),
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Intrinsic(Intrinsic::If(Cmp::Eq)),
+                        arg: vec![
+                            Value::Variable(Variable::new("x")),
+                            Value::Literal(Literal::Integer(3)),
+                        ],
+                    },
+                    child: Some(5),
+                    next: None,
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Intrinsic(Intrinsic::Break),
+                        arg: vec![],
+                    },
+                    child: None,
+                    next: None,
+                },
+                Node {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Syscall(Syscall::Exit),
+                        arg: vec![Value::Literal(Literal::Integer(0)),],
+                    },
+                    child: None,
+                    next: None,
+                },
+            ]
+        );
+        let expected_assembly = "\
+            .global _start\n\
+            _start:\n\
+            ldr x0, =x\n\
+            ldr w1, [x0]\n\
+            sub w1, w1, #1\n\
+            strb w1, [x0]\n\
+            mov x8, #93\n\
+            mov x0, #0\n\
+            svc #0\n\
+            .data\n\
+            x: .byte 0\n\
+        ";
+        assemble(&optimized_nodes, expected_assembly, 0);
+    }
+
     #[test]
     fn hello_world_arr() {
         // Create pipe

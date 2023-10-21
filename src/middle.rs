@@ -9,15 +9,14 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use std::collections::HashSet;
 
+const DEFAULT_LOOP_LIMIT: usize = 100;
+
 pub fn optimize(nodes: &[Node]) -> Vec<Node> {
     // Get all possible paths.
     let (possbile_paths, start) = explore_paths(nodes);
 
-    // Get all complete paths.
-    let complete_paths = reduce_paths(nodes, &possbile_paths, start);
-
     // Pick the best path.
-    let (best_path, type_state) = pick_best_path(complete_paths);
+    let (best_path, type_state) = pick_best_path(valid_paths);
 
     // Use the best path to apply optimizations to the nodes.
     optimize_with_path(nodes, &best_path, type_state)
@@ -32,6 +31,12 @@ struct GraphNode {
     /// The options for the other next node (e.g. we cannot evaluate an `if` at compile-time so we need to evaluate both paths).
     other: Vec<usize>,
     prev: Option<usize>,
+    /// If within a loop this will be the number of following statements within the loop that can be evaluated
+    loop_limit: Vec<usize>,
+    /// Points to the graph node that creates the scope e.g. `loop`
+    scope: Option<usize>,
+    /// The cost for every combination
+    cost: HashMap<(usize,Option<usize>),usize>,
 }
 
 // Promotes assignments to data allocations.
@@ -213,9 +218,12 @@ fn optimize_with_path(
     reachable_nodes.into_iter().map(|(n, _)| n).collect()
 }
 
+/// Given the indicies of valid starting nodes, picks 1, returning the index for this node and the
+/// complete `TypeState`.
 fn pick_best_path(
-    paths: Vec<Vec<Option<TypeValueState>>>,
-) -> (Vec<Option<TypeValueState>>, TypeState) {
+    // The indicies of the starting nodes of valid paths.
+    paths: &[usize],
+) -> (usize, TypeState) {
     // TODO This is a bad heuristic to pick the best path, this should be improved.
 
     let (mut min_len, mut min_path) = (paths[0].iter().filter(|x| x.is_some()).count(), 0);
@@ -240,132 +248,70 @@ fn pick_best_path(
     (paths[min_path].clone(), type_state)
 }
 
-fn reduce_paths(
-    nodes: &[Node],
-    graph_nodes: &[GraphNode],
-    start: usize,
-) -> Vec<Vec<Option<TypeValueState>>> {
-    #[derive(Debug, Clone)]
-    struct Trace {
-        /// The stack of `GraphNode` that need to be visited to complete the trace, these are
-        /// indices into `graph_nodes`.
-        stack: Vec<usize>,
-        /// The type states for every `node` where `path[i]` corresponds to `nodes[i]`, this is
-        /// filled as the trace pops values from `self.stack`.
-        path: Vec<Option<TypeValueState>>,
-    }
+// Upon encountering an invalid path, we call this which strips this path as a possible path.
+fn passback_invalid(mut graph_index: usize, graph_nodes: &mut Vec<Option<GraphNode>>) {
+    while let Some(prev) = graph_nodes[graph_index].unwrap().prev {
+        graph_nodes[graph_index] = None;
+        let prev_node = &mut graph_nodes[prev].unwrap();
 
-    // The stack of incomplete traces that need to be completed.
-    let mut stack = (0..start)
-        .map(|i| Trace {
-            stack: vec![i],
-            path: vec![None; nodes.len()],
-        })
-        .collect::<Vec<_>>();
-
-    // The set of complete paths. A complete path is a set of `TypeValueState` for every `Node` that
-    // could be encountered given the initial `TypeValueState`.
-    let mut paths = Vec::new();
-
-    while let Some(mut trace) = stack.pop() {
-        let front = trace.stack.pop().unwrap();
-        let graph = &graph_nodes[front];
-        let n = graph.node;
-        let node = &nodes[graph.node];
-
-        // If this node had been previously evaluated it would have a pre-existing state. Here
-        // it should not have been previously evaluated thus should not have a pre-existing state.
-        assert!(trace.path[n].is_none());
-
-        // Add next nodes that need to be evaluated to the trace stack.
-        match node.statement.op {
-            Op::Syscall(Syscall::Exit) => {
-                assert!(graph.next.is_empty());
-                assert!(graph.other.is_empty());
-
-                // Set the state at this node.
-                trace.path[n] = Some(graph.state.clone());
-
-                if trace.stack.is_empty() {
-                    paths.push(trace.path);
-                }
-            }
-            Op::Intrinsic(Intrinsic::If(_)) => {
-                if graph.next.is_empty() && graph.other.is_empty() {
-                    continue;
-                }
-                match (graph.next.is_empty(), graph.other.is_empty()) {
-                    // This condition occurs when a `require` fails.
-                    (true, true) => continue,
-                    (false, false) => {
-                        // Set the state at this node.
-                        trace.path[n] = Some(graph.state.clone());
-
-                        for (a, b) in graph.next.iter().cartesian_product(graph.other.iter()) {
-                            let mut temp = trace.clone();
-                            temp.stack.push(*a);
-                            temp.stack.push(*b);
-                            stack.push(temp);
-                        }
-                    }
-                    (false, true) => {
-                        // This statement can be omitted so we don't set the state.
-
-                        for a in graph.next.iter() {
-                            let mut temp = trace.clone();
-                            temp.stack.push(*a);
-                            stack.push(temp);
-                        }
-                    }
-                    (true, false) => {
-                        // This statement can be omitted so we don't set the state.
-
-                        for b in graph.other.iter() {
-                            let mut temp = trace.clone();
-                            temp.stack.push(*b);
-                            stack.push(temp);
-                        }
-                    }
-                }
-            }
-            Op::Special(Special::Require(_)) => {
-                // This condition occurs when a `require` fails.
-                if graph.next.is_empty() {
-                    continue;
-                }
-
-                // This statement can be omitted so we don't set the state.
-
-                assert!(graph.other.is_empty());
-                for state in graph.next.iter() {
-                    let mut temp = trace.clone();
-                    temp.stack.push(*state);
-                    stack.push(temp);
-                }
-            }
-            _ => {
-                // This condition occurs when a `require` fails.
-                if graph.next.is_empty() {
-                    continue;
-                }
-
-                // Set the state at this node.
-                trace.path[n] = Some(graph.state.clone());
-
-                assert!(graph.other.is_empty());
-                for state in graph.next.iter() {
-                    let mut temp = trace.clone();
-                    temp.stack.push(*state);
-                    stack.push(temp);
-                }
+        if let Some(i) = prev_node.next.iter().find(|&&x|x==graph_index) {
+            prev_node.next.remove(*i);
+            if !prev_node.next.is_empty() {
+                break;
             }
         }
-    }
+        else if let Some(i) = prev_node.other.iter().find(|&&x|x==graph_index) {
+            prev_node.other.remove(*i);
+            if !prev_node.other.is_empty() {
+                break;
+            }
+        }
+        else {
+            // Since the node that is `prev` to `graph_index` must have `graph_index` in its `other` or `next`.
+            unreachable!()
+        }
 
-    paths
+        graph_index = prev;
+    }
 }
 
-fn explore_paths(nodes: &[Node]) -> (Vec<GraphNode>, usize) {
+/// Appends next `GraphNode`s to evaluate.
+fn append(
+    node_index: usize,
+    graph_index: usize,
+    graph_nodes: &mut Vec<Option<GraphNode>>,
+    scope: Option<usize>,
+    nodes: &[Node],
+    indices: &mut Vec<usize>,
+) -> Vec<usize> {
+    get_possible_states(&nodes[node_index], &graph_nodes[graph_index].unwrap().state)
+        .into_iter()
+        .map(|state| {
+            let j = graph_nodes.len();
+            indices.push(j);
+
+            let mut new_loop_limt = graph_nodes[graph_index].unwrap().loop_limit.clone();
+            if let Some(n) = new_loop_limt.last_mut() {
+                *n -= 1;
+            }
+
+            graph_nodes.push(Some(GraphNode {
+                node: node_index,
+                state,
+                next: Vec::new(),
+                other: Vec::new(),
+                prev: Some(graph_index),
+                loop_limit: new_loop_limt,
+                scope,
+                cost: 0,
+            }));
+
+            j
+        })
+        .collect()
+}
+
+fn explore_paths(nodes: &[Node]) -> (Vec<Option<GraphNode>>, usize) {
     let initial_possible_states = get_possible_states(&nodes[0], &TypeValueState::new());
     let number_of_initial_states = initial_possible_states.len();
 
@@ -374,76 +320,74 @@ fn explore_paths(nodes: &[Node]) -> (Vec<GraphNode>, usize) {
         .enumerate()
         .map(|(i, state)| {
             (
-                GraphNode {
+                Some(GraphNode {
                     node: 0,
                     state,
                     next: Vec::new(),
                     other: Vec::new(),
                     prev: None,
-                },
+                    loop_limit: Vec::new(),
+                    scope: None,
+                    cost: 0,
+                }),
                 i,
             )
         })
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
     while let Some(index) = indices.pop() {
-        let n = graph_nodes[index].node;
+        let Some(graph_node) = &mut graph_nodes[index] else {
+            // The graph node for queued nodes may be removed when an invalid node is encountered and all invalid nodes are removed.
+            continue;
+        };
+        let n = graph_node.node;
+        let node = nodes[n];
 
-        let mut append =
-            |node_index: usize, graph_index: usize, graph_nodes: &mut Vec<GraphNode>| {
-                get_possible_states(&nodes[node_index], &graph_nodes[graph_index].state)
-                    .into_iter()
-                    .map(|state| {
-                        let j = graph_nodes.len();
-                        indices.push(j);
-                        graph_nodes.push(GraphNode {
-                            node: node_index,
-                            state,
-                            next: Vec::new(),
-                            other: Vec::new(),
-                            prev: Some(graph_index),
-                        });
-                        j
-                    })
-                    .collect()
-            };
+        // When encountering nodes at loop limits continue, this can be later identified by seeing the 0 at the end.
+        if let Some(0) = graph_node.loop_limit.last() {
+            continue;
+        }
 
         // 1. Relies on the ordering of `nodes` (it will be `child -> next -> outer`).
         // 2. Only `exit`s are allowed to have no following nodes, otherwise it is an error.
-        match nodes[n].statement.op {
+        match node.statement.op {
             Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => {
-                match nodes[n].statement.arg.as_slice() {
+                match node.statement.arg.as_slice() {
                     [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] =>
                     {
-                        let y = graph_nodes[index]
-                            .state
-                            .get(identifier)
-                            .unwrap()
-                            .integer()
-                            .unwrap();
+                        let y = graph_node.state.get(identifier).unwrap().integer().unwrap();
+                        let scope = graph_node.scope;
 
                         // If we know the if will be true at compile-time
                         if y.value() == Some(*x) {
                             // See 1 & 2
-                            graph_nodes[index].next = append(n + 1, index, &mut graph_nodes);
+                            graph_node.next =
+                                append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices);
                         }
                         // If we know the if will be false at compile-time
                         else if y.excludes(*x) {
-                            graph_nodes[index].next = if let Some(next) = nodes[n].next {
-                                append(next, index, &mut graph_nodes)
+                            graph_node.next = if let Some(next) = node.next {
+                                append(next, index, &mut graph_nodes, scope, nodes, &mut indices)
                             } else {
                                 // See 2
-                                append(n + 1, index, &mut graph_nodes)
+                                append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices)
                             };
                         } else {
-                            if let Some(child) = nodes[n].child {
-                                graph_nodes[index].next = append(child, index, &mut graph_nodes);
+                            if let Some(child) = node.child {
+                                graph_node.next = append(
+                                    child,
+                                    index,
+                                    &mut graph_nodes,
+                                    scope,
+                                    nodes,
+                                    &mut indices,
+                                );
                             }
-                            graph_nodes[index].other = if let Some(next) = nodes[n].next {
-                                append(next, index, &mut graph_nodes)
+                            graph_node.other = if let Some(next) = node.next {
+                                append(next, index, &mut graph_nodes, scope, nodes, &mut indices)
                             } else {
                                 // See 2
-                                append(n + 1, index, &mut graph_nodes)
+                                append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices)
                             };
                         }
                     }
@@ -451,50 +395,124 @@ fn explore_paths(nodes: &[Node]) -> (Vec<GraphNode>, usize) {
                 }
             }
             Op::Intrinsic(Intrinsic::If(Cmp::Lt)) => {
-                match nodes[n].statement.arg.as_slice() {
+                match node.statement.arg.as_slice() {
                     [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] =>
                     {
-                        let y = graph_nodes[index]
-                            .state
-                            .get(identifier)
-                            .unwrap()
-                            .integer()
-                            .unwrap();
+                        let y = graph_node.state.get(identifier).unwrap().integer().unwrap();
+                        let scope = graph_node.scope;
 
                         // If we know the if will be true at compile-time
                         if y.max() < *x {
                             // See 1 & 2
-                            graph_nodes[index].next = append(n + 1, index, &mut graph_nodes);
+                            graph_node.next =
+                                append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices);
                         }
                         // If we know the if will be false at compile-time
                         else if y.min() >= *x {
-                            graph_nodes[index].next = if let Some(next) = nodes[n].next {
-                                append(next, index, &mut graph_nodes)
+                            graph_node.next = if let Some(next) = node.next {
+                                append(next, index, &mut graph_nodes, scope, nodes, &mut indices)
                             } else {
                                 // See 2
-                                append(n + 1, index, &mut graph_nodes)
+                                append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices)
                             };
                         } else {
-                            if let Some(child) = nodes[n].child {
-                                graph_nodes[index].next = append(child, index, &mut graph_nodes);
+                            if let Some(child) = node.child {
+                                graph_node.next = append(
+                                    child,
+                                    index,
+                                    &mut graph_nodes,
+                                    scope,
+                                    nodes,
+                                    &mut indices,
+                                );
                             }
-                            graph_nodes[index].other = if let Some(next) = nodes[n].next {
-                                append(next, index, &mut graph_nodes)
+                            graph_node.other = if let Some(next) = node.next {
+                                append(next, index, &mut graph_nodes, scope, nodes, &mut indices)
                             } else {
                                 // See 2
-                                append(n + 1, index, &mut graph_nodes)
+                                append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices)
                             };
                         }
                     }
                     _ => todo!(),
                 }
             }
+            Op::Intrinsic(Intrinsic::Loop) => {
+                match node.statement.arg.as_slice() {
+                    [] => {
+                        if let Some(child) = node.child {
+                            graph_node.loop_limit.push(DEFAULT_LOOP_LIMIT);
+                            graph_node.next = append(
+                                child,
+                                index,
+                                &mut graph_nodes,
+                                Some(index),
+                                nodes,
+                                &mut indices,
+                            );
+                            graph_node.loop_limit.pop();
+                        }
+                        if let Some(next) = node.next {
+                            let scope = graph_node.scope;
+                            graph_node.next =
+                                append(next, index, &mut graph_nodes, scope, nodes, &mut indices);
+                        } else {
+                            // It would require a break to hit this case.
+                            unreachable!()
+                        }
+                    }
+                    [Value::Literal(Literal::Integer(integer))] => {
+                        if let Some(child) = node.child {
+                            graph_node.loop_limit.push(*integer as usize);
+                            graph_node.next = append(
+                                child,
+                                index,
+                                &mut graph_nodes,
+                                Some(index),
+                                nodes,
+                                &mut indices,
+                            );
+                            graph_node.loop_limit.pop();
+                        }
+                        if let Some(next) = node.next {
+                            let scope = graph_node.scope;
+                            graph_node.next =
+                                append(next, index, &mut graph_nodes, scope, nodes, &mut indices);
+                        } else {
+                            // It would require a break to hit this case.
+                            unreachable!()
+                        }
+                    }
+                    _ => todo!(),
+                }
+            }
+            Op::Intrinsic(Intrinsic::Break) => match node.statement.arg.as_slice() {
+                [] => {
+                    let prev_scope_graph_node = graph_node.scope.unwrap();
+                    let scope_node = graph_nodes[prev_scope_graph_node].unwrap().node;
+                    if let Some(next) = nodes[scope_node].next {
+                        let scope = graph_nodes[prev_scope_graph_node].unwrap().scope;
+                        graph_node.next =
+                            append(next, index, &mut graph_nodes, scope, nodes, &mut indices);
+                    }
+                }
+                _ => todo!(),
+            },
             // See 2
             Op::Syscall(Syscall::Exit) => continue,
             // See 1 & 2
             _ => {
-                graph_nodes[index].next = append(n + 1, index, &mut graph_nodes);
+                let scope = graph_node.scope;
+                graph_node.next =
+                    append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices);
             }
+        }
+
+        // `exit` syscalls and loop limits will `continue` and not his this.
+        debug_assert_ne!(node.statement.op, Op::Syscall(Syscall::Exit));
+        debug_assert!(!matches!(graph_node.loop_limit.as_slice(), [.., 0]));
+        if graph_node.next.is_empty() && graph_node.other.is_empty() {
+            passback_invalid(index, &mut graph_nodes);
         }
     }
 
@@ -756,6 +774,17 @@ fn get_possible_states(node: &Node, state: &TypeValueState) -> Vec<TypeValueStat
                 .collect(),
                 _ => todo!(),
             },
+            _ => todo!(),
+        },
+        Op::Intrinsic(Intrinsic::Loop) => match statement.arg.as_slice() {
+            [] => vec![state.clone()],
+            [Value::Literal(Literal::Integer(integer))] if u64::try_from(*integer).is_ok() => {
+                vec![state.clone()]
+            }
+            _ => todo!(),
+        },
+        Op::Intrinsic(Intrinsic::Break) => match statement.arg.as_slice() {
+            [] => vec![state.clone()],
             _ => todo!(),
         },
         _ => todo!(),
