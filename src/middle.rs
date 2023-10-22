@@ -93,7 +93,7 @@ fn promote_assignments(nodes: &mut Vec<Node>, type_state: &TypeState) {
                 }), Value::Literal(_), ..] => {
                     if allocated.insert(identifier.clone()) {
                         node.statement.op = Op::Special(Special::Type);
-                        let value = type_state.get(&identifier).unwrap().clone();
+                        let value = type_state.get(identifier).unwrap().clone();
                         node.statement.arg.insert(1, Value::Type(value));
                     }
                 }
@@ -217,33 +217,29 @@ fn remove_requires(nodes: &mut Vec<Node>) {
     while i < nodes.len() {
         if let Op::Special(Special::Require(_)) = nodes[i].statement.op {
             // If `graph_nodes[x].node` is the next `Node` of `node` it is certain the `If` is false.
-            if let Some(_) = nodes[i].next {
+            if nodes[i].next.is_some() {
                 debug_assert!(nodes[i].child.is_none());
-                for j in 0..i {
-                    if let Some(n) = &mut nodes[j].next {
+                for node in nodes.iter_mut().take(i) {
+                    if let Some(n) = &mut node.next {
                         if *n > i {
                             *n -= 1;
                         }
                     }
-                    if let Some(c) = &mut nodes[j].child {
+                    if let Some(c) = &mut node.child {
                         if *c > i {
                             *c -= 1;
                         }
                     }
                 }
-                for j in (i + 1)..nodes.len() {
-                    if let Some(n) = &mut nodes[j].next {
+                for node in nodes.iter_mut().skip(i + 1) {
+                    if let Some(n) = &mut node.next {
                         *n -= 1;
                     }
-                    if let Some(c) = &mut nodes[j].child {
+                    if let Some(c) = &mut node.child {
                         *c -= 1;
                     }
                 }
                 nodes.remove(i);
-            }
-            // If `graph_nodes[x].node` is the child `Node` of `node` it is certain the `If` is true.
-            else if let Some(_) = nodes[i].child {
-                unreachable!()
             } else {
                 unreachable!()
             }
@@ -297,23 +293,23 @@ fn inline_ifs(nodes: &mut Vec<Node>, start: usize, graph_nodes: &[Option<GraphNo
                         // If `graph_nodes[x].node` is the next `Node` of `node` it is certain the `If` is false.
                         if let Some(next) = nodes[i].next && next == y {
                             debug_assert!(nodes[i].child.is_none());
-                            for j in 0..i {
-                                if let Some(n) = &mut nodes[j].next {
+                            for node in nodes.iter_mut().take(i) {
+                                if let Some(n) = &mut node.next {
                                     if *n > i {
                                         *n -= 1;
                                     }
                                 }
-                                if let Some(c) = &mut nodes[j].child {
+                                if let Some(c) = &mut node.child {
                                     if *c > i {
                                         *c -= 1;
                                     }
                                 }
                             }
-                            for j in (i+1)..nodes.len() {
-                                if let Some(n) = &mut nodes[j].next {
+                            for node in nodes.iter_mut().skip(i+1) {
+                                if let Some(n) = &mut node.next {
                                     *n -= 1;
                                 }
-                                if let Some(c) = &mut nodes[j].child {
+                                if let Some(c) = &mut node.child {
                                     *c -= 1;
                                 }
                             }
@@ -321,23 +317,23 @@ fn inline_ifs(nodes: &mut Vec<Node>, start: usize, graph_nodes: &[Option<GraphNo
                         }
                         // If `graph_nodes[x].node` is the child `Node` of `node` it is certain the `If` is true.
                         else if let Some(child) = nodes[i].child && child == y {
-                            for j in 0..i {
-                                if let Some(n) = &mut nodes[j].next {
+                            for node in nodes.iter_mut().take(i) {
+                                if let Some(n) = &mut node.next {
                                     if *n > i {
                                         *n -= 1;
                                     }
                                 }
-                                if let Some(c) = &mut nodes[j].child {
+                                if let Some(c) = &mut node.child {
                                     if *c > i {
                                         *c -= 1;
                                     }
                                 }
                             }
-                            for j in (i+1)..nodes.len() {
-                                if let Some(n) = &mut nodes[j].next {
+                            for node in nodes.iter_mut().skip(i+1) {
+                                if let Some(n) = &mut node.next {
                                     *n -= 1;
                                 }
-                                if let Some(c) = &mut nodes[j].child {
+                                if let Some(c) = &mut node.child {
                                     *c -= 1;
                                 }
                             }
@@ -385,7 +381,7 @@ fn optimize_with_path(
 fn passback_end(
     mut graph_index: usize,
     end: GraphNodeEnd,
-    graph_nodes: &mut Vec<Option<GraphNode>>,
+    graph_nodes: &mut [Option<GraphNode>],
 ) {
     debug_assert!(graph_nodes[graph_index]
         .as_ref()
