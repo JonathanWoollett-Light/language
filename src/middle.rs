@@ -25,7 +25,7 @@ pub fn optimize(nodes: &[Node]) -> Vec<Node> {
                 stack.push(b);
             }
             for (ident, value_type) in node.state.iter() {
-                type_state.insert(ident.clone(), value_type.type_value());
+                type_state.insert(ident.clone(), Type::from(value_type.clone()));
             }
         }
         type_state
@@ -157,6 +157,7 @@ fn remove_unreachable_nodes(
     let visited_nodes = {
         let mut stack = vec![start];
         let mut visited = HashSet::new();
+
         while let Some(index) = stack.pop() {
             let graph_node = graph_nodes[index].as_ref().unwrap();
             if let Some(a) = graph_node.next.0 {
@@ -165,6 +166,7 @@ fn remove_unreachable_nodes(
             if let Some(b) = graph_node.next.1 {
                 stack.push(b);
             }
+
             visited.insert(graph_node.node);
         }
         visited
@@ -210,6 +212,84 @@ fn remove_unreachable_nodes(
     new_nodes
 }
 
+fn inline_true_ifs(nodes: &[Node], start: usize, graph_nodes: &[Option<GraphNode>]) -> Vec<Node> {
+    let map = HashMap::new();
+    let mut stack = vec![start];
+    while let Some(graph_index) = stack.pop() {
+        let graph_node = graph_nodes[graph_index].as_ref().unwrap();
+        if let Some(a) = graph_node.next.0 {
+            stack.push(a);
+        }
+        if let Some(b) = graph_node.next.1 {
+            stack.push(b);
+        }
+    }
+
+    todo!()
+}
+
+// TODO This is ugly, do this better.
+/// Removes `If` statements that have no children.
+fn remove_empty_ifs(nodes: &[Node]) -> Vec<Node> {
+    let mut stack = vec![0];
+    let mut map = Vec::new();
+    while let Some(index) = stack.pop() {
+        let has_child = nodes[index].child.is_some();
+        if let Some(child) = nodes[index].child {
+            stack.push(child);
+        }
+        if let Some(next) = nodes[index].next {
+            stack.push(next);
+        }
+
+        if let Op::Intrinsic(Intrinsic::If(_)) = nodes[index].statement.op {
+            if has_child {
+                map.push(index);
+            }
+        } else {
+            map.push(index);
+        }
+    }
+
+    let index_map = map
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (*n, i))
+        .collect::<HashMap<_, _>>();
+
+    // Get new node list
+    let new_nodes = map
+        .iter()
+        .map(|i| {
+            let mut node = nodes[*i].clone();
+
+            if let Some(n) = &mut node.next {
+                loop {
+                    if let Some(x) = index_map.get(&n).cloned() {
+                        *n = x;
+                        break;
+                    } else {
+                        *n += 1;
+                    }
+                }
+            }
+
+            if let Some(c) = &mut node.child {
+                loop {
+                    if let Some(x) = index_map.get(&c).cloned() {
+                        *c = x;
+                        break;
+                    } else {
+                        *c += 1;
+                    }
+                }
+            }
+            node
+        })
+        .collect::<Vec<_>>();
+    new_nodes
+}
+
 // Applies typical optimizations. E.g. removing unused variables, unreachable code, etc.
 fn optimize_with_path(
     nodes: &[Node],
@@ -218,14 +298,18 @@ fn optimize_with_path(
     type_state: TypeState,
 ) -> Vec<Node> {
     // Remove unreachable nodes.
-    let mut reachable_nodes = remove_unreachable_nodes(nodes, start, graph_nodes);
+    let reachable_nodes = remove_unreachable_nodes(nodes, start, graph_nodes);
 
-    // TODO Unrool loops.
+    // drop(graph_nodes);
+    // TODO Remove `If`s  we know are always true.
+    let true_if_nodes = inline_true_ifs(&reachable_nodes, start, graph_nodes);
+
+    let mut non_empty_if_nodes = remove_empty_ifs(&true_if_nodes);
 
     // Find assignments that can be promoted to allocations.
-    promote_assignments(&mut reachable_nodes, &type_state);
+    promote_assignments(&mut non_empty_if_nodes, &type_state);
 
-    reachable_nodes
+    non_empty_if_nodes
 }
 
 // Upon encountering an invalid path, we call this which strips this path as a possible path.
@@ -247,17 +331,19 @@ fn passback_end(
         .1
         .is_empty());
     debug_assert!(graph_nodes[graph_index].as_ref().unwrap().cost.is_none());
-    graph_nodes[graph_index].as_mut().unwrap().cost = Some(end.cost());
+    let state_cost =
+        TypeState::from(graph_nodes[graph_index].as_ref().unwrap().state.clone()).cost();
+    graph_nodes[graph_index].as_mut().unwrap().cost = Some(end.cost().saturating_add(state_cost));
 
     while let Some(prev) = graph_nodes[graph_index].as_ref().unwrap().prev {
-        if let Some(i) = graph_nodes[prev]
+        if let Some((i, _)) = graph_nodes[prev]
             .as_ref()
             .unwrap()
             .unexplored_next
             .0
             .iter()
-            .find(|&&x| x == graph_index)
-            .cloned()
+            .enumerate()
+            .find(|(_, &x)| x == graph_index)
         {
             graph_nodes[prev]
                 .as_mut()
@@ -293,14 +379,14 @@ fn passback_end(
             } else {
                 graph_nodes[prev].as_mut().unwrap().next.0 = Some(graph_index);
             }
-        } else if let Some(i) = graph_nodes[prev]
+        } else if let Some((i, _)) = graph_nodes[prev]
             .as_ref()
             .unwrap()
             .unexplored_next
             .1
             .iter()
-            .find(|&&x| x == graph_index)
-            .cloned()
+            .enumerate()
+            .find(|(_, &x)| x == graph_index)
         {
             graph_nodes[prev]
                 .as_mut()
@@ -1084,6 +1170,12 @@ impl TypeValueState {
 #[derive(Debug, Clone)]
 struct TypeState(HashMap<Identifier, Type>);
 
+impl From<TypeValueState> for TypeState {
+    fn from(x: TypeValueState) -> Self {
+        Self(x.0.into_iter().map(|(i, x)| (i, Type::from(x))).collect())
+    }
+}
+
 #[allow(dead_code)]
 impl TypeState {
     fn new() -> Self {
@@ -1107,6 +1199,36 @@ impl TypeState {
     fn insert(&mut self, key: Identifier, value: Type) -> Option<Type> {
         self.0.insert(key, value)
     }
+    fn cost(&self) -> u64 {
+        self.0
+            .iter()
+            .fold(0, |acc, (_, x)| acc.saturating_add(x.cost()))
+    }
+}
+
+impl Type {
+    fn cost(&self) -> u64 {
+        match self {
+            Self::U8 => 1,
+            Self::U16 => 2,
+            Self::U32 => 4,
+            Self::U64 => 8,
+            Self::I8 => 3,
+            Self::I16 => 5,
+            Self::I32 => 9,
+            Self::I64 => 17,
+            _ => todo!(),
+        }
+    }
+}
+
+impl From<TypeValue> for Type {
+    fn from(x: TypeValue) -> Self {
+        match x {
+            TypeValue::Integer(int) => Type::from(int),
+            TypeValue::Array(array) => Type::from(array),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1114,6 +1236,7 @@ enum TypeValue {
     Integer(TypeValueInteger),
     Array(TypeValueArray),
 }
+
 #[allow(unreachable_patterns)]
 impl TypeValue {
     fn integer_mut(&mut self) -> Option<&mut TypeValueInteger> {
@@ -1122,12 +1245,7 @@ impl TypeValue {
             _ => None,
         }
     }
-    pub fn type_value(&self) -> Type {
-        match self {
-            Self::Integer(int) => int.type_value(),
-            Self::Array(array) => array.type_value(),
-        }
-    }
+
     fn integer(&self) -> Option<&TypeValueInteger> {
         match self {
             Self::Integer(integer) => Some(integer),
@@ -1135,6 +1253,7 @@ impl TypeValue {
         }
     }
 }
+
 impl From<(Type, i128)> for TypeValue {
     fn from((x, y): (Type, i128)) -> TypeValue {
         match x {
@@ -1175,11 +1294,12 @@ struct TypeValueArray {
     item: Type,
     values: Vec<TypeValue>,
 }
-impl TypeValueArray {
-    fn type_value(&self) -> Type {
+
+impl From<TypeValueArray> for Type {
+    fn from(x: TypeValueArray) -> Self {
         Type::Array(Box::new(Array {
-            item: self.item.clone(),
-            len: self.values.len(),
+            item: x.item.clone(),
+            len: x.values.len(),
         }))
     }
 }
@@ -1196,6 +1316,21 @@ enum TypeValueInteger {
     I64(MyRange<i64>),
 }
 
+impl From<TypeValueInteger> for Type {
+    fn from(x: TypeValueInteger) -> Self {
+        match x {
+            TypeValueInteger::U8(_) => Type::U8,
+            TypeValueInteger::U16(_) => Type::U16,
+            TypeValueInteger::U32(_) => Type::U32,
+            TypeValueInteger::U64(_) => Type::U64,
+            TypeValueInteger::I8(_) => Type::I8,
+            TypeValueInteger::I16(_) => Type::I16,
+            TypeValueInteger::I32(_) => Type::I32,
+            TypeValueInteger::I64(_) => Type::I64,
+        }
+    }
+}
+
 #[allow(dead_code)]
 impl TypeValueInteger {
     pub fn any() -> [Self; 8] {
@@ -1209,19 +1344,6 @@ impl TypeValueInteger {
             Self::I32(MyRange::any()),
             Self::I64(MyRange::any()),
         ]
-    }
-
-    pub fn type_value(&self) -> Type {
-        match self {
-            Self::U8(_) => Type::U8,
-            Self::U16(_) => Type::U16,
-            Self::U32(_) => Type::U32,
-            Self::U64(_) => Type::U64,
-            Self::I8(_) => Type::I8,
-            Self::I16(_) => Type::I16,
-            Self::I32(_) => Type::I32,
-            Self::I64(_) => Type::I64,
-        }
     }
 
     fn max(&self) -> i128 {
