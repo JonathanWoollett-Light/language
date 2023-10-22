@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::ast::*;
 use num_traits::bounds::Bounded;
 use num_traits::identities::One;
@@ -6,46 +5,64 @@ use num_traits::identities::Zero;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use itertools::Itertools;
 use std::collections::HashSet;
 
 const DEFAULT_LOOP_LIMIT: usize = 100;
 
 pub fn optimize(nodes: &[Node]) -> Vec<Node> {
     // Get all possible paths.
-    let (possbile_paths, start) = explore_paths(nodes);
+    let (mut graph_nodes, start) = explore_paths(nodes);
 
-    // Pick the best path.
-    let (best_path, type_state) = pick_best_path(valid_paths);
+    let type_state = {
+        let mut type_state = TypeState::new();
+        let mut stack = vec![start];
+        while let Some(index) = stack.pop() {
+            let node = graph_nodes[index].as_ref().unwrap();
+            if let Some(a) = node.next.0 {
+                stack.push(a);
+            }
+            if let Some(b) = node.next.1 {
+                stack.push(b);
+            }
+            for (ident, value_type) in node.state.iter() {
+                type_state.insert(ident.clone(), value_type.type_value());
+            }
+        }
+        type_state
+    };
 
     // Use the best path to apply optimizations to the nodes.
-    optimize_with_path(nodes, &best_path, type_state)
+    optimize_with_path(nodes, &mut graph_nodes, start, type_state)
 }
 
 #[derive(Debug)]
 struct GraphNode {
     node: usize,
     state: TypeValueState,
-    /// The options for the next node.
-    next: Vec<usize>,
-    /// The options for the other next node (e.g. we cannot evaluate an `if` at compile-time so we need to evaluate both paths).
-    other: Vec<usize>,
+    /// The best next nodes.
+    ///
+    /// This has 2 components as if  we cannot evaluate an `if` at compile-time so we need to evaluate both paths.
+    next: (Option<usize>, Option<usize>),
+    /// Unexplored next nodes.
+    unexplored_next: (Vec<usize>, Vec<usize>),
+    /// The cost of `next`.
+    cost: Option<u64>,
+    /// The previous `GraphNode`.
     prev: Option<usize>,
     /// If within a loop this will be the number of following statements within the loop that can be evaluated
     loop_limit: Vec<usize>,
     /// Points to the graph node that creates the scope e.g. `loop`
     scope: Option<usize>,
-    /// The cost for every combination
-    cost: HashMap<(usize,Option<usize>),usize>,
 }
 
 // Promotes assignments to data allocations.
-fn promote_assignments(nodes: &mut Vec<(Node, TypeValueState)>, type_state: &TypeState) {
+fn promote_assignments(nodes: &mut Vec<Node>, type_state: &TypeState) {
     let mut allocated = HashSet::new();
-    let mut stack = vec![0];
-    let mut bss: Vec<_> = Vec::new();
-    while let Some(i) = stack.pop() {
-        let (node, _state) = &mut nodes[i];
+    let mut stack = vec![(0, false)];
+    let mut bss = Vec::new();
+    while let Some((i, in_loop)) = stack.pop() {
+        // let graph_node = graph_nodes[i];
+        let node = &mut nodes[i];
 
         let mut bss_fn = |identifier: &Vec<u8>| {
             if allocated.insert(identifier.clone()) {
@@ -69,17 +86,24 @@ fn promote_assignments(nodes: &mut Vec<(Node, TypeValueState)>, type_state: &Typ
         };
 
         match node.statement.op {
-            Op::Intrinsic(Intrinsic::Assign) => match node.statement.arg.as_slice() {
+            Op::Intrinsic(Intrinsic::Assign) if !in_loop => match node.statement.arg.as_slice() {
                 [Value::Variable(Variable {
                     identifier,
                     index: None,
                 }), Value::Literal(_), ..] => {
                     if allocated.insert(identifier.clone()) {
                         node.statement.op = Op::Special(Special::Type);
-                        let value = type_state.get(identifier).unwrap().clone();
+                        let value = type_state.get(&identifier).unwrap().clone();
                         node.statement.arg.insert(1, Value::Type(value));
                     }
                 }
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::Assign) if in_loop => match node.statement.arg.as_slice() {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), Value::Literal(_), ..] => bss_fn(identifier),
                 _ => todo!(),
             },
             Op::Syscall(Syscall::Read) => match node.statement.arg.as_slice() {
@@ -100,14 +124,17 @@ fn promote_assignments(nodes: &mut Vec<(Node, TypeValueState)>, type_state: &Typ
         }
 
         if let Some(next) = node.next {
-            stack.push(next);
+            stack.push((next, in_loop));
         }
         if let Some(child) = node.child {
-            stack.push(child);
+            stack.push((
+                child,
+                (node.statement.op == Op::Intrinsic(Intrinsic::Loop)) || in_loop,
+            ));
         }
     }
 
-    for (node, _) in nodes.iter_mut() {
+    for node in nodes.iter_mut() {
         if let Some(next) = &mut node.next {
             *next += bss.len();
         }
@@ -116,162 +143,259 @@ fn promote_assignments(nodes: &mut Vec<(Node, TypeValueState)>, type_state: &Typ
         }
     }
     for item in bss.into_iter().rev() {
-        nodes.insert(0, (item, TypeValueState::new()));
+        nodes.insert(0, item);
     }
 }
 
-#[allow(clippy::ptr_arg)]
-fn unroll_loops(_nodes: &mut Vec<(Node, TypeValueState)>) {}
-
+/// Removes unreachable nodes
 fn remove_unreachable_nodes(
     nodes: &[Node],
-    path: &[Option<TypeValueState>],
-) -> Vec<(Node, TypeValueState)> {
-    // Remove unreachable nodes
-    let mut new_nodes = nodes
+    start: usize,
+    graph_nodes: &mut [Option<GraphNode>],
+) -> Vec<Node> {
+    // Set of all nodes visited.
+    let visited_nodes = {
+        let mut stack = vec![start];
+        let mut visited = HashSet::new();
+        while let Some(index) = stack.pop() {
+            let graph_node = graph_nodes[index].as_ref().unwrap();
+            if let Some(a) = graph_node.next.0 {
+                stack.push(a);
+            }
+            if let Some(b) = graph_node.next.1 {
+                stack.push(b);
+            }
+            visited.insert(graph_node.node);
+        }
+        visited
+    };
+
+    // Get list of visited nodes sorted by original order.
+    let mut visited_nodes_ordered = visited_nodes.clone().into_iter().collect::<Vec<_>>();
+    visited_nodes_ordered.sort();
+
+    // Map from old indexes to new indexes.
+    let index_map = visited_nodes_ordered
         .iter()
-        .cloned()
-        .zip(path.iter().cloned())
-        .map(|(n, p)| p.map(|x| (n, x)))
+        .enumerate()
+        .map(|(i, n)| (*n, i))
+        .collect::<HashMap<_, _>>();
+
+    // Get new node list
+    let new_nodes = visited_nodes_ordered
+        .iter()
+        .map(|i| {
+            let mut node = nodes[*i].clone();
+            node.next = node.next.and_then(|n| index_map.get(&n).cloned());
+            node.child = node.child.and_then(|n| index_map.get(&n).cloned());
+            node
+        })
         .collect::<Vec<_>>();
 
-    // TODO This is incomplete and currently only works for simple `next` links.
-
-    // Update node links
+    // Update graph node links
     {
-        let mut first = 0;
-        loop {
-            match new_nodes.get(first) {
-                None => unreachable!(),
-                Some(None) => {
-                    first += 1;
-                }
-                Some(Some(_)) => break,
+        let mut stack = vec![start];
+        while let Some(index) = stack.pop() {
+            let graph_node = graph_nodes[index].as_mut().unwrap();
+            graph_node.node = *index_map.get(&graph_node.node).unwrap();
+            if let Some(a) = graph_node.next.0 {
+                stack.push(a);
             }
-        }
-        'outer: loop {
-            let mut second = first;
-            loop {
-                second += 1;
-                match new_nodes.get(second) {
-                    None => {
-                        // In the case there are no next nodes for the `first` node to point to
-                        // (this can happen with an `exit`) set `next` and `child` to `None`.
-                        let (node, _state) = new_nodes[first].as_mut().unwrap();
-                        node.next = None;
-                        node.child = None;
-
-                        break 'outer;
-                    }
-                    Some(None) => continue,
-                    Some(Some(_)) => break,
-                }
+            if let Some(b) = graph_node.next.1 {
+                stack.push(b);
             }
-
-            let (node, _state) = new_nodes[first].as_mut().unwrap();
-            if let Some(next) = &mut node.next {
-                *next = second;
-            }
-            first = second;
         }
     }
 
-    // Remove `None` elements
-    // ---------------------------------------------------------------------------------------------
-
-    {
-        let mut decrement = 0;
-        for i in (0..new_nodes.len()).rev() {
-            let Some((node, _state)) = &mut new_nodes[i] else {
-                decrement += 1;
-                continue;
-            };
-            if let Some(next) = &mut node.next {
-                *next -= decrement;
-            }
-            if let Some(child) = &mut node.child {
-                *child -= decrement;
-            }
-            decrement = 0;
-        }
-        new_nodes.into_iter().flatten().collect::<Vec<_>>()
-    }
+    new_nodes
 }
 
 // Applies typical optimizations. E.g. removing unused variables, unreachable code, etc.
 fn optimize_with_path(
     nodes: &[Node],
-    path: &[Option<TypeValueState>],
+    graph_nodes: &mut [Option<GraphNode>],
+    start: usize,
     type_state: TypeState,
 ) -> Vec<Node> {
-    assert_eq!(nodes.len(), path.len());
-
     // Remove unreachable nodes.
-    let mut reachable_nodes = remove_unreachable_nodes(nodes, path);
+    let mut reachable_nodes = remove_unreachable_nodes(nodes, start, graph_nodes);
 
-    // Unroll loosp
-    unroll_loops(&mut reachable_nodes);
+    // TODO Unrool loops.
 
     // Find assignments that can be promoted to allocations.
     promote_assignments(&mut reachable_nodes, &type_state);
 
-    reachable_nodes.into_iter().map(|(n, _)| n).collect()
-}
-
-/// Given the indicies of valid starting nodes, picks 1, returning the index for this node and the
-/// complete `TypeState`.
-fn pick_best_path(
-    // The indicies of the starting nodes of valid paths.
-    paths: &[usize],
-) -> (usize, TypeState) {
-    // TODO This is a bad heuristic to pick the best path, this should be improved.
-
-    let (mut min_len, mut min_path) = (paths[0].iter().filter(|x| x.is_some()).count(), 0);
-    for (i, path) in paths.iter().enumerate().skip(1) {
-        let len = path.iter().filter(|x| x.is_some()).count();
-        if len < min_len {
-            min_len = len;
-            min_path = i;
-        }
-    }
-    let type_state =
-        paths[min_path]
-            .iter()
-            .filter_map(|x| x.as_ref())
-            .fold(TypeState::new(), |mut acc, x| {
-                for (ident, value_type) in x.iter() {
-                    acc.insert(ident.clone(), value_type.type_value());
-                }
-                acc
-            });
-
-    (paths[min_path].clone(), type_state)
+    reachable_nodes
 }
 
 // Upon encountering an invalid path, we call this which strips this path as a possible path.
-fn passback_invalid(mut graph_index: usize, graph_nodes: &mut Vec<Option<GraphNode>>) {
-    while let Some(prev) = graph_nodes[graph_index].unwrap().prev {
-        graph_nodes[graph_index] = None;
-        let prev_node = &mut graph_nodes[prev].unwrap();
+fn passback_end(
+    mut graph_index: usize,
+    end: GraphNodeEnd,
+    graph_nodes: &mut Vec<Option<GraphNode>>,
+) {
+    debug_assert!(graph_nodes[graph_index]
+        .as_ref()
+        .unwrap()
+        .unexplored_next
+        .0
+        .is_empty());
+    debug_assert!(graph_nodes[graph_index]
+        .as_ref()
+        .unwrap()
+        .unexplored_next
+        .1
+        .is_empty());
+    debug_assert!(graph_nodes[graph_index].as_ref().unwrap().cost.is_none());
+    graph_nodes[graph_index].as_mut().unwrap().cost = Some(end.cost());
 
-        if let Some(i) = prev_node.next.iter().find(|&&x|x==graph_index) {
-            prev_node.next.remove(*i);
-            if !prev_node.next.is_empty() {
-                break;
+    while let Some(prev) = graph_nodes[graph_index].as_ref().unwrap().prev {
+        if let Some(i) = graph_nodes[prev]
+            .as_ref()
+            .unwrap()
+            .unexplored_next
+            .0
+            .iter()
+            .find(|&&x| x == graph_index)
+            .cloned()
+        {
+            graph_nodes[prev]
+                .as_mut()
+                .unwrap()
+                .unexplored_next
+                .0
+                .remove(i);
+            if let Some(prev_next) = graph_nodes[prev].as_ref().unwrap().next.0 {
+                // If this is the lowest cost next node, set it.
+                if graph_nodes[graph_index].as_ref().unwrap().cost.unwrap()
+                    < graph_nodes[prev_next].as_ref().unwrap().cost.unwrap()
+                {
+                    graph_nodes[prev].as_mut().unwrap().next.0 = Some(graph_index);
+                }
+                // If this is not the lowest cost next node, remove it.
+                else {
+                    // Removes all `GraphNode` that are next to `graph_index` `GraphNode`.
+                    let mut stack = vec![graph_index];
+                    while let Some(x) = stack.pop() {
+                        let y = &mut graph_nodes[x];
+                        let z = y.as_ref().unwrap();
+                        debug_assert!(z.unexplored_next.0.is_empty());
+                        debug_assert!(z.unexplored_next.1.is_empty());
+                        if let Some(a) = z.next.0 {
+                            stack.push(a);
+                        }
+                        if let Some(b) = z.next.1 {
+                            stack.push(b);
+                        }
+                        *y = None;
+                    }
+                }
+            } else {
+                graph_nodes[prev].as_mut().unwrap().next.0 = Some(graph_index);
             }
-        }
-        else if let Some(i) = prev_node.other.iter().find(|&&x|x==graph_index) {
-            prev_node.other.remove(*i);
-            if !prev_node.other.is_empty() {
-                break;
+        } else if let Some(i) = graph_nodes[prev]
+            .as_ref()
+            .unwrap()
+            .unexplored_next
+            .1
+            .iter()
+            .find(|&&x| x == graph_index)
+            .cloned()
+        {
+            graph_nodes[prev]
+                .as_mut()
+                .unwrap()
+                .unexplored_next
+                .1
+                .remove(i);
+            if let Some(prev_next) = graph_nodes[prev].as_ref().unwrap().next.1 {
+                // If this is the lowest cost next node, set it.
+                if graph_nodes[graph_index].as_ref().unwrap().cost.unwrap()
+                    < graph_nodes[prev_next].as_ref().unwrap().cost.unwrap()
+                {
+                    graph_nodes[prev].as_mut().unwrap().next.1 = Some(graph_index);
+                }
+                // If this is not the lowest cost next node, remove it.
+                else {
+                    // Removes all `GraphNode` that are next to `graph_index` `GraphNode`.
+                    let mut stack = vec![graph_index];
+                    while let Some(x) = stack.pop() {
+                        let y = &mut graph_nodes[x];
+                        let z = y.as_ref().unwrap();
+                        debug_assert!(z.unexplored_next.0.is_empty());
+                        debug_assert!(z.unexplored_next.1.is_empty());
+                        if let Some(a) = z.next.0 {
+                            stack.push(a);
+                        }
+                        if let Some(b) = z.next.1 {
+                            stack.push(b);
+                        }
+                        *y = None;
+                    }
+                }
+            } else {
+                graph_nodes[prev].as_mut().unwrap().next.1 = Some(graph_index);
             }
-        }
-        else {
-            // Since the node that is `prev` to `graph_index` must have `graph_index` in its `other` or `next`.
+        } else {
+            // Since the node that is `prev` to `graph_index` must have `graph_index` in its `next`.
             unreachable!()
         }
 
+        // If we have explored all nodes next to this one, set the cost and continue passing back.
+        if graph_nodes[prev]
+            .as_mut()
+            .unwrap()
+            .unexplored_next
+            .0
+            .is_empty()
+            && graph_nodes[prev]
+                .as_mut()
+                .unwrap()
+                .unexplored_next
+                .1
+                .is_empty()
+        {
+            let x = graph_nodes[prev]
+                .as_mut()
+                .unwrap()
+                .next
+                .0
+                .and_then(|i| graph_nodes[i].as_mut().unwrap().cost)
+                .unwrap_or(0);
+            let y = graph_nodes[prev]
+                .as_mut()
+                .unwrap()
+                .next
+                .1
+                .and_then(|i| graph_nodes[i].as_mut().unwrap().cost)
+                .unwrap_or(0);
+            graph_nodes[prev].as_mut().unwrap().cost = Some(x.saturating_add(y).saturating_add(1));
+        }
+        // If there remain unexplored nodes here we break.
+        else {
+            break;
+        }
+
         graph_index = prev;
+    }
+}
+
+enum GraphNodeEnd {
+    /// E.g. `exit` syscall
+    Valid,
+    /// E.g. any syscall other than `exit`
+    Invalid,
+    /// E.g. reached loop limit
+    Loop,
+}
+
+impl GraphNodeEnd {
+    fn cost(self) -> u64 {
+        match self {
+            Self::Valid => 1,
+            Self::Loop => 2,
+            Self::Invalid => u64::MAX,
+        }
     }
 }
 
@@ -284,31 +408,38 @@ fn append(
     nodes: &[Node],
     indices: &mut Vec<usize>,
 ) -> Vec<usize> {
-    get_possible_states(&nodes[node_index], &graph_nodes[graph_index].unwrap().state)
-        .into_iter()
-        .map(|state| {
-            let j = graph_nodes.len();
-            indices.push(j);
+    get_possible_states(
+        &nodes[node_index],
+        &graph_nodes[graph_index].as_mut().unwrap().state,
+    )
+    .into_iter()
+    .map(|state| {
+        let j = graph_nodes.len();
+        indices.push(j);
 
-            let mut new_loop_limt = graph_nodes[graph_index].unwrap().loop_limit.clone();
-            if let Some(n) = new_loop_limt.last_mut() {
-                *n -= 1;
-            }
+        let mut new_loop_limt = graph_nodes[graph_index]
+            .as_mut()
+            .unwrap()
+            .loop_limit
+            .clone();
+        if let Some(n) = new_loop_limt.last_mut() {
+            *n -= 1;
+        }
 
-            graph_nodes.push(Some(GraphNode {
-                node: node_index,
-                state,
-                next: Vec::new(),
-                other: Vec::new(),
-                prev: Some(graph_index),
-                loop_limit: new_loop_limt,
-                scope,
-                cost: 0,
-            }));
+        graph_nodes.push(Some(GraphNode {
+            node: node_index,
+            state,
+            next: (None, None),
+            unexplored_next: (Vec::new(), Vec::new()),
+            cost: None,
+            prev: Some(graph_index),
+            loop_limit: new_loop_limt,
+            scope,
+        }));
 
-            j
-        })
-        .collect()
+        j
+    })
+    .collect()
 }
 
 fn explore_paths(nodes: &[Node]) -> (Vec<Option<GraphNode>>, usize) {
@@ -323,12 +454,12 @@ fn explore_paths(nodes: &[Node]) -> (Vec<Option<GraphNode>>, usize) {
                 Some(GraphNode {
                     node: 0,
                     state,
-                    next: Vec::new(),
-                    other: Vec::new(),
+                    next: (None, None),
+                    unexplored_next: (Vec::new(), Vec::new()),
+                    cost: None,
                     prev: None,
                     loop_limit: Vec::new(),
                     scope: None,
-                    cost: 0,
                 }),
                 i,
             )
@@ -336,17 +467,15 @@ fn explore_paths(nodes: &[Node]) -> (Vec<Option<GraphNode>>, usize) {
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
     while let Some(index) = indices.pop() {
-        let Some(graph_node) = &mut graph_nodes[index] else {
-            // The graph node for queued nodes may be removed when an invalid node is encountered and all invalid nodes are removed.
-            continue;
-        };
-        let n = graph_node.node;
-        let node = nodes[n];
+        debug_assert!(graph_nodes[index].is_some());
+
+        let n = graph_nodes[index].as_mut().unwrap().node;
+        let node = &nodes[n];
 
         // When encountering nodes at loop limits continue, this can be later identified by seeing the 0 at the end.
-        if let Some(0) = graph_node.loop_limit.last() {
-            continue;
-        }
+        // if let Some(0) = graph_node.loop_limit.last() {
+        //     continue;
+        // }
 
         // 1. Relies on the ordering of `nodes` (it will be `child -> next -> outer`).
         // 2. Only `exit`s are allowed to have no following nodes, otherwise it is an error.
@@ -355,41 +484,87 @@ fn explore_paths(nodes: &[Node]) -> (Vec<Option<GraphNode>>, usize) {
                 match node.statement.arg.as_slice() {
                     [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] =>
                     {
-                        let y = graph_node.state.get(identifier).unwrap().integer().unwrap();
-                        let scope = graph_node.scope;
+                        let scope = graph_nodes[index].as_mut().unwrap().scope;
+                        let y = graph_nodes[index]
+                            .as_mut()
+                            .unwrap()
+                            .state
+                            .get(identifier)
+                            .unwrap()
+                            .integer()
+                            .unwrap();
 
                         // If we know the if will be true at compile-time
-                        if y.value() == Some(*x) {
+                        graph_nodes[index].as_mut().unwrap().unexplored_next = if y.value()
+                            == Some(*x)
+                        {
                             // See 1 & 2
-                            graph_node.next =
-                                append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices);
+                            (
+                                append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices),
+                                Vec::new(),
+                            )
                         }
                         // If we know the if will be false at compile-time
                         else if y.excludes(*x) {
-                            graph_node.next = if let Some(next) = node.next {
-                                append(next, index, &mut graph_nodes, scope, nodes, &mut indices)
-                            } else {
-                                // See 2
-                                append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices)
-                            };
+                            (
+                                if let Some(next) = node.next {
+                                    append(
+                                        next,
+                                        index,
+                                        &mut graph_nodes,
+                                        scope,
+                                        nodes,
+                                        &mut indices,
+                                    )
+                                } else {
+                                    // See 2
+                                    append(
+                                        n + 1,
+                                        index,
+                                        &mut graph_nodes,
+                                        scope,
+                                        nodes,
+                                        &mut indices,
+                                    )
+                                },
+                                Vec::new(),
+                            )
                         } else {
-                            if let Some(child) = node.child {
-                                graph_node.next = append(
-                                    child,
-                                    index,
-                                    &mut graph_nodes,
-                                    scope,
-                                    nodes,
-                                    &mut indices,
-                                );
-                            }
-                            graph_node.other = if let Some(next) = node.next {
-                                append(next, index, &mut graph_nodes, scope, nodes, &mut indices)
-                            } else {
-                                // See 2
-                                append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices)
-                            };
-                        }
+                            (
+                                if let Some(child) = node.child {
+                                    append(
+                                        child,
+                                        index,
+                                        &mut graph_nodes,
+                                        scope,
+                                        nodes,
+                                        &mut indices,
+                                    )
+                                } else {
+                                    Vec::new()
+                                },
+                                if let Some(next) = node.next {
+                                    append(
+                                        next,
+                                        index,
+                                        &mut graph_nodes,
+                                        scope,
+                                        nodes,
+                                        &mut indices,
+                                    )
+                                } else {
+                                    // See 2
+                                    append(
+                                        n + 1,
+                                        index,
+                                        &mut graph_nodes,
+                                        scope,
+                                        nodes,
+                                        &mut indices,
+                                    )
+                                },
+                            )
+                        };
                     }
                     _ => todo!(),
                 }
@@ -398,41 +573,85 @@ fn explore_paths(nodes: &[Node]) -> (Vec<Option<GraphNode>>, usize) {
                 match node.statement.arg.as_slice() {
                     [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] =>
                     {
-                        let y = graph_node.state.get(identifier).unwrap().integer().unwrap();
-                        let scope = graph_node.scope;
+                        let scope = graph_nodes[index].as_mut().unwrap().scope;
+                        let y = graph_nodes[index]
+                            .as_mut()
+                            .unwrap()
+                            .state
+                            .get(identifier)
+                            .unwrap()
+                            .integer()
+                            .unwrap();
 
                         // If we know the if will be true at compile-time
-                        if y.max() < *x {
+                        graph_nodes[index].as_mut().unwrap().unexplored_next = if y.max() < *x {
                             // See 1 & 2
-                            graph_node.next =
-                                append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices);
+                            (
+                                append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices),
+                                Vec::new(),
+                            )
                         }
                         // If we know the if will be false at compile-time
                         else if y.min() >= *x {
-                            graph_node.next = if let Some(next) = node.next {
-                                append(next, index, &mut graph_nodes, scope, nodes, &mut indices)
-                            } else {
-                                // See 2
-                                append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices)
-                            };
+                            (
+                                if let Some(next) = node.next {
+                                    append(
+                                        next,
+                                        index,
+                                        &mut graph_nodes,
+                                        scope,
+                                        nodes,
+                                        &mut indices,
+                                    )
+                                } else {
+                                    // See 2
+                                    append(
+                                        n + 1,
+                                        index,
+                                        &mut graph_nodes,
+                                        scope,
+                                        nodes,
+                                        &mut indices,
+                                    )
+                                },
+                                Vec::new(),
+                            )
                         } else {
-                            if let Some(child) = node.child {
-                                graph_node.next = append(
-                                    child,
-                                    index,
-                                    &mut graph_nodes,
-                                    scope,
-                                    nodes,
-                                    &mut indices,
-                                );
-                            }
-                            graph_node.other = if let Some(next) = node.next {
-                                append(next, index, &mut graph_nodes, scope, nodes, &mut indices)
-                            } else {
-                                // See 2
-                                append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices)
-                            };
-                        }
+                            (
+                                if let Some(child) = node.child {
+                                    append(
+                                        child,
+                                        index,
+                                        &mut graph_nodes,
+                                        scope,
+                                        nodes,
+                                        &mut indices,
+                                    )
+                                } else {
+                                    Vec::new()
+                                },
+                                if let Some(next) = node.next {
+                                    append(
+                                        next,
+                                        index,
+                                        &mut graph_nodes,
+                                        scope,
+                                        nodes,
+                                        &mut indices,
+                                    )
+                                } else {
+                                    // See 2
+                                    append(
+                                        n + 1,
+                                        index,
+                                        &mut graph_nodes,
+                                        scope,
+                                        nodes,
+                                        &mut indices,
+                                    )
+                                },
+                            )
+                        };
                     }
                     _ => todo!(),
                 }
@@ -440,83 +659,126 @@ fn explore_paths(nodes: &[Node]) -> (Vec<Option<GraphNode>>, usize) {
             Op::Intrinsic(Intrinsic::Loop) => {
                 match node.statement.arg.as_slice() {
                     [] => {
-                        if let Some(child) = node.child {
-                            graph_node.loop_limit.push(DEFAULT_LOOP_LIMIT);
-                            graph_node.next = append(
-                                child,
-                                index,
-                                &mut graph_nodes,
-                                Some(index),
-                                nodes,
-                                &mut indices,
-                            );
-                            graph_node.loop_limit.pop();
-                        }
-                        if let Some(next) = node.next {
-                            let scope = graph_node.scope;
-                            graph_node.next =
-                                append(next, index, &mut graph_nodes, scope, nodes, &mut indices);
-                        } else {
-                            // It would require a break to hit this case.
-                            unreachable!()
-                        }
+                        graph_nodes[index].as_mut().unwrap().unexplored_next = (
+                            if let Some(child) = node.child {
+                                graph_nodes[index]
+                                    .as_mut()
+                                    .unwrap()
+                                    .loop_limit
+                                    .push(DEFAULT_LOOP_LIMIT);
+                                let temp = append(
+                                    child,
+                                    index,
+                                    &mut graph_nodes,
+                                    Some(index),
+                                    nodes,
+                                    &mut indices,
+                                );
+                                graph_nodes[index].as_mut().unwrap().loop_limit.pop();
+                                temp
+                            } else {
+                                Vec::new()
+                            },
+                            if let Some(next) = node.next {
+                                let scope = graph_nodes[index].as_ref().unwrap().scope;
+                                append(next, index, &mut graph_nodes, scope, nodes, &mut indices)
+                            } else {
+                                // It would require a break to hit this case.
+                                unreachable!()
+                            },
+                        )
                     }
                     [Value::Literal(Literal::Integer(integer))] => {
-                        if let Some(child) = node.child {
-                            graph_node.loop_limit.push(*integer as usize);
-                            graph_node.next = append(
-                                child,
-                                index,
-                                &mut graph_nodes,
-                                Some(index),
-                                nodes,
-                                &mut indices,
-                            );
-                            graph_node.loop_limit.pop();
-                        }
-                        if let Some(next) = node.next {
-                            let scope = graph_node.scope;
-                            graph_node.next =
-                                append(next, index, &mut graph_nodes, scope, nodes, &mut indices);
-                        } else {
-                            // It would require a break to hit this case.
-                            unreachable!()
-                        }
+                        graph_nodes[index].as_mut().unwrap().unexplored_next = (
+                            if let Some(child) = node.child {
+                                graph_nodes[index]
+                                    .as_mut()
+                                    .unwrap()
+                                    .loop_limit
+                                    .push(*integer as usize);
+                                let temp = append(
+                                    child,
+                                    index,
+                                    &mut graph_nodes,
+                                    Some(index),
+                                    nodes,
+                                    &mut indices,
+                                );
+                                graph_nodes[index].as_mut().unwrap().loop_limit.pop();
+                                temp
+                            } else {
+                                Vec::new()
+                            },
+                            if let Some(next) = node.next {
+                                let scope = graph_nodes[index].as_mut().unwrap().scope;
+                                append(next, index, &mut graph_nodes, scope, nodes, &mut indices)
+                            } else {
+                                // It would require a break to hit this case.
+                                unreachable!()
+                            },
+                        )
                     }
                     _ => todo!(),
                 }
             }
             Op::Intrinsic(Intrinsic::Break) => match node.statement.arg.as_slice() {
                 [] => {
-                    let prev_scope_graph_node = graph_node.scope.unwrap();
-                    let scope_node = graph_nodes[prev_scope_graph_node].unwrap().node;
-                    if let Some(next) = nodes[scope_node].next {
-                        let scope = graph_nodes[prev_scope_graph_node].unwrap().scope;
-                        graph_node.next =
-                            append(next, index, &mut graph_nodes, scope, nodes, &mut indices);
-                    }
+                    let prev_scope_graph_node = graph_nodes[index].as_mut().unwrap().scope.unwrap();
+                    let scope_node = graph_nodes[prev_scope_graph_node].as_mut().unwrap().node;
+                    graph_nodes[index].as_mut().unwrap().unexplored_next = (
+                        if let Some(next) = nodes[scope_node].next {
+                            let scope = graph_nodes[prev_scope_graph_node].as_mut().unwrap().scope;
+                            append(next, index, &mut graph_nodes, scope, nodes, &mut indices)
+                        } else {
+                            Vec::new()
+                        },
+                        Vec::new(),
+                    );
                 }
                 _ => todo!(),
             },
             // See 2
-            Op::Syscall(Syscall::Exit) => continue,
+            Op::Syscall(Syscall::Exit) => {}
             // See 1 & 2
             _ => {
-                let scope = graph_node.scope;
-                graph_node.next =
-                    append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices);
+                let scope = graph_nodes[index].as_mut().unwrap().scope;
+                graph_nodes[index].as_mut().unwrap().unexplored_next = (
+                    append(n + 1, index, &mut graph_nodes, scope, nodes, &mut indices),
+                    Vec::new(),
+                );
             }
         }
 
         // `exit` syscalls and loop limits will `continue` and not his this.
-        debug_assert_ne!(node.statement.op, Op::Syscall(Syscall::Exit));
-        debug_assert!(!matches!(graph_node.loop_limit.as_slice(), [.., 0]));
-        if graph_node.next.is_empty() && graph_node.other.is_empty() {
-            passback_invalid(index, &mut graph_nodes);
+        if graph_nodes[index]
+            .as_mut()
+            .unwrap()
+            .unexplored_next
+            .0
+            .is_empty()
+            && graph_nodes[index]
+                .as_mut()
+                .unwrap()
+                .unexplored_next
+                .1
+                .is_empty()
+        {
+            if node.statement.op == Op::Syscall(Syscall::Exit) {
+                passback_end(index, GraphNodeEnd::Valid, &mut graph_nodes);
+            } else {
+                passback_end(index, GraphNodeEnd::Invalid, &mut graph_nodes);
+            }
+        } else if let Some(0) = graph_nodes[index].as_mut().unwrap().loop_limit.last() {
+            passback_end(index, GraphNodeEnd::Loop, &mut graph_nodes);
         }
     }
 
-    (graph_nodes, number_of_initial_states)
+    let (min_index, _min_cost) = (0..number_of_initial_states)
+        .enumerate()
+        .min_by_key(|(_, n)| graph_nodes[*n].as_ref().unwrap().cost.unwrap())
+        .unwrap();
+
+    (graph_nodes, min_index)
 }
 
 /// Given an incoming state (`state`) and a node, outputs the possible outgoing states.
@@ -793,6 +1055,8 @@ fn get_possible_states(node: &Node, state: &TypeValueState) -> Vec<TypeValueStat
 
 #[derive(Debug, Clone)]
 pub struct TypeValueState(HashMap<Identifier, TypeValue>);
+
+#[allow(dead_code)]
 impl TypeValueState {
     fn new() -> Self {
         Self(HashMap::new())
@@ -819,6 +1083,8 @@ impl TypeValueState {
 
 #[derive(Debug, Clone)]
 struct TypeState(HashMap<Identifier, Type>);
+
+#[allow(dead_code)]
 impl TypeState {
     fn new() -> Self {
         Self(HashMap::new())
@@ -930,6 +1196,7 @@ enum TypeValueInteger {
     I64(MyRange<i64>),
 }
 
+#[allow(dead_code)]
 impl TypeValueInteger {
     pub fn any() -> [Self; 8] {
         [
@@ -1590,7 +1857,9 @@ impl TypeValueInteger {
         }
     }
 }
+
 #[cfg(not(feature = "16"))]
+#[allow(dead_code)]
 fn possible_integer(x: i128) -> Vec<Type> {
     const I64_MIN: i128 = i64::MIN as i128;
     const I32_MIN: i128 = i32::MIN as i128;
@@ -1707,6 +1976,7 @@ impl<
     }
 }
 
+#[allow(dead_code)]
 impl<
         T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
     > MyRange<T>
