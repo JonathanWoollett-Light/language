@@ -306,6 +306,7 @@ pub struct Array {
     pub item: Type,
     pub len: usize,
 }
+
 impl Array {
     pub fn bytes(&self) -> usize {
         self.len * self.item.bytes()

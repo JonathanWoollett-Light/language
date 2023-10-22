@@ -179,18 +179,21 @@ pub fn instruction_from_node(
                 [Value::Variable(Variable {
                     identifier,
                     index: None,
-                })] => write!(
-                    &mut assembly,
-                    "\
-                    mov x8, #{}\n\
-                    ldr x0, ={}\n\
-                    ldr x0, [x0]\n\
-                    svc #0\n\
-                ",
-                    libc::SYS_exit,
-                    std::str::from_utf8(identifier).unwrap()
-                )
-                .unwrap(),
+                })] => match type_data.get(identifier).unwrap() {
+                    Type::U8 => write!(
+                        &mut assembly,
+                        "\
+                            mov x8, #{}\n\
+                            ldr x0, ={}\n\
+                            ldrb w0, [x0]\n\
+                            svc #0\n\
+                        ",
+                        libc::SYS_exit,
+                        std::str::from_utf8(identifier).unwrap()
+                    )
+                    .unwrap(),
+                    _ => todo!(),
+                },
                 _ => todo!(),
             },
             Op::Intrinsic(Intrinsic::Assign) => match current.statement.arg.as_slice() {
@@ -495,6 +498,35 @@ pub fn instruction_from_node(
                             svc #0\n\
                             ldr x1, ={}\n\
                             str w0, [x1, 4]\n\
+                        ",
+                            libc::SYS_memfd_create,
+                            std::str::from_utf8(identifier).unwrap()
+                        )
+                        .unwrap();
+
+                        // Define an empty null terminated string.
+                        if !*empty {
+                            write!(
+                                data,
+                                "\
+                                empty:\n\
+                                .word 0\n\
+                            "
+                            )
+                            .unwrap();
+                            *empty = true;
+                        }
+                    }
+                    Some(Type::I32) => {
+                        write!(
+                            &mut assembly,
+                            "\
+                            mov x8, #{}\n\
+                            ldr x0, =empty\n\
+                            mov x1, #0\n\
+                            svc #0\n\
+                            ldr x1, ={}\n\
+                            str w0, [x1]\n\
                         ",
                             libc::SYS_memfd_create,
                             std::str::from_utf8(identifier).unwrap()

@@ -212,82 +212,150 @@ fn remove_unreachable_nodes(
     new_nodes
 }
 
-fn inline_true_ifs(nodes: &[Node], start: usize, graph_nodes: &[Option<GraphNode>]) -> Vec<Node> {
-    let map = HashMap::new();
-    let mut stack = vec![start];
-    while let Some(graph_index) = stack.pop() {
-        let graph_node = graph_nodes[graph_index].as_ref().unwrap();
-        if let Some(a) = graph_node.next.0 {
-            stack.push(a);
+fn remove_requires(nodes: &mut Vec<Node>) {
+    let mut i = 0;
+    while i < nodes.len() {
+        if let Op::Special(Special::Require(_)) = nodes[i].statement.op {
+            // If `graph_nodes[x].node` is the next `Node` of `node` it is certain the `If` is false.
+            if let Some(_) = nodes[i].next {
+                debug_assert!(nodes[i].child.is_none());
+                for j in 0..i {
+                    if let Some(n) = &mut nodes[j].next {
+                        if *n > i {
+                            *n -= 1;
+                        }
+                    }
+                    if let Some(c) = &mut nodes[j].child {
+                        if *c > i {
+                            *c -= 1;
+                        }
+                    }
+                }
+                for j in (i + 1)..nodes.len() {
+                    if let Some(n) = &mut nodes[j].next {
+                        *n -= 1;
+                    }
+                    if let Some(c) = &mut nodes[j].child {
+                        *c -= 1;
+                    }
+                }
+                nodes.remove(i);
+            }
+            // If `graph_nodes[x].node` is the child `Node` of `node` it is certain the `If` is true.
+            else if let Some(_) = nodes[i].child {
+                unreachable!()
+            } else {
+                unreachable!()
+            }
         }
-        if let Some(b) = graph_node.next.1 {
-            stack.push(b);
-        }
+        i += 1;
     }
-
-    todo!()
 }
 
-// TODO This is ugly, do this better.
-/// Removes `If` statements that have no children.
-fn remove_empty_ifs(nodes: &[Node]) -> Vec<Node> {
-    let mut stack = vec![0];
-    let mut map = Vec::new();
-    while let Some(index) = stack.pop() {
-        let has_child = nodes[index].child.is_some();
-        if let Some(child) = nodes[index].child {
-            stack.push(child);
-        }
-        if let Some(next) = nodes[index].next {
-            stack.push(next);
-        }
-
-        if let Op::Intrinsic(Intrinsic::If(_)) = nodes[index].statement.op {
-            if has_child {
-                map.push(index);
+fn inline_ifs(nodes: &mut Vec<Node>, start: usize, graph_nodes: &[Option<GraphNode>]) {
+    // Gets map from `Node`s to `GraphNode`s.
+    // TODO Inline `If`s in loops when the conditional is known to be true in all `GraphNode`s and
+    // the loop limit is not reached by any.
+    let map = {
+        let mut map: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut stack = vec![start];
+        while let Some(graph_index) = stack.pop() {
+            let graph_node = graph_nodes[graph_index].as_ref().unwrap();
+            if let Some(a) = graph_node.next.0 {
+                stack.push(a);
             }
-        } else {
-            map.push(index);
+            if let Some(b) = graph_node.next.1 {
+                stack.push(b);
+            }
+
+            if let Some(set) = map.get_mut(&graph_node.node) {
+                set.push(graph_index);
+            } else {
+                map.insert(graph_node.node, vec![graph_index]);
+            }
         }
+        map
+    };
+
+    dbg!(&map);
+
+    // Gets the set of nodes that need to be changed.
+    let mut i = 0;
+    while i < nodes.len() {
+        if let Op::Intrinsic(Intrinsic::If(_)) = nodes[i].statement.op {
+            // Currently avoids the complexiity of loops, by ignoring all statements which have
+            // multiple `GraphNode`s.
+            if let Some([graph_index]) = map.get(&i).map(Vec::as_slice) {
+                let graph_node = graph_nodes[*graph_index].as_ref().unwrap();
+
+                match graph_node.next {
+                    // An uncertain if,
+                    (Some(_), Some(_)) => continue,
+                    // A certain if
+                    (Some(x), None) | (None, Some(x)) => {
+                        let y = graph_nodes[x].as_ref().unwrap().node;
+                        // If `graph_nodes[x].node` is the next `Node` of `node` it is certain the `If` is false.
+                        if let Some(next) = nodes[i].next && next == y {
+                            debug_assert!(nodes[i].child.is_none());
+                            for j in 0..i {
+                                if let Some(n) = &mut nodes[j].next {
+                                    if *n > i {
+                                        *n -= 1;
+                                    }
+                                }
+                                if let Some(c) = &mut nodes[j].child {
+                                    if *c > i {
+                                        *c -= 1;
+                                    }
+                                }
+                            }
+                            for j in (i+1)..nodes.len() {
+                                if let Some(n) = &mut nodes[j].next {
+                                    *n -= 1;
+                                }
+                                if let Some(c) = &mut nodes[j].child {
+                                    *c -= 1;
+                                }
+                            }
+                            nodes.remove(i);
+                        }
+                        // If `graph_nodes[x].node` is the child `Node` of `node` it is certain the `If` is true.
+                        else if let Some(child) = nodes[i].child && child == y {
+                            for j in 0..i {
+                                if let Some(n) = &mut nodes[j].next {
+                                    if *n > i {
+                                        *n -= 1;
+                                    }
+                                }
+                                if let Some(c) = &mut nodes[j].child {
+                                    if *c > i {
+                                        *c -= 1;
+                                    }
+                                }
+                            }
+                            for j in (i+1)..nodes.len() {
+                                if let Some(n) = &mut nodes[j].next {
+                                    *n -= 1;
+                                }
+                                if let Some(c) = &mut nodes[j].child {
+                                    *c -= 1;
+                                }
+                            }
+                            let temp = nodes.remove(i).next;
+                            if let Some(temp) = temp {
+                                nodes[temp-1].next = Some(temp);
+                            }
+                        }
+                        else {
+                            unreachable!()
+                        }
+                    }
+                    (None, None) => unreachable!(),
+                }
+            }
+        }
+        i += 1;
     }
-
-    let index_map = map
-        .iter()
-        .enumerate()
-        .map(|(i, n)| (*n, i))
-        .collect::<HashMap<_, _>>();
-
-    // Get new node list
-    let new_nodes = map
-        .iter()
-        .map(|i| {
-            let mut node = nodes[*i].clone();
-
-            if let Some(n) = &mut node.next {
-                loop {
-                    if let Some(x) = index_map.get(&n).cloned() {
-                        *n = x;
-                        break;
-                    } else {
-                        *n += 1;
-                    }
-                }
-            }
-
-            if let Some(c) = &mut node.child {
-                loop {
-                    if let Some(x) = index_map.get(&c).cloned() {
-                        *c = x;
-                        break;
-                    } else {
-                        *c += 1;
-                    }
-                }
-            }
-            node
-        })
-        .collect::<Vec<_>>();
-    new_nodes
 }
 
 // Applies typical optimizations. E.g. removing unused variables, unreachable code, etc.
@@ -298,18 +366,19 @@ fn optimize_with_path(
     type_state: TypeState,
 ) -> Vec<Node> {
     // Remove unreachable nodes.
-    let reachable_nodes = remove_unreachable_nodes(nodes, start, graph_nodes);
+    let mut reachable_nodes = remove_unreachable_nodes(nodes, start, graph_nodes);
 
-    // drop(graph_nodes);
-    // TODO Remove `If`s  we know are always true.
-    let true_if_nodes = inline_true_ifs(&reachable_nodes, start, graph_nodes);
+    // TODO `inline_ifs` doesn't currently update `graph_nodes` so it cannot be used after. It may
+    // even be bugged currently within `inline_ifs`. Change `inline_ifs` to update `graph_nodes` so
+    // its consistent.
+    inline_ifs(&mut reachable_nodes, start, graph_nodes);
 
-    let mut non_empty_if_nodes = remove_empty_ifs(&true_if_nodes);
+    remove_requires(&mut reachable_nodes);
 
     // Find assignments that can be promoted to allocations.
-    promote_assignments(&mut non_empty_if_nodes, &type_state);
+    promote_assignments(&mut reachable_nodes, &type_state);
 
-    non_empty_if_nodes
+    reachable_nodes
 }
 
 // Upon encountering an invalid path, we call this which strips this path as a possible path.
@@ -1217,8 +1286,13 @@ impl Type {
             Self::I16 => 5,
             Self::I32 => 9,
             Self::I64 => 17,
-            _ => todo!(),
+            Self::Array(box array) => array.cost(),
         }
+    }
+}
+impl Array {
+    fn cost(&self) -> u64 {
+        self.item.cost().saturating_mul(self.len as u64)
     }
 }
 
