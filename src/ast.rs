@@ -15,11 +15,43 @@ impl Node {
     }
 }
 
+use std::ptr::NonNull;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Preceding {
+    Parent(NonNull<NewNode>),
+    Previous(NonNull<NewNode>),
+}
+
+pub struct NewNode {
+    pub statement: Statement,
+    pub preceding: Option<Preceding>,
+    pub child: Option<NonNull<NewNode>>,
+    pub next: Option<NonNull<NewNode>>,
+}
+impl NewNode {
+    pub fn new(statement: Statement) -> Self {
+        Self {
+            statement,
+            preceding: None,
+            child: None,
+            next: None,
+        }
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Default, Clone)]
 pub struct Statement {
     pub comptime: bool,
     pub op: Op,
     pub arg: Arg,
+}
+
+impl std::fmt::Display for Statement {
+    // This trait requires `fmt` with this exact signature.
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "todo")
+    }
 }
 
 pub type Arg = Vec<Value>;
@@ -131,6 +163,7 @@ pub enum Intrinsic {
     Loop,
     Break,
 }
+
 impl Intrinsic {
     pub fn arithmetic_assign(x: u8) -> Option<Self> {
         match x {
@@ -191,7 +224,7 @@ impl Default for Special {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Default, Clone)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum Type {
     #[default]
     U8,
@@ -301,7 +334,7 @@ impl Type {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Default, Clone)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Array {
     pub item: Type,
     pub len: usize,
@@ -313,7 +346,7 @@ impl Array {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Default, Clone)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum Cmp {
     Gt,
     Lt,
@@ -323,7 +356,7 @@ pub enum Cmp {
     Le,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Op {
     Intrinsic(Intrinsic),
     Syscall(Syscall),

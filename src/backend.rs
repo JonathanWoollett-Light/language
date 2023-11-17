@@ -4,17 +4,18 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use std::iter::once;
+use std::ptr::NonNull;
 
-pub fn assembly_from_node(nodes: &[Node]) -> String {
+pub fn assembly_from_node(nodes: NonNull<NewNode>) -> String {
     let mut data = String::new();
     let mut bss = String::new();
     let mut block_counter = 0;
     // Have we defined an empty string in the data section to use for anonymous `memfd_create`.
     let mut empty = false;
     let mut type_data = HashMap::new();
+
     let assembly = instruction_from_node(
         nodes,
-        0,
         &mut data,
         &mut bss,
         &mut block_counter,
@@ -45,8 +46,7 @@ pub fn assembly_from_node(nodes: &[Node]) -> String {
 }
 
 pub fn instruction_from_node(
-    nodes: &[Node],
-    index: usize,
+    nodes: NonNull<NewNode>,
     data: &mut String,
     bss: &mut String,
     block_counter: &mut usize,
@@ -54,7 +54,7 @@ pub fn instruction_from_node(
     type_data: &mut HashMap<Identifier, Type>,
 ) -> String {
     let mut assembly = String::new();
-    let mut current = &nodes[index];
+    let current = unsafe { nodes.as_ref() };
 
     #[cfg(debug_assertions)]
     let mut i = 0;
@@ -418,15 +418,7 @@ pub fn instruction_from_node(
                     ",
                         std::str::from_utf8(identifier).unwrap(),
                         if let Some(child) = current.child {
-                            instruction_from_node(
-                                nodes,
-                                child,
-                                data,
-                                bss,
-                                block_counter,
-                                empty,
-                                type_data,
-                            )
+                            instruction_from_node(child, data, bss, block_counter, empty, type_data)
                         } else {
                             String::new()
                         }
@@ -553,10 +545,11 @@ pub fn instruction_from_node(
             _ => todo!(),
         }
 
-        if let Some(next) = current.next {
-            current = &nodes[next];
-        } else {
-            break assembly;
-        }
+        todo!("This handling is wrong and this method uses recursion and the stack which it shouldn't do.");
+        // if let Some(next) = current.next {
+        //     current = &nodes[next];
+        // } else {
+        //     break assembly;
+        // }
     }
 }

@@ -279,11 +279,15 @@ pub fn get_values<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Value> {
     values
 }
 
+use std::alloc;
+use std::ptr::{self, NonNull};
+
 #[cfg_attr(test, instrument(level = "TRACE", skip(bytes)))]
-pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Node> {
-    let mut stack: Vec<Node> = Vec::new();
-    let mut parent_stack: Vec<usize> = Vec::new();
+pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Option<NonNull<NewNode>> {
     let mut indent = 0;
+
+    let mut first = None;
+    let mut new_parent_stack: Vec<NonNull<NewNode>> = Vec::new();
 
     // TODO Is this comment still valid?
     // Due to how we handle parsing, variable identifiers cannot be defined with the starting
@@ -339,30 +343,35 @@ pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Node> {
         };
 
         // Wrap the statement in a node.
-        let node = Node::new(statement);
+        let new_node = unsafe {
+            let ptr = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
+            ptr::write(ptr, NewNode::new(statement));
+            NonNull::new(ptr).unwrap()
+        };
+
+        if first.is_none() {
+            first = Some(new_node);
+        }
 
         // Links node
         assert!(
-            indent <= parent_stack.len(),
+            indent <= new_parent_stack.len(),
             "{} <= {}",
             indent,
-            parent_stack.len()
+            new_parent_stack.len()
         );
-        let after = parent_stack.split_off(indent);
-        if let Some(previous) = after.first() {
-            stack[*previous].next = Some(stack.len());
-        } else if let Some(parent) = parent_stack.last() {
-            stack[*parent].child = Some(stack.len());
+        let mut after = new_parent_stack.split_off(indent);
+        if let Some(previous) = after.first_mut() {
+            unsafe { previous.as_mut().next = Some(new_node) };
+        } else if let Some(parent) = new_parent_stack.last_mut() {
+            unsafe { parent.as_mut().child = Some(new_node) };
         }
-        parent_stack.push(stack.len());
-
-        // Add node
-        stack.push(node);
+        new_parent_stack.push(new_node);
 
         // Reset the indent for the next line.
         indent = 0;
     }
-    stack
+    first
 }
 
 pub fn get_cmp<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Cmp {
