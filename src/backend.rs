@@ -45,6 +45,27 @@ pub fn assembly_from_node(nodes: NonNull<NewNode>) -> String {
     )
 }
 
+// pub fn empty(
+//     _assembly: &mut String,
+//     _data: &mut String,
+//     _bss: &mut String,
+//     _block_counter: &mut usize,
+//     _empty: &mut bool,
+//     _type_data: &mut HashMap<Identifier, Type>,
+// ) {
+
+// }
+// pub fn if_callback(
+//     assembly: &mut String,
+//     data: &mut String,
+//     bss: &mut String,
+//     block_counter: &mut usize,
+//     empty: &mut bool,
+//     type_data: &mut HashMap<Identifier, Type>,
+// ) {
+
+// }
+
 pub fn instruction_from_node(
     nodes: NonNull<NewNode>,
     data: &mut String,
@@ -54,19 +75,26 @@ pub fn instruction_from_node(
     type_data: &mut HashMap<Identifier, Type>,
 ) -> String {
     let mut assembly = String::new();
-    let current = unsafe { nodes.as_ref() };
 
+    let mut stack = vec![nodes];
     #[cfg(debug_assertions)]
     let mut i = 0;
-    loop {
+
+    let mut write_stack = Vec::new();
+
+    while let Some(current) = stack.pop() {
         #[cfg(debug_assertions)]
         {
             assert!(i < LOOP_LIMIT);
             i += 1;
         }
 
-        match current.statement.op {
-            Op::Special(Special::Type) => match current.statement.arg.as_slice() {
+        let current_ref = unsafe { current.as_ref() };
+        let statement = &current_ref.statement;
+        let arg = statement.arg.as_slice();
+
+        match statement.op {
+            Op::Special(Special::Type) => match arg {
                 [Value::Variable(Variable { identifier, .. }), Value::Type(value_type)] => {
                     type_data.insert(identifier.clone(), value_type.clone());
                     write!(
@@ -165,7 +193,7 @@ pub fn instruction_from_node(
                 }
                 _ => todo!(),
             },
-            Op::Syscall(Syscall::Exit) => match current.statement.arg.as_slice() {
+            Op::Syscall(Syscall::Exit) => match arg {
                 [Value::Literal(Literal::Integer(x))] => write!(
                     &mut assembly,
                     "\
@@ -196,7 +224,7 @@ pub fn instruction_from_node(
                 },
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::Assign) => match current.statement.arg.as_slice() {
+            Op::Intrinsic(Intrinsic::Assign) => match arg {
                 [Value::Variable(Variable {
                     identifier,
                     index: None,
@@ -335,7 +363,7 @@ pub fn instruction_from_node(
                 },
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::AddAssign) => match current.statement.arg.as_slice() {
+            Op::Intrinsic(Intrinsic::AddAssign) => match arg {
                 [Value::Variable(Variable {
                     identifier,
                     index: None,
@@ -368,7 +396,7 @@ pub fn instruction_from_node(
                 }
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::SubAssign) => match current.statement.arg.as_slice() {
+            Op::Intrinsic(Intrinsic::SubAssign) => match arg {
                 [Value::Variable(Variable {
                     identifier,
                     index: None,
@@ -401,7 +429,7 @@ pub fn instruction_from_node(
                 }
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => match current.statement.arg.as_slice() {
+            Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => match arg {
                 [Value::Variable(Variable {
                     identifier,
                     index: None,
@@ -413,22 +441,22 @@ pub fn instruction_from_node(
                         ldr x0, [x0]\n\
                         cmp w0, #{y}\n\
                         bne block{block_counter}\n\
-                        {}\
-                        block{block_counter}:\n\
                     ",
                         std::str::from_utf8(identifier).unwrap(),
-                        if let Some(child) = current.child {
-                            instruction_from_node(child, data, bss, block_counter, empty, type_data)
-                        } else {
-                            String::new()
-                        }
                     )
                     .unwrap();
+
+                    let end = format!("block{block_counter}:\n");
                     *block_counter += 1;
+
+                    if let Some(child) = current_ref.next {
+                        write_stack.push((current, end));
+                        stack.push(child);
+                    }
                 }
                 _ => todo!(),
             },
-            Op::Syscall(Syscall::Read) => match current.statement.arg.as_slice() {
+            Op::Syscall(Syscall::Read) => match arg {
                 [Value::Variable(Variable {
                     identifier,
                     index: None,
@@ -450,7 +478,7 @@ pub fn instruction_from_node(
                 }
                 _ => todo!(),
             },
-            Op::Syscall(Syscall::Write) => match current.statement.arg.as_slice() {
+            Op::Syscall(Syscall::Write) => match arg {
                 [Value::Variable(Variable {
                     identifier: v,
                     index: None,
@@ -475,7 +503,7 @@ pub fn instruction_from_node(
                 }
                 _ => todo!(),
             },
-            Op::Syscall(Syscall::MemfdCreate) => match current.statement.arg.as_slice() {
+            Op::Syscall(Syscall::MemfdCreate) => match arg {
                 [Value::Variable(Variable {
                     identifier,
                     index: None,
@@ -545,11 +573,29 @@ pub fn instruction_from_node(
             _ => todo!(),
         }
 
-        todo!("This handling is wrong and this method uses recursion and the stack which it shouldn't do.");
-        // if let Some(next) = current.next {
-        //     current = &nodes[next];
-        // } else {
-        //     break assembly;
-        // }
+        if let Some(next) = current_ref.next {
+            stack.push(next);
+        } else {
+            // Get parent
+            let mut preceding = current_ref.preceding;
+            while let Some(Preceding::Previous(previous)) = preceding {
+                preceding = unsafe { previous.as_ref().preceding };
+            }
+
+            match preceding {
+                None => {}
+                Some(Preceding::Parent(parent)) => {
+                    while let Some((node, end)) = write_stack.pop() {
+                        assembly.push_str(&end);
+                        if node == parent {
+                            break;
+                        }
+                    }
+                }
+                Some(Preceding::Previous(_)) => unreachable!(),
+            }
+        }
     }
+
+    assembly
 }

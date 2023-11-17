@@ -343,7 +343,7 @@ pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Option<NonNull<NewN
         };
 
         // Wrap the statement in a node.
-        let new_node = unsafe {
+        let mut new_node = unsafe {
             let ptr = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
             ptr::write(ptr, NewNode::new(statement));
             NonNull::new(ptr).unwrap()
@@ -363,8 +363,10 @@ pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Option<NonNull<NewN
         let mut after = new_parent_stack.split_off(indent);
         if let Some(previous) = after.first_mut() {
             unsafe { previous.as_mut().next = Some(new_node) };
+            unsafe { new_node.as_mut().preceding = Some(Preceding::Previous(*previous)) };
         } else if let Some(parent) = new_parent_stack.last_mut() {
             unsafe { parent.as_mut().child = Some(new_node) };
+            unsafe { new_node.as_mut().preceding = Some(Preceding::Parent(*parent)) };
         }
         new_parent_stack.push(new_node);
 

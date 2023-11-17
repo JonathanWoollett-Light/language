@@ -5,8 +5,6 @@ use num_traits::identities::Zero;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use std::collections::HashSet;
-
 const DEFAULT_LOOP_LIMIT: usize = 100;
 
 pub unsafe fn optimize_temp(nodes: NonNull<NewNode>) -> NonNull<NewNode> {
@@ -34,405 +32,7 @@ pub unsafe fn optimize_temp(nodes: NonNull<NewNode>) -> NonNull<NewNode> {
     // optimize(graph, type_state)
 }
 
-// Promotes assignments to data allocations.
-fn promote_assignments(nodes: &mut Vec<Node>, type_state: &TypeState) {
-    let mut allocated = HashSet::new();
-    let mut stack = vec![(0, false)];
-    let mut bss = Vec::new();
-    while let Some((i, in_loop)) = stack.pop() {
-        // let graph_node = graph_nodes[i];
-        let node = &mut nodes[i];
-
-        let mut bss_fn = |identifier: &Vec<u8>| {
-            if allocated.insert(identifier.clone()) {
-                let value = type_state.get(identifier).unwrap().clone();
-                bss.push(Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Special(Special::Type),
-                        arg: vec![
-                            Value::Variable(Variable {
-                                identifier: identifier.clone(),
-                                index: None,
-                            }),
-                            Value::Type(value),
-                        ],
-                    },
-                    child: None,
-                    next: Some(bss.len() + 1),
-                });
-            }
-        };
-
-        match node.statement.op {
-            Op::Intrinsic(Intrinsic::Assign) if !in_loop => match node.statement.arg.as_slice() {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), Value::Literal(_), ..] => {
-                    if allocated.insert(identifier.clone()) {
-                        node.statement.op = Op::Special(Special::Type);
-                        let value = type_state.get(identifier).unwrap().clone();
-                        node.statement.arg.insert(1, Value::Type(value));
-                    }
-                }
-                _ => todo!(),
-            },
-            Op::Intrinsic(Intrinsic::Assign) if in_loop => match node.statement.arg.as_slice() {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), Value::Literal(_), ..] => bss_fn(identifier),
-                _ => todo!(),
-            },
-            Op::Syscall(Syscall::Read) => match node.statement.arg.as_slice() {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), _] => bss_fn(identifier),
-                _ => todo!(),
-            },
-            Op::Syscall(Syscall::MemfdCreate) => match node.statement.arg.as_slice() {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                })] => bss_fn(identifier),
-                _ => todo!(),
-            },
-            _ => {}
-        }
-
-        if let Some(next) = node.next {
-            stack.push((next, in_loop));
-        }
-        if let Some(child) = node.child {
-            stack.push((
-                child,
-                (node.statement.op == Op::Intrinsic(Intrinsic::Loop)) || in_loop,
-            ));
-        }
-    }
-
-    for node in nodes.iter_mut() {
-        if let Some(next) = &mut node.next {
-            *next += bss.len();
-        }
-        if let Some(child) = &mut node.child {
-            *child += bss.len();
-        }
-    }
-    for item in bss.into_iter().rev() {
-        nodes.insert(0, item);
-    }
-}
-
-/// Removes unreachable nodes
-fn remove_unreachable_nodes(
-    nodes: &[Node],
-    start: usize,
-    graph_nodes: &mut [Option<GraphNode>],
-) -> Vec<Node> {
-    // Set of all nodes visited.
-    let visited_nodes = {
-        let mut stack = vec![start];
-        let mut visited = HashSet::new();
-
-        while let Some(index) = stack.pop() {
-            let graph_node = graph_nodes[index].as_ref().unwrap();
-            if let Some(a) = graph_node.next.0 {
-                stack.push(a);
-            }
-            if let Some(b) = graph_node.next.1 {
-                stack.push(b);
-            }
-
-            visited.insert(graph_node.node);
-        }
-        visited
-    };
-
-    // Get list of visited nodes sorted by original order.
-    let mut visited_nodes_ordered = visited_nodes.clone().into_iter().collect::<Vec<_>>();
-    visited_nodes_ordered.sort();
-
-    // Map from old indexes to new indexes.
-    let index_map = visited_nodes_ordered
-        .iter()
-        .enumerate()
-        .map(|(i, n)| (*n, i))
-        .collect::<HashMap<_, _>>();
-
-    // Get new node list
-    let new_nodes = visited_nodes_ordered
-        .iter()
-        .map(|i| {
-            let mut node = nodes[*i].clone();
-            node.next = node.next.and_then(|n| index_map.get(&n).cloned());
-            node.child = node.child.and_then(|n| index_map.get(&n).cloned());
-            node
-        })
-        .collect::<Vec<_>>();
-
-    // Update graph node links
-    {
-        let mut stack = vec![start];
-        while let Some(index) = stack.pop() {
-            let graph_node = graph_nodes[index].as_mut().unwrap();
-            graph_node.node = *index_map.get(&graph_node.node).unwrap();
-            if let Some(a) = graph_node.next.0 {
-                stack.push(a);
-            }
-            if let Some(b) = graph_node.next.1 {
-                stack.push(b);
-            }
-        }
-    }
-
-    new_nodes
-}
-
-fn remove_requires(nodes: &mut Vec<Node>) {
-    let mut i = 0;
-    while i < nodes.len() {
-        if let Op::Special(Special::Require(_)) = nodes[i].statement.op {
-            // If `graph_nodes[x].node` is the next `Node` of `node` it is certain the `If` is false.
-            if nodes[i].next.is_some() {
-                debug_assert!(nodes[i].child.is_none());
-                for node in nodes.iter_mut().take(i) {
-                    if let Some(n) = &mut node.next {
-                        if *n > i {
-                            *n -= 1;
-                        }
-                    }
-                    if let Some(c) = &mut node.child {
-                        if *c > i {
-                            *c -= 1;
-                        }
-                    }
-                }
-                for node in nodes.iter_mut().skip(i + 1) {
-                    if let Some(n) = &mut node.next {
-                        *n -= 1;
-                    }
-                    if let Some(c) = &mut node.child {
-                        *c -= 1;
-                    }
-                }
-                nodes.remove(i);
-            } else {
-                unreachable!()
-            }
-        }
-        i += 1;
-    }
-}
-
-fn inline_ifs(nodes: &mut Vec<Node>, start: usize, graph_nodes: &[Option<GraphNode>]) {
-    // Gets map from `Node`s to `GraphNode`s.
-    // TODO Inline `If`s in loops when the conditional is known to be true in all `GraphNode`s and
-    // the loop limit is not reached by any.
-    let map = {
-        let mut map: HashMap<usize, Vec<usize>> = HashMap::new();
-        let mut stack = vec![start];
-        while let Some(graph_index) = stack.pop() {
-            let graph_node = graph_nodes[graph_index].as_ref().unwrap();
-            if let Some(a) = graph_node.next.0 {
-                stack.push(a);
-            }
-            if let Some(b) = graph_node.next.1 {
-                stack.push(b);
-            }
-
-            if let Some(set) = map.get_mut(&graph_node.node) {
-                set.push(graph_index);
-            } else {
-                map.insert(graph_node.node, vec![graph_index]);
-            }
-        }
-        map
-    };
-
-    dbg!(&map);
-
-    // Gets the set of nodes that need to be changed.
-    let mut i = 0;
-    while i < nodes.len() {
-        if let Op::Intrinsic(Intrinsic::If(_)) = nodes[i].statement.op {
-            // Currently avoids the complexiity of loops, by ignoring all statements which have
-            // multiple `GraphNode`s.
-            if let Some([graph_index]) = map.get(&i).map(Vec::as_slice) {
-                let graph_node = graph_nodes[*graph_index].as_ref().unwrap();
-
-                match graph_node.next {
-                    // An uncertain if,
-                    (Some(_), Some(_)) => continue,
-                    // A certain if
-                    (Some(x), None) | (None, Some(x)) => {
-                        let y = graph_nodes[x].as_ref().unwrap().node;
-                        // If `graph_nodes[x].node` is the next `Node` of `node` it is certain the `If` is false.
-                        if let Some(next) = nodes[i].next && next == y {
-                            debug_assert!(nodes[i].child.is_none());
-                            for node in nodes.iter_mut().take(i) {
-                                if let Some(n) = &mut node.next {
-                                    if *n > i {
-                                        *n -= 1;
-                                    }
-                                }
-                                if let Some(c) = &mut node.child {
-                                    if *c > i {
-                                        *c -= 1;
-                                    }
-                                }
-                            }
-                            for node in nodes.iter_mut().skip(i+1) {
-                                if let Some(n) = &mut node.next {
-                                    *n -= 1;
-                                }
-                                if let Some(c) = &mut node.child {
-                                    *c -= 1;
-                                }
-                            }
-                            nodes.remove(i);
-                        }
-                        // If `graph_nodes[x].node` is the child `Node` of `node` it is certain the `If` is true.
-                        else if let Some(child) = nodes[i].child && child == y {
-                            for node in nodes.iter_mut().take(i) {
-                                if let Some(n) = &mut node.next {
-                                    if *n > i {
-                                        *n -= 1;
-                                    }
-                                }
-                                if let Some(c) = &mut node.child {
-                                    if *c > i {
-                                        *c -= 1;
-                                    }
-                                }
-                            }
-                            for node in nodes.iter_mut().skip(i+1) {
-                                if let Some(n) = &mut node.next {
-                                    *n -= 1;
-                                }
-                                if let Some(c) = &mut node.child {
-                                    *c -= 1;
-                                }
-                            }
-                            let temp = nodes.remove(i).next;
-                            if let Some(temp) = temp {
-                                nodes[temp-1].next = Some(temp);
-                            }
-                        }
-                        else {
-                            unreachable!()
-                        }
-                    }
-                    (None, None) => unreachable!(),
-                }
-            }
-        }
-        i += 1;
-    }
-}
-
 const UNROLL_LIMIT: usize = 4096;
-
-// fn unroll_loops(nodes: &mut Vec<Node>, start: usize, graph_nodes: &[Option<GraphNode>]) {
-//     // dbg!(graph_nodes);
-//
-//     // Add conditions to breaks to avoid extra branches e.g. `break x > 4`
-//
-//     // While the path doesn't diverge `graph_node.next.0.is_none() || graph_node.next.1.is_none()`
-//     // copy nodes and their respective graph nodes from within the loop to before the loop.
-//
-//     let output_nodes = Vec::new();
-//     let mut stack = vec![start];
-//     while let Some(current) = stack.pop() {
-//         let graph_node = graph_nodes[current].as_ref().unwrap();
-//         let node = nodes[graph_node.node];
-//         match node.statement.op {
-//             Op::Intrinsic(Intrinsic::If(_)) => {
-//                 match graph_node.next {
-//                     (Some(_), Some(_)) => {
-//
-//                     },
-//                     (Some(_),None) | (None, Some(_)) => {
-//
-//                     }
-//                     (None,None) => unreachable!()
-//                 }
-//             }
-//             _ => todo!()
-//         }
-//     }
-//
-//     // let mut loop_stack = Vec::new();
-//
-//     // For each loop
-//     // Find the max (max_x) and min (min_x) number of full iterations of a loop.
-//     // Count min by the min number of `graph_nodes` for each `node` in the loop before the 1st `break`.
-//     // Count max by the min number of `graph_nodes` for each `node` in the loop before the last
-//     // `break`, if `matches!(Some(0),graph_node.loop_limit.last())` then `max = None`.
-//
-//     // Unroll the `min_x` number of iterations.
-//     // Unroll another `min(max_x-min_x, UNROLL_LIMIT / loop_length)` iterations.
-//     // If `max_x` iterations where unrolled
-//     // - then: unroll the last partial loop and remove the loop
-//     // - else: do not remove the loop
-//
-//     // `nodes` to `graph_nodes`.
-//     let mut maps = HashMap::new();
-//     let mut stack = vec![start];
-//     while let Some(current) = stack.pop() {
-//         let graph_node = graph_nodes[current].as_ref().unwrap();
-//
-//         if let Some(map) = maps.get_mut(&graph_node.node) {
-//             map.push(current);
-//         }
-//         else {
-//             maps.insert(graph_node.node,vec![current]);
-//         }
-//
-//         // println!("{next} {:?} {:?}",graph_node.scope, graph_node.loop_limit);
-//         // println!("{:?}",nodes[graph_node.node].statement);
-//
-//         if let Some(next) = graph_node.next.0 {
-//             stack.push(next);
-//         }
-//         if let Some(next) = graph_node.next.1 {
-//             stack.push(next);
-//         }
-//     }
-//
-//     let mut loop_limits = HashMap::new();
-//     let mut stack = vec![(0,None)];
-//     while let Some((current,scope)) = stack.pop() {
-//         let node = nodes[current];
-//
-//         if let Some(scope) = scope {
-//             let l = maps.get(&current).len();
-//             if let Some((min,_max)) = loop_limits.get_mut(&current) {
-//                 *min = std::cmp::min(l,*min);
-//             }
-//             else {
-//                 loop_limits.insert(l,None);
-//             }
-//         }
-//
-//         if let Some(next) = node.next {
-//             stack.push((next,scope));
-//         }
-//         if let Some(child) = node.child {
-//             let scope = if node.statement.op == Op::Intrinsic(Intrinsic::Loop) {
-//                 Some(current)
-//             } else {
-//                 scope
-//             };
-//             stack.push((child,scope));
-//         }
-//     }
-//
-//
-//     todo!()
-// }
 
 // Applies typical optimizations. E.g. removing unused variables, unreachable code, etc.
 pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
@@ -453,20 +53,98 @@ pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
 
     // reachable_nodes
 
+    // Construct new optimized abstract syntax tree.
+
+    let mut types = HashMap::new();
+
+    // The 1st step is iterating over nodes which don't diverge
+    // (`next.0.is_none() || next.1.is_none()`), all these can be simply inlined.
     let mut stack = vec![graph];
-    while let Some(current) = stack.pop() {
-        let node = unsafe { current.as_ref() };
-        if let Some(next_one) = node.next.0 {
-            stack.push(next_one);
+    let new_nodes = {
+        let ptr = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
+        ptr::write(
+            ptr,
+            NewNode::new(graph.as_ref().statement.as_ref().statement.clone()),
+        );
+        NonNull::new(ptr).unwrap()
+    };
+    let mut current_new_node = new_nodes;
+    while let Some(mut current) = stack.pop() {
+        let node = current.as_mut();
+        dbg!(&node.statement.as_ref().statement);
+
+        match node.statement.as_ref().statement.op {
+            Op::Intrinsic(Intrinsic::Assign) => {
+                match node.statement.as_ref().statement.arg.as_slice() {
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }), Value::Literal(Literal::Integer(_))] => {
+                        let temp = Type::from(node.state.get(identifier).unwrap().clone());
+                        let existing = types.insert(identifier, temp.clone());
+                        // If not already declared this declares the type of the variable.
+                        if existing.is_none() {
+                            current_new_node.as_mut().statement.op = Op::Special(Special::Type);
+                            current_new_node
+                                .as_mut()
+                                .statement
+                                .arg
+                                .insert(1, Value::Type(temp));
+                        }
+                    }
+                    _ => todo!(),
+                }
+            }
+            Op::Syscall(Syscall::Exit) => match node.statement.as_ref().statement.arg.as_slice() {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                })] => {
+                    let state = node.state.get(identifier).unwrap();
+                    match state {
+                        TypeValue::Integer(TypeValueInteger::U8(range)) if let Some(exact) = range.value() => {
+                            current_new_node.as_mut().statement.arg = vec![Value::Literal(Literal::Integer(i128::from(exact)))];
+                        }
+                        _ => todo!()
+                    }
+                }
+                [Value::Literal(Literal::Integer(_))] => {}
+                _ => todo!(),
+            },
+            _ => todo!(),
         }
-        if let Some(next_two) = node.next.1 {
-            stack.push(next_two);
+
+        dbg!(&node.statement.as_ref().statement);
+
+        match node.next {
+            (Some(next), None) | (None, Some(next)) => {
+                let statement_ref = next.as_ref().statement.as_ref();
+                let mut temp = {
+                    let ptr = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
+                    ptr::write(ptr, NewNode::new(statement_ref.statement.clone()));
+                    NonNull::new(ptr).unwrap()
+                };
+
+                temp.as_mut().preceding = statement_ref.preceding;
+                match statement_ref.preceding.unwrap() {
+                    Preceding::Parent(_) => {
+                        current_new_node.as_mut().child = Some(temp);
+                    }
+                    Preceding::Previous(_) => {
+                        current_new_node.as_mut().next = Some(temp);
+                    }
+                }
+
+                stack.push(next);
+            }
+            (Some(_), Some(_)) => todo!(),
+            (None, None) => break,
         }
-        alloc::dealloc(current.as_ptr().cast(),alloc::Layout::new::<NewStateNode>());
     }
 
-    graph.as_ref().statement
+    // TODO This doesn't dealloc anything in `graph` which may be very very big. Do this deallocation.
 
+    new_nodes
 }
 
 unsafe fn new_passback_end(mut node: NonNull<NewStateNode>, _end: GraphNodeEnd) {
@@ -1294,6 +972,11 @@ impl TypeValueState {
         self.0.insert(key, value)
     }
 }
+impl<const N: usize> From<[(Identifier, TypeValue); N]> for TypeValueState {
+    fn from(arr: [(Identifier, TypeValue); N]) -> Self {
+        Self(HashMap::from(arr))
+    }
+}
 
 #[derive(Debug, Clone)]
 struct TypeState(HashMap<Identifier, Type>);
@@ -1365,7 +1048,7 @@ impl From<TypeValue> for Type {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum TypeValue {
+pub enum TypeValue {
     Integer(TypeValueInteger),
     Array(TypeValueArray),
 }
@@ -1423,7 +1106,7 @@ impl From<Type> for TypeValue {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct TypeValueArray {
+pub struct TypeValueArray {
     item: Type,
     values: Vec<TypeValue>,
 }
@@ -1438,7 +1121,7 @@ impl From<TypeValueArray> for Type {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum TypeValueInteger {
+pub enum TypeValueInteger {
     U8(MyRange<u8>),
     U16(MyRange<u16>),
     U32(MyRange<u32>),
@@ -2197,7 +1880,7 @@ fn possible_integer(x: i128) -> Vec<Type> {
 
 // An inclusive range that supports wrapping around.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct MyRange<
+pub struct MyRange<
     T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
 > {
     start: T,

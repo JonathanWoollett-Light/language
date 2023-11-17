@@ -73,18 +73,19 @@ mod tests {
     }
 
     fn match_nodes(actual: NonNull<NewNode>, expected: &[Statement]) {
+        println!("match_nodes:");
         let mut index = 0;
-        let mut stack = vec![actual];
-        while let Some(current) = stack.pop() {
+        let mut stack = vec![(actual, 0)];
+        while let Some((current, s)) = stack.pop() {
             let node = unsafe { current.as_ref() };
             if let Some(next) = node.next {
-                stack.push(next);
+                stack.push((next, s));
             }
             if let Some(child) = node.child {
-                stack.push(child);
+                stack.push((child, s + 1));
             }
-
-            assert_eq!(node.statement, expected[index]);
+            println!("{}{:?}", "    ".repeat(s), node.statement);
+            assert_eq!(Some(&node.statement), expected.get(index));
             index += 1;
         }
     }
@@ -201,11 +202,11 @@ mod tests {
 
     #[test]
     fn one() {
-        const ONE: &str = "exit 0";
+        const SOURCE: &str = "exit 0";
 
         // Parsing
         let nodes = test_parsing(
-            ONE,
+            SOURCE,
             &[Statement {
                 comptime: false,
                 op: Op::Syscall(Syscall::Exit),
@@ -214,9 +215,7 @@ mod tests {
         );
 
         // Exploration
-        let path = test_exploration(nodes, &[
-            TypeValueState::new()
-        ]);
+        let path = test_exploration(nodes, &[TypeValueState::new()]);
 
         // Optimization
         let optimized = test_optimization(
@@ -242,197 +241,204 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "false")]
+    #[test]
     fn two() {
-        const TWO: &str = "exit 1";
+        const SOURCE: &str = "exit 1";
 
-        let nodes = parse(TWO);
-        assert_eq!(
-            nodes,
-            [Node {
-                statement: Statement {
-                    comptime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(1))]
-                },
-                child: None,
-                next: None,
-            }]
+        // Parsing
+        let nodes = test_parsing(
+            SOURCE,
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(1))],
+            }],
         );
-        let optimized_nodes = optimize(&nodes);
-        assert_eq!(
-            optimized_nodes,
-            [Node {
-                statement: Statement {
-                    comptime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(1))]
-                },
-                child: None,
-                next: None,
-            }]
+
+        // Exploration
+        let path = test_exploration(nodes, &[TypeValueState::new()]);
+
+        // Optimization
+        let optimized = test_optimization(
+            path,
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(1))],
+            }],
         );
-        let expected_assembly = "\
+
+        // Assembly
+        test_assembling(
+            optimized,
+            "\
             .global _start\n\
             _start:\n\
             mov x8, #93\n\
             mov x0, #1\n\
             svc #0\n\
-        ";
-        assemble(&optimized_nodes, expected_assembly, 1);
+        ",
+            1,
+        );
     }
 
-    #[cfg(feature = "false")]
+    #[test]
     fn three() {
-        const THREE: &str = "exit 12";
+        const SOURCE: &str = "exit 12";
 
-        let nodes = parse(THREE);
-        assert_eq!(
-            nodes,
-            [Node {
-                statement: Statement {
-                    comptime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(12))]
-                },
-                child: None,
-                next: None,
-            }]
+        // Parsing
+        let nodes = test_parsing(
+            SOURCE,
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(12))],
+            }],
         );
-        let optimized_nodes = optimize(&nodes);
-        assert_eq!(
-            optimized_nodes,
-            [Node {
-                statement: Statement {
-                    comptime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(12))]
-                },
-                child: None,
-                next: None,
-            }]
+
+        // Exploration
+        let path = test_exploration(nodes, &[TypeValueState::new()]);
+
+        // Optimization
+        let optimized = test_optimization(
+            path,
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(12))],
+            }],
         );
-        let expected_assembly = "\
+
+        // Assembly
+        test_assembling(
+            optimized,
+            "\
             .global _start\n\
             _start:\n\
             mov x8, #93\n\
             mov x0, #12\n\
             svc #0\n\
-        ";
-        assemble(&optimized_nodes, expected_assembly, 12);
+        ",
+            12,
+        );
     }
 
-    #[cfg(feature = "false")]
+    #[test]
     fn four() {
-        const FOUR: &str = "exit 1\nexit 2";
+        const SOURCE: &str = "exit 1\nexit 2";
 
-        let nodes = parse(FOUR);
-        assert_eq!(
-            nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Literal(Literal::Integer(1))]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Literal(Literal::Integer(2))]
-                    },
-                    child: None,
-                    next: None,
-                }
-            ]
-        );
-        let optimized_nodes = optimize(&nodes);
-        assert_eq!(
-            optimized_nodes,
-            [Node {
-                statement: Statement {
+        // Parsing
+        let nodes = test_parsing(
+            SOURCE,
+            &[
+                Statement {
                     comptime: false,
                     op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(1))]
+                    arg: vec![Value::Literal(Literal::Integer(1))],
                 },
-                child: None,
-                next: None,
-            },]
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(2))],
+                },
+            ],
         );
-        let expected_assembly = "\
+
+        // Exploration
+        let path = test_exploration(nodes, &[TypeValueState::new()]);
+
+        // Optimization
+        let optimized = test_optimization(
+            path,
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(1))],
+            }],
+        );
+
+        // Assembly
+        test_assembling(
+            optimized,
+            "\
             .global _start\n\
             _start:\n\
             mov x8, #93\n\
             mov x0, #1\n\
             svc #0\n\
-        ";
-        assemble(&optimized_nodes, expected_assembly, 1);
+        ",
+            1,
+        );
     }
 
-    #[cfg(feature = "false")]
-    fn six() {
-        const SIX: &str = "x := 1\nexit 0";
+    fn ident(s: &str) -> Identifier {
+        s.bytes().collect::<Vec<_>>()
+    }
 
-        let nodes = parse(SIX);
-        assert_eq!(
+    #[test]
+    fn six() {
+        const SOURCE: &str = "x := 1\nexit 0";
+
+        // Parsing
+        let nodes = test_parsing(
+            SOURCE,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::Assign),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Literal(Literal::Integer(1)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+            ],
+        );
+
+        // Exploration
+        let path = test_exploration(
             nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Intrinsic(Intrinsic::Assign),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(1))
-                        ]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Literal(Literal::Integer(0))]
-                    },
-                    child: None,
-                    next: None,
-                }
-            ]
+            &[
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
+                )]),
+            ],
         );
-        let optimized_nodes = optimize(&nodes);
-        assert_eq!(
-            optimized_nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Special(Special::Type),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Type(Type::U8),
-                            Value::Literal(Literal::Integer(1))
-                        ]
-                    },
-                    child: None,
-                    next: Some(1),
+
+        // Optimization
+        let optimized = test_optimization(
+            path,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Type),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Type(Type::U8),
+                        Value::Literal(Literal::Integer(1)),
+                    ],
                 },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Literal(Literal::Integer(0))]
-                    },
-                    child: None,
-                    next: None,
-                }
-            ]
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+            ],
         );
-        let expected_assembly = "\
+
+        // Assembly
+        test_assembling(
+            optimized,
+            "\
             .global _start\n\
             _start:\n\
             mov x8, #93\n\
@@ -440,8 +446,9 @@ mod tests {
             svc #0\n\
             .data\n\
             x: .byte 1\n\
-        ";
-        assemble(&optimized_nodes, expected_assembly, 0);
+        ",
+            0,
+        );
     }
 
     #[cfg(feature = "false")]
