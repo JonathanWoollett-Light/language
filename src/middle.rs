@@ -4,6 +4,7 @@ use num_traits::identities::One;
 use num_traits::identities::Zero;
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 const DEFAULT_LOOP_LIMIT: usize = 100;
 
@@ -56,6 +57,7 @@ pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
     // Construct new optimized abstract syntax tree.
 
     let mut types = HashMap::new();
+    let mut read = HashSet::new();
 
     // The 1st step is iterating over nodes which don't diverge
     // (`next.0.is_none() || next.1.is_none()`), all these can be simply inlined.
@@ -71,7 +73,7 @@ pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
     let mut current_new_node = new_nodes;
     while let Some(mut current) = stack.pop() {
         let node = current.as_mut();
-        dbg!(&node.statement.as_ref().statement);
+        // dbg!(&node.statement.as_ref().statement);
 
         match node.statement.as_ref().statement.op {
             Op::Intrinsic(Intrinsic::Assign) => {
@@ -102,10 +104,15 @@ pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
                 })] => {
                     let state = node.state.get(identifier).unwrap();
                     match state {
-                        TypeValue::Integer(TypeValueInteger::U8(range)) if let Some(exact) = range.value() => {
-                            current_new_node.as_mut().statement.arg = vec![Value::Literal(Literal::Integer(i128::from(exact)))];
+                        TypeValue::Integer(TypeValueInteger::U8(range)) => {
+                            if let Some(exact) = range.value() {
+                                current_new_node.as_mut().statement.arg =
+                                    vec![Value::Literal(Literal::Integer(i128::from(exact)))];
+                            } else {
+                                read.insert(identifier);
+                            }
                         }
-                        _ => todo!()
+                        _ => todo!(),
                     }
                 }
                 [Value::Literal(Literal::Integer(_))] => {}
@@ -114,7 +121,7 @@ pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
             _ => todo!(),
         }
 
-        dbg!(&node.statement.as_ref().statement);
+        // dbg!(&node.statement.as_ref().statement);
 
         match node.next {
             (Some(next), None) | (None, Some(next)) => {
@@ -145,7 +152,56 @@ pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
 
     // TODO This doesn't dealloc anything in `graph` which may be very very big. Do this deallocation.
 
-    new_nodes
+    dbg!(&read);
+
+    // After iterating through the full AST we now know which variables are used so can remove
+    // unused variables
+    let mut first = new_nodes;
+    let mut stack = vec![new_nodes];
+    while let Some(current) = stack.pop() {
+        match current.as_ref().statement.op {
+            Op::Special(Special::Type) => match current.as_ref().statement.arg.as_slice() {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), Value::Type(_), Value::Literal(_)] => {
+                    if !read.contains(identifier) {
+                        dbg!();
+                        match current.as_ref().preceding {
+                            Some(Preceding::Parent(mut parent)) => {
+                                parent.as_mut().child = current.as_ref().next;
+                            }
+                            Some(Preceding::Previous(mut previous)) => {
+                                previous.as_mut().next = current.as_ref().next;
+                            }
+                            None => {
+                                debug_assert_eq!(first, current);
+                                first = current.as_ref().next.unwrap();
+                            }
+                        }
+                        if let Some(mut next) = current.as_ref().next {
+                            next.as_mut().preceding = current.as_ref().preceding;
+                            stack.push(next);
+                        }
+                        debug_assert!(current.as_ref().child.is_none());
+
+                        alloc::dealloc(current.as_ptr().cast(), alloc::Layout::new::<NewNode>());
+                    }
+                }
+                _ => todo!(),
+            },
+            _ => {
+                if let Some(next) = current.as_ref().next {
+                    stack.push(next);
+                }
+                if let Some(child) = current.as_ref().child {
+                    stack.push(child);
+                }
+            }
+        }
+    }
+
+    first
 }
 
 unsafe fn new_passback_end(mut node: NonNull<NewStateNode>, _end: GraphNodeEnd) {

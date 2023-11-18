@@ -73,7 +73,7 @@ mod tests {
     }
 
     fn match_nodes(actual: NonNull<NewNode>, expected: &[Statement]) {
-        println!("match_nodes:");
+        // println!("match_nodes:");
         let mut index = 0;
         let mut stack = vec![(actual, 0)];
         while let Some((current, s)) = stack.pop() {
@@ -84,7 +84,7 @@ mod tests {
             if let Some(child) = node.child {
                 stack.push((child, s + 1));
             }
-            println!("{}{:?}", "    ".repeat(s), node.statement);
+            // println!("{}{:?}", "    ".repeat(s), node.statement);
             assert_eq!(Some(&node.statement), expected.get(index));
             index += 1;
         }
@@ -417,22 +417,11 @@ mod tests {
         // Optimization
         let optimized = test_optimization(
             path,
-            &[
-                Statement {
-                    comptime: false,
-                    op: Op::Special(Special::Type),
-                    arg: vec![
-                        Value::Variable(Variable::new("x")),
-                        Value::Type(Type::U8),
-                        Value::Literal(Literal::Integer(1)),
-                    ],
-                },
-                Statement {
-                    comptime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(0))],
-                },
-            ],
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(0))],
+            }],
         );
 
         // Assembly
@@ -444,8 +433,6 @@ mod tests {
             mov x8, #93\n\
             mov x0, #0\n\
             svc #0\n\
-            .data\n\
-            x: .byte 1\n\
         ",
             0,
         );
@@ -493,22 +480,11 @@ mod tests {
         // Optimization
         let optimized = test_optimization(
             path,
-            &[
-                Statement {
-                    comptime: false,
-                    op: Op::Special(Special::Type),
-                    arg: vec![
-                        Value::Variable(Variable::new("x")),
-                        Value::Type(Type::U8),
-                        Value::Literal(Literal::Integer(1)),
-                    ],
-                },
-                Statement {
-                    comptime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(1))],
-                },
-            ],
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(1))],
+            }],
         );
 
         // Assembly
@@ -520,8 +496,6 @@ mod tests {
             mov x8, #93\n\
             mov x0, #1\n\
             svc #0\n\
-            .data\n\
-            x: .byte 1\n\
         ",
             1,
         );
