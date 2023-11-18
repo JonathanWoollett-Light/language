@@ -118,6 +118,50 @@ pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
                 [Value::Literal(Literal::Integer(_))] => {}
                 _ => todo!(),
             },
+            // On the linear path, these statements can simply be removed.
+            //
+            // `current` is not used after `current = prev;` but it may be in the future, and I
+            // don't want to obfuscate this complex logic further.
+            #[allow(unused_assignments)]
+            Op::Intrinsic(Intrinsic::AddAssign) => {
+                match node.statement.as_ref().statement.arg.as_slice() {
+                    [Value::Variable(_), Value::Literal(Literal::Integer(_))] => {
+                        // Update AST
+                        let old_node = current_new_node;
+                        match current_new_node.as_ref().preceding {
+                            Some(Preceding::Parent(mut parent)) => {
+                                parent.as_mut().child = None;
+                                current_new_node = parent;
+                            }
+                            Some(Preceding::Previous(mut previous)) => {
+                                previous.as_mut().next = None;
+                                current_new_node = previous;
+                            }
+                            None => unreachable!(),
+                        }
+
+                        // Update state graph
+                        if let Some(mut next_one) = current.as_mut().next.0 {
+                            next_one.as_mut().prev = current.as_ref().prev;
+                        }
+                        if let Some(mut next_two) = current.as_mut().next.1 {
+                            next_two.as_mut().prev = current.as_ref().prev;
+                        }
+                        let mut prev = current.as_ref().prev.unwrap();
+                        prev.as_mut().next = current.as_ref().next;
+                        let old_state = current;
+                        current = prev;
+
+                        // Deallocate nodes
+                        alloc::dealloc(
+                            old_state.as_ptr().cast(),
+                            alloc::Layout::new::<NewStateNode>(),
+                        );
+                        alloc::dealloc(old_node.as_ptr().cast(), alloc::Layout::new::<NewNode>());
+                    }
+                    _ => todo!(),
+                }
+            }
             _ => todo!(),
         }
 

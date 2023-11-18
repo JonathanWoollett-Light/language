@@ -501,104 +501,79 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "false")]
+    #[test]
     fn eight() {
-        const EIGHT: &str = "x := 1\nx += 1\nexit x";
+        const SOURCE: &str = "x := 1\nx += 1\nexit x";
 
-        let nodes = parse(EIGHT);
-        assert_eq!(
+        // Parsing
+        let nodes = test_parsing(
+            SOURCE,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::Assign),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Literal(Literal::Integer(1)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::AddAssign),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Literal(Literal::Integer(1)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Variable(Variable::new("x"))],
+                },
+            ],
+        );
+
+        // Exploration
+        let path = test_exploration(
             nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Intrinsic(Intrinsic::Assign),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(1))
-                        ]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Intrinsic(Intrinsic::AddAssign),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(1))
-                        ]
-                    },
-                    child: None,
-                    next: Some(2),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Variable(Variable::new("x"))]
-                    },
-                    child: None,
-                    next: None,
-                },
-            ]
+            &[
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
+                )]),
+            ],
         );
-        let optimized_nodes = optimize(&nodes);
-        assert_eq!(
-            optimized_nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Special(Special::Type),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Type(Type::U8),
-                            Value::Literal(Literal::Integer(1))
-                        ]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Intrinsic(Intrinsic::AddAssign),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(1))
-                        ]
-                    },
-                    child: None,
-                    next: Some(2),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Variable(Variable::new("x"))]
-                    },
-                    child: None,
-                    next: None,
-                },
-            ]
+
+        // Optimization
+        let optimized = test_optimization(
+            path,
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(2))],
+            }],
         );
-        let expected_assembly = "\
+
+        // Assembly
+        test_assembling(
+            optimized,
+            "\
             .global _start\n\
             _start:\n\
-            ldr x0, =x\n\
-            ldr w1, [x0]\n\
-            add w1, w1, #1\n\
-            strb w1, [x0]\n\
             mov x8, #93\n\
-            ldr x0, =x\n\
-            ldrb w0, [x0]\n\
+            mov x0, #2\n\
             svc #0\n\
-            .data\n\
-            x: .byte 1\n\
-        ";
-        assemble(&optimized_nodes, expected_assembly, 2);
+        ",
+            2,
+        );
     }
 
     #[cfg(feature = "false")]
