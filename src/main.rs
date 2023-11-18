@@ -451,76 +451,80 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "false")]
+    #[test]
     fn seven() {
-        const SEVEN: &str = "x := 1\nexit x";
+        const SOURCE: &str = "x := 1\nexit x";
 
-        let nodes = parse(SEVEN);
-        assert_eq!(
+        // Parsing
+        let nodes = test_parsing(
+            SOURCE,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::Assign),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Literal(Literal::Integer(1)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Variable(Variable::new("x"))],
+                },
+            ],
+        );
+
+        // Exploration
+        let path = test_exploration(
             nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Intrinsic(Intrinsic::Assign),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(1))
-                        ]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Variable(Variable::new("x"))]
-                    },
-                    child: None,
-                    next: None,
-                }
-            ]
+            &[
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
+                )]),
+            ],
         );
-        let optimized_nodes = optimize(&nodes);
-        assert_eq!(
-            optimized_nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Special(Special::Type),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Type(Type::U8),
-                            Value::Literal(Literal::Integer(1))
-                        ]
-                    },
-                    child: None,
-                    next: Some(1),
+
+        // Optimization
+        let optimized = test_optimization(
+            path,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Type),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Type(Type::U8),
+                        Value::Literal(Literal::Integer(1)),
+                    ],
                 },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Variable(Variable::new("x"))]
-                    },
-                    child: None,
-                    next: None,
-                }
-            ]
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(1))],
+                },
+            ],
         );
-        let expected_assembly = "\
+
+        // Assembly
+        test_assembling(
+            optimized,
+            "\
             .global _start\n\
             _start:\n\
             mov x8, #93\n\
-            ldr x0, =x\n\
-            ldrb w0, [x0]\n\
+            mov x0, #1\n\
             svc #0\n\
             .data\n\
             x: .byte 1\n\
-        ";
-        assemble(&optimized_nodes, expected_assembly, 1);
+        ",
+            1,
+        );
     }
 
     #[cfg(feature = "false")]

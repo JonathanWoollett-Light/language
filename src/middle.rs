@@ -134,6 +134,7 @@ pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
                         current_new_node.as_mut().next = Some(temp);
                     }
                 }
+                current_new_node = temp;
 
                 stack.push(next);
             }
