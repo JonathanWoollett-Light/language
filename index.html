@@ -43,6 +43,7 @@
                 <p>Compile-time evaluation of syscalls. No build scripts. No macros.</p>
             </li>
         </ul>
+        <p>Currently the only backend is aarch64.<br>I may add RISC-V.<br>I won't add x86-64.</p>
         <h3>Hello, World!</h3>
         <div class="grid">
             <div>
@@ -52,7 +53,6 @@
             <div>
                 <h5>Assembly</h5>
                 <p class="code">.global _start<br>_start:<br>mov x8, #64<br>mov x0, #1<br>ldr x1, =x<br>mov x2, #14<br>svc #0<br>mov x8, #93<br>mov x0, #0<br>svc #0<br>.data<br>x: .byte 72,101,108,108,111,44,32,87,111,114,108,100,33,10</p>
-                <p>This is aarch64 assembly, the only currently supported backend.<br>I think in the future I might add RISC-V.<br>I do not like x86-64 and it shrinks in market share each year, I do not think I will add it.</p>
             </div>
         </div>
         <h3>Planned keywords</h3>
@@ -69,12 +69,37 @@
             <li><span class="code">assert</span>: A condition that calls <span class="code">exit</span> if false at run-time.</li>
         </ol>
         <h3>Examples</h3>
-        <h4>One</h4>
         <p class="code">def add<br>    lhs = in[0] # 1<br>    rhs = in[1] # 2<br>    out = rhs + lhs # 3<br>x := add 1 2 # 3<br>comptime write 1 x<br>require x = 3 # true<br>assume x = 4<br>require x = 4 # true<br>assert x = 4 # false, but this statement will get removed by the compiler due to the <span class="code">assume</span>.</p>
-        <h4>Two</h4>
-        <p class="code">x := 0<br>x -= 1<br> if x < 0 <br>    require x >= -128<br>    exit 1<br>require x <= 255<br>exit 0</p>
-        <p class="code">x : u8<br>x := 0<br>x -= 1<br>exit 0</p>
-        <p class="code">.global _start<br>_start:<br>ldr x0, =x<br>mov w1, #0<br>strb w1, [x0]<br>ldr x0, =x<br>ldr w1, [x0]<br>sub w1, w1, #1<br>strb w1, [x0]<br>mov x8, #93<br>mov x0, #0<br>svc #0<br>.bss<br>x:<br>.skip 1<br></p>
+        <div class="grid">
+            <div><p>Source</p></div>
+            <div><p>Optimized</p></div>
+            <div><p>Assembly</p></div>
+        </div>
+        <div class="grid">
+            <div><p class="code">exit 0</p></div>
+            <div><p class="code">exit 0</p></div>
+            <div><p class="code">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #0<br>svc #0</p></div>
+        </div>
+        <div class="grid">
+            <div><p class="code">exit 1<br>exit 2</p></div>
+            <div><p class="code">exit 1</p></div>
+            <div><p class="code">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #1<br>svc #0</p></div>
+        </div>
+        <div class="grid">
+            <div><p class="code">x := 1<br>exit 0</p></div>
+            <div><p class="code">exit 0</p></div>
+            <div><p class="code">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #0<br>svc #0</p></div>
+        </div>
+        <div class="grid">
+            <div><p class="code">x := 1<br>exit x</p></div>
+            <div><p class="code">exit 1</p></div>
+            <div><p class="code">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #1<br>svc #0</p></div>
+        </div>
+        <div class="grid">
+            <div><p class="code">x := 1<br>x += 1<br>exit x</p></div>
+            <div><p class="code">exit 2</p></div>
+            <div><p class="code">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #2<br>svc #0</p></div>
+        </div>
     </main>
   </body>
 </html>
