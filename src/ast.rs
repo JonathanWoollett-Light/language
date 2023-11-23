@@ -1,20 +1,4 @@
 /// The AST maps closely to assembly for simplicity.
-#[derive(Debug, Eq, PartialEq, Default, Clone)]
-pub struct Node {
-    pub statement: Statement,
-    pub child: Option<usize>,
-    pub next: Option<usize>,
-}
-impl Node {
-    pub fn new(statement: Statement) -> Self {
-        Self {
-            statement,
-            child: None,
-            next: None,
-        }
-    }
-}
-
 use std::ptr::NonNull;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,6 +7,7 @@ pub enum Preceding {
     Previous(NonNull<NewNode>),
 }
 
+#[derive(Debug)]
 pub struct NewNode {
     pub statement: Statement,
     pub preceding: Option<Preceding>,
