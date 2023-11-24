@@ -100,6 +100,16 @@
             <div><p class="code">exit 2</p></div>
             <div><p class="code">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #2<br>svc #0</p></div>
         </div>
+        <div class="grid">
+            <div><p class="code">x := 1<br>if x = 2<br>    exit 1<br>exit 0</p></div>
+            <div><p class="code">exit 0</p></div>
+            <div><p class="code">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #0<br>svc #0</p></div>
+        </div>
+        <div class="grid">
+            <div><p class="code">x := 2<br>if x = 2<br>    exit 1<br>exit 0</p></div>
+            <div><p class="code">exit 1</p></div>
+            <div><p class="code">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #1<br>svc #0</p></div>
+        </div>
     </main>
   </body>
 </html>
