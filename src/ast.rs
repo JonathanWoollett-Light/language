@@ -257,16 +257,18 @@ impl Type {
             I32_MIN..I16_MIN => vec![Self::I64, Self::I32],
             I16_MIN..I8_MIN => vec![Self::I64, Self::I32, Self::I16],
             I8_MIN..0 => vec![Self::I64, Self::I32, Self::I16, Self::I8],
-            0..U8_MAX => vec![
-                Self::I64,
-                Self::I32,
-                Self::I16,
-                Self::I8,
-                Self::U64,
-                Self::U32,
-                Self::U16,
-                Self::U8,
-            ],
+            0..U8_MAX => {
+                vec![
+                    Self::I64,
+                    Self::I32,
+                    Self::I16,
+                    Self::I8,
+                    Self::U64,
+                    Self::U32,
+                    Self::U16,
+                    Self::U8,
+                ]
+            }
             U8_MAX => vec![
                 Self::I64,
                 Self::I32,
@@ -276,14 +278,16 @@ impl Type {
                 Self::U16,
                 Self::U8,
             ],
-            U16_EDGE..U16_MAX => vec![
-                Self::I64,
-                Self::I32,
-                Self::I16,
-                Self::U64,
-                Self::U32,
-                Self::U16,
-            ],
+            U16_EDGE..U16_MAX => {
+                vec![
+                    Self::I64,
+                    Self::I32,
+                    Self::I16,
+                    Self::U64,
+                    Self::U32,
+                    Self::U16,
+                ]
+            }
             U16_MAX => vec![Self::I64, Self::I32, Self::U64, Self::U32, Self::U16],
             U32_EDGE..U32_MAX => vec![Self::I64, Self::I32, Self::U64, Self::U32],
             U32_MAX => vec![Self::I64, Self::U64, Self::U32],

@@ -15,34 +15,46 @@ pub fn get_type<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Type {
     match bytes.next().map(Result::unwrap) {
         Some(b'i') => match bytes.next().map(Result::unwrap) {
             Some(b'8') => Type::I8,
-            Some(b'1') => match bytes.next().map(Result::unwrap) {
-                Some(b'6') => Type::I16,
-                _ => panic!(),
-            },
-            Some(b'3') => match bytes.next().map(Result::unwrap) {
-                Some(b'2') => Type::I32,
-                _ => panic!(),
-            },
-            Some(b'6') => match bytes.next().map(Result::unwrap) {
-                Some(b'4') => Type::I64,
-                _ => panic!(),
-            },
+            Some(b'1') => {
+                match bytes.next().map(Result::unwrap) {
+                    Some(b'6') => Type::I16,
+                    _ => panic!(),
+                }
+            }
+            Some(b'3') => {
+                match bytes.next().map(Result::unwrap) {
+                    Some(b'2') => Type::I32,
+                    _ => panic!(),
+                }
+            }
+            Some(b'6') => {
+                match bytes.next().map(Result::unwrap) {
+                    Some(b'4') => Type::I64,
+                    _ => panic!(),
+                }
+            }
             _ => panic!(),
         },
         Some(b'u') => match bytes.next().map(Result::unwrap) {
             Some(b'8') => Type::U8,
-            Some(b'1') => match bytes.next().map(Result::unwrap) {
-                Some(b'6') => Type::U16,
-                _ => panic!(),
-            },
-            Some(b'3') => match bytes.next().map(Result::unwrap) {
-                Some(b'2') => Type::U32,
-                _ => panic!(),
-            },
-            Some(b'6') => match bytes.next().map(Result::unwrap) {
-                Some(b'4') => Type::U64,
-                _ => panic!(),
-            },
+            Some(b'1') => {
+                match bytes.next().map(Result::unwrap) {
+                    Some(b'6') => Type::U16,
+                    _ => panic!(),
+                }
+            }
+            Some(b'3') => {
+                match bytes.next().map(Result::unwrap) {
+                    Some(b'2') => Type::U32,
+                    _ => panic!(),
+                }
+            }
+            Some(b'6') => {
+                match bytes.next().map(Result::unwrap) {
+                    Some(b'4') => Type::U64,
+                    _ => panic!(),
+                }
+            }
             _ => panic!(),
         },
         _ => panic!(),
@@ -242,9 +254,7 @@ pub fn get_value<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Value {
                     _ => panic!(),
                 }
             }
-            Value::Literal(Literal::String(
-                std::str::from_utf8(&string).unwrap().to_string(),
-            ))
+            Value::Literal(Literal::String(std::str::from_utf8(&string).unwrap().to_string()))
         }
         _ => panic!(
             "unexpected: {:?}",
@@ -418,11 +428,13 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             arg: get_values(bytes),
         },
         // Exit
-        (b"exit", None) => Statement {
-            comptime,
-            op: Op::Syscall(Syscall::Exit),
-            arg: get_values(bytes),
-        },
+        (b"exit", None) => {
+            Statement {
+                comptime,
+                op: Op::Syscall(Syscall::Exit),
+                arg: get_values(bytes),
+            }
+        }
         // If
         (b"if", None) => {
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
@@ -434,11 +446,13 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             let arg = vec![lhs, rhs];
             Statement { comptime, op, arg }
         }
-        (b"break", None) => Statement {
-            comptime,
-            op: Op::Intrinsic(Intrinsic::Break),
-            arg: Vec::new(),
-        },
+        (b"break", None) => {
+            Statement {
+                comptime,
+                op: Op::Intrinsic(Intrinsic::Break),
+                arg: Vec::new(),
+            }
+        }
         (b"require", None) => {
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             let lhs = get_value(bytes);
@@ -464,7 +478,11 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                     assert_eq!(Some(b' '), bytes.next().map(Result::unwrap));
                     let arg = get_value(bytes);
                     let arg = vec![lhs, arg];
-                    Statement { comptime, op: Op::Intrinsic(arithmetic), arg, }
+                    Statement {
+                        comptime,
+                        op: Op::Intrinsic(arithmetic),
+                        arg,
+                    }
                 }
                 Some(b':') => match bytes.next().map(Result::unwrap) {
                     Some(b' ') => {
@@ -472,25 +490,32 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                         Statement {
                             comptime,
                             op: Op::Special(Special::Type),
-                            arg: vec![lhs, Value::Type(variable_type)]
+                            arg: vec![lhs, Value::Type(variable_type)],
                         }
                     }
                     Some(b'=') => {
                         assert_eq!(Some(b' '), bytes.next().map(Result::unwrap));
                         let first = get_value(bytes);
 
-                        let get_statement = |lhs: Value, first: Value, bytes: &mut Peekable<Bytes<R>>| -> Statement {
+                        let get_statement = |lhs: Value,
+                                             first: Value,
+                                             bytes: &mut Peekable<Bytes<R>>|
+                         -> Statement {
                             let tail = get_values(bytes);
                             match (&first, &tail) {
-                                (Value::Variable(Variable { identifier, index: None }), _) if let Ok(syscall) = Syscall::try_from(identifier.as_slice()) => {
+                                (
+                                    Value::Variable(Variable {
+                                        identifier,
+                                        index: None,
+                                    }),
+                                    _,
+                                ) if let Ok(syscall) = Syscall::try_from(identifier.as_slice()) => {
                                     Statement {
                                         comptime,
                                         op: Op::Syscall(syscall),
-                                        arg: once(lhs)
-                                            .chain(tail.iter().cloned())
-                                            .collect(),
+                                        arg: once(lhs).chain(tail.iter().cloned()).collect(),
                                     }
-                                },
+                                }
                                 _ => Statement {
                                     comptime,
                                     op: Op::Intrinsic(Intrinsic::Assign),
@@ -512,17 +537,27 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
 
                                         let second = get_value(bytes);
                                         let arg = vec![lhs, first, second];
-                                        Statement { comptime, op: Op::Intrinsic(arithmetic), arg, }
-                                    },
+                                        Statement {
+                                            comptime,
+                                            op: Op::Intrinsic(arithmetic),
+                                            arg,
+                                        }
+                                    }
                                     _ => get_statement(lhs, first, bytes),
                                 }
-                            },
+                            }
                             _ => get_statement(lhs, first, bytes),
                         }
-                    },
-                    _ => panic!("{:?}", std::str::from_utf8(&bytes.map(Result::unwrap).collect::<Vec<_>>())),
-                }
-                _ => panic!("{:?}", std::str::from_utf8(&bytes.map(Result::unwrap).collect::<Vec<_>>())),
+                    }
+                    _ => panic!(
+                        "{:?}",
+                        std::str::from_utf8(&bytes.map(Result::unwrap).collect::<Vec<_>>())
+                    ),
+                },
+                _ => panic!(
+                    "{:?}",
+                    std::str::from_utf8(&bytes.map(Result::unwrap).collect::<Vec<_>>())
+                ),
             }
         }
     }

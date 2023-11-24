@@ -109,7 +109,9 @@ pub unsafe fn build_optimized_tree(
                     }), Value::Literal(Literal::Integer(_))] => {
                         let varible_state = current.as_ref().state.get(identifier).unwrap();
                         match varible_state {
-                            TypeValue::Integer(TypeValueInteger::U8(range)) if let Some(exact) = range.value() => {
+                            TypeValue::Integer(TypeValueInteger::U8(range))
+                                if let Some(exact) = range.value() =>
+                            {
                                 // We unwrap here since it would be an error for an add assign to be the last node.
                                 let mut next_state_node = next_state_node_opt.unwrap();
 
@@ -117,30 +119,42 @@ pub unsafe fn build_optimized_tree(
                                 {
                                     match current.as_ref().statement.as_ref().preceding {
                                         Some(Preceding::Parent(mut parent)) => {
-                                            debug_assert_eq!(current.as_ref().statement.as_ref().child, None);
-                                            parent.as_mut().child = current.as_ref().statement.as_ref().next;
+                                            debug_assert_eq!(
+                                                current.as_ref().statement.as_ref().child,
+                                                None
+                                            );
+                                            parent.as_mut().child =
+                                                current.as_ref().statement.as_ref().next;
                                         }
                                         Some(Preceding::Previous(mut previous)) => {
-                                            debug_assert_eq!(current.as_ref().statement.as_ref().child, None);
-                                            previous.as_mut().next = current.as_ref().statement.as_ref().next;
+                                            debug_assert_eq!(
+                                                current.as_ref().statement.as_ref().child,
+                                                None
+                                            );
+                                            previous.as_mut().next =
+                                                current.as_ref().statement.as_ref().next;
                                         }
-                                        None =>  {
-                                            debug_assert_eq!(current.as_ref().statement, first_node);
+                                        None => {
+                                            debug_assert_eq!(
+                                                current.as_ref().statement,
+                                                first_node
+                                            );
                                             // We unwrap here since if there is no next node, this
                                             // is both the 1st node and last node, thus removing it is an error.
                                             first_node = next_state_node.as_ref().statement;
-                                        },
+                                        }
                                     }
                                     alloc::dealloc(
                                         current.as_ref().statement.as_ptr().cast(),
-                                        alloc::Layout::new::<NewNode>()
+                                        alloc::Layout::new::<NewNode>(),
                                     );
                                 }
 
                                 // Update state node
                                 {
                                     next_state_node.as_mut().prev = current.as_ref().prev;
-                                    current.as_ref().prev.unwrap().as_mut().next = (Some(next_state_node),None);
+                                    current.as_ref().prev.unwrap().as_mut().next =
+                                        (Some(next_state_node), None);
                                     alloc::dealloc(
                                         current.as_ptr().cast(),
                                         alloc::Layout::new::<NewStateNode>(),
@@ -602,28 +616,31 @@ pub unsafe fn explore_node(
     debug_assert!(current_ref.next.1.is_none());
 
     match statement.op {
-        Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => match statement.arg.as_slice() {
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
-                let _scope = current_ref.scope;
-                let y = current_ref
-                    .state
-                    .get(identifier)
-                    .unwrap()
-                    .integer()
-                    .unwrap();
+        Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => {
+            match statement.arg.as_slice() {
+                [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] =>
+                {
+                    let _scope = current_ref.scope;
+                    let y = current_ref
+                        .state
+                        .get(identifier)
+                        .unwrap()
+                        .integer()
+                        .unwrap();
 
-                let if_bool = if y.value() == Some(*x) {
-                    IfBool::True
-                } else if y.excludes(*x) {
-                    IfBool::False
-                } else {
-                    IfBool::Unknown
-                };
+                    let if_bool = if y.value() == Some(*x) {
+                        IfBool::True
+                    } else if y.excludes(*x) {
+                        IfBool::False
+                    } else {
+                        IfBool::Unknown
+                    };
 
-                current_ref.unexplored = explore_if(if_bool, current, stack);
+                    current_ref.unexplored = explore_if(if_bool, current, stack);
+                }
+                _ => todo!(),
             }
-            _ => todo!(),
-        },
+        }
         Op::Intrinsic(Intrinsic::If(Cmp::Lt)) => match statement.arg.as_slice() {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
                 let _scope = current_ref.scope;
@@ -753,10 +770,11 @@ pub unsafe fn explore_node(
         // See 1 & 2
         _ => {
             let scope = current_ref.scope;
-            current_ref.unexplored = (
-                new_append(current, scope, ast_node.next.unwrap(), stack),
-                Vec::new(),
-            );
+            current_ref.unexplored =
+                (
+                    new_append(current, scope, ast_node.next.unwrap(), stack),
+                    Vec::new(),
+                );
         }
     }
 }
@@ -1017,27 +1035,29 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Special(Special::Require(Cmp::Le)) => match statement.arg.as_slice() {
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
-                match state.get(identifier) {
-                    Some(TypeValue::Integer(y)) => match y.less_than_or_equal(*x) {
-                        true => {
-                            let mut new_state = state.clone();
-                            let integer = new_state
-                                .get_mut(identifier)
-                                .unwrap()
-                                .integer_mut()
-                                .unwrap();
-                            integer.set_max(*x).unwrap();
-                            vec![new_state]
-                        }
-                        false => Vec::new(),
-                    },
-                    _ => todo!(),
+        Op::Special(Special::Require(Cmp::Le)) => {
+            match statement.arg.as_slice() {
+                [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
+                    match state.get(identifier) {
+                        Some(TypeValue::Integer(y)) => match y.less_than_or_equal(*x) {
+                            true => {
+                                let mut new_state = state.clone();
+                                let integer = new_state
+                                    .get_mut(identifier)
+                                    .unwrap()
+                                    .integer_mut()
+                                    .unwrap();
+                                integer.set_max(*x).unwrap();
+                                vec![new_state]
+                            }
+                            false => Vec::new(),
+                        },
+                        _ => todo!(),
+                    }
                 }
+                _ => todo!(),
             }
-            _ => todo!(),
-        },
+        }
         Op::Syscall(Syscall::Read) => match statement.arg.as_slice() {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(_))] => {
                 match state.get(identifier) {
@@ -1087,13 +1107,15 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             },
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::Loop) => match statement.arg.as_slice() {
-            [] => vec![state.clone()],
-            [Value::Literal(Literal::Integer(integer))] if u64::try_from(*integer).is_ok() => {
-                vec![state.clone()]
+        Op::Intrinsic(Intrinsic::Loop) => {
+            match statement.arg.as_slice() {
+                [] => vec![state.clone()],
+                [Value::Literal(Literal::Integer(integer))] if u64::try_from(*integer).is_ok() => {
+                    vec![state.clone()]
+                }
+                _ => todo!(),
             }
-            _ => todo!(),
-        },
+        }
         Op::Intrinsic(Intrinsic::Break) => match statement.arg.as_slice() {
             [] => vec![state.clone()],
             _ => todo!(),
