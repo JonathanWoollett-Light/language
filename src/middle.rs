@@ -22,101 +22,133 @@ pub unsafe fn build_optimized_tree(
     // The 1st step is iterating over nodes which don't diverge
     // (`next.0.is_none() || next.1.is_none()`), all these can be simply inlined.
     let mut stack = vec![graph];
-    let new_nodes = {
-        let ptr = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
-        ptr::write(
-            ptr,
-            NewNode::new(graph.as_ref().statement.as_ref().statement.clone()),
-        );
-        NonNull::new(ptr).unwrap()
-    };
-    let mut current_new_node = new_nodes;
+    let mut first_node = graph.as_ref().statement;
     while let Some(mut current) = stack.pop() {
-        let node = current.as_mut();
+        let next_state_node_opt = match current.as_ref().next {
+            (Some(x), None) | (None, Some(x)) => {
+                stack.push(x);
+                Some(x)
+            }
+            (Some(_), Some(_)) => {
+                // For now we stop when hitting a diverging path.
+                current.as_mut().next = (None, None); // This memory leaks the nodes.
+                current.as_mut().statement.as_mut().next = None; // This memory leaks the nodes.
+                current.as_mut().statement.as_mut().child = None; // This memory leaks the nodes.
+                break;
+            }
+            (None, None) => {
+                current.as_mut().statement.as_mut().next = None; // This memory leaks the nodes.
+                current.as_mut().statement.as_mut().child = None; // This memory leaks the nodes.
+                None
+            }
+        };
 
-        match node.statement.as_ref().statement.op {
+        dbg!(&current.as_ref().statement.as_ref().statement.op);
+
+        match current.as_ref().statement.as_ref().statement.op {
             Op::Intrinsic(Intrinsic::Assign) => {
-                match node.statement.as_ref().statement.arg.as_slice() {
+                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
                     [Value::Variable(Variable {
                         identifier,
                         index: None,
                     }), Value::Literal(Literal::Integer(_))] => {
-                        let temp = Type::from(node.state.get(identifier).unwrap().clone());
-                        let existing = types.insert(identifier, temp.clone());
+                        let variable_state =
+                            current.as_ref().state.get(identifier).unwrap().clone();
+                        let variable_type = Type::from(variable_state);
+                        let existing = types.insert(identifier, variable_type.clone());
+
                         // If not already declared this declares the type of the variable.
                         if existing.is_none() {
-                            current_new_node.as_mut().statement.op = Op::Special(Special::Type);
-                            current_new_node
+                            current.as_mut().statement.as_mut().statement.op =
+                                Op::Special(Special::Type);
+                            current
+                                .as_mut()
+                                .statement
                                 .as_mut()
                                 .statement
                                 .arg
-                                .insert(1, Value::Type(temp));
+                                .insert(1, Value::Type(variable_type));
                         }
                     }
                     _ => todo!(),
                 }
             }
-            Op::Syscall(Syscall::Exit) => match node.statement.as_ref().statement.arg.as_slice() {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                })] => {
-                    let state = node.state.get(identifier).unwrap();
-                    match state {
-                        TypeValue::Integer(TypeValueInteger::U8(range)) => {
-                            if let Some(exact) = range.value() {
-                                current_new_node.as_mut().statement.arg =
-                                    vec![Value::Literal(Literal::Integer(i128::from(exact)))];
-                            } else {
-                                read.insert(identifier.clone());
+            Op::Syscall(Syscall::Exit) => {
+                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    })] => {
+                        let varible_state = current.as_ref().state.get(identifier).unwrap();
+                        match varible_state {
+                            TypeValue::Integer(TypeValueInteger::U8(range)) => {
+                                if let Some(exact) = range.value() {
+                                    current.as_mut().statement.as_mut().statement.arg =
+                                        vec![Value::Literal(Literal::Integer(i128::from(exact)))];
+                                } else {
+                                    read.insert(identifier.clone());
+                                }
                             }
+                            _ => todo!(),
                         }
-                        _ => todo!(),
                     }
+                    [Value::Literal(Literal::Integer(_))] => {}
+                    _ => todo!(),
                 }
-                [Value::Literal(Literal::Integer(_))] => {}
-                _ => todo!(),
-            },
+            }
             // On the linear path, these statements can simply be removed.
             //
             // `current` is not used after `current = prev;` but it may be in the future, and I
             // don't want to obfuscate this complex logic further.
             #[allow(unused_assignments)]
             Op::Intrinsic(Intrinsic::AddAssign) => {
-                match node.statement.as_ref().statement.arg.as_slice() {
-                    [Value::Variable(_), Value::Literal(Literal::Integer(_))] => {
-                        // Update AST
-                        let old_node = current_new_node;
-                        match current_new_node.as_ref().preceding {
-                            Some(Preceding::Parent(mut parent)) => {
-                                parent.as_mut().child = None;
-                                current_new_node = parent;
-                            }
-                            Some(Preceding::Previous(mut previous)) => {
-                                previous.as_mut().next = None;
-                                current_new_node = previous;
-                            }
-                            None => unreachable!(),
-                        }
+                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }), Value::Literal(Literal::Integer(_))] => {
+                        let varible_state = current.as_ref().state.get(identifier).unwrap();
+                        match varible_state {
+                            TypeValue::Integer(TypeValueInteger::U8(range)) if let Some(exact) = range.value() => {
+                                // We unwrap here since it would be an error for an add assign to be the last node.
+                                let mut next_state_node = next_state_node_opt.unwrap();
 
-                        // Update state graph
-                        if let Some(mut next_one) = current.as_mut().next.0 {
-                            next_one.as_mut().prev = current.as_ref().prev;
-                        }
-                        if let Some(mut next_two) = current.as_mut().next.1 {
-                            next_two.as_mut().prev = current.as_ref().prev;
-                        }
-                        let mut prev = current.as_ref().prev.unwrap();
-                        prev.as_mut().next = current.as_ref().next;
-                        let old_state = current;
-                        current = prev;
+                                // Update syntax node
+                                {
+                                    match current.as_ref().statement.as_ref().preceding {
+                                        Some(Preceding::Parent(mut parent)) => {
+                                            debug_assert_eq!(current.as_ref().statement.as_ref().child, None);
+                                            parent.as_mut().child = current.as_ref().statement.as_ref().next;
+                                        }
+                                        Some(Preceding::Previous(mut previous)) => {
+                                            debug_assert_eq!(current.as_ref().statement.as_ref().child, None);
+                                            previous.as_mut().next = current.as_ref().statement.as_ref().next;
+                                        }
+                                        None =>  {
+                                            debug_assert_eq!(current.as_ref().statement, first_node);
+                                            // We unwrap here since if there is no next node, this
+                                            // is both the 1st node and last node, thus removing it is an error.
+                                            first_node = next_state_node.as_ref().statement;
+                                        },
+                                    }
+                                    alloc::dealloc(
+                                        current.as_ref().statement.as_ptr().cast(),
+                                        alloc::Layout::new::<NewNode>()
+                                    );
+                                }
 
-                        // Deallocate nodes
-                        alloc::dealloc(
-                            old_state.as_ptr().cast(),
-                            alloc::Layout::new::<NewStateNode>(),
-                        );
-                        alloc::dealloc(old_node.as_ptr().cast(), alloc::Layout::new::<NewNode>());
+                                // Update state node
+                                {
+                                    next_state_node.as_mut().prev = current.as_ref().prev;
+                                    current.as_ref().prev.unwrap().as_mut().next = (Some(next_state_node),None);
+                                    alloc::dealloc(
+                                        current.as_ptr().cast(),
+                                        alloc::Layout::new::<NewStateNode>(),
+                                    );
+                                }
+                            }
+                            _ => todo!(),
+                        }
                     }
                     _ => todo!(),
                 }
@@ -125,97 +157,62 @@ pub unsafe fn build_optimized_tree(
             // don't want to obfuscate this complex logic further.
             #[allow(unused_assignments)]
             Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => {
-                match node.next {
-                    (Some(_), None) | (None, Some(_)) => {
-                        // Update AST
-                        let old_node = current_new_node;
-                        match current_new_node.as_ref().preceding {
-                            Some(Preceding::Parent(mut parent)) => {
-                                parent.as_mut().child = None;
-                                current_new_node = parent;
-                            }
-                            Some(Preceding::Previous(mut previous)) => {
-                                previous.as_mut().next = None;
-                                current_new_node = previous;
-                            }
-                            None => unreachable!(),
-                        }
+                // We unwrap here since it would be an error for an if to be the last node.
+                let mut next_state_node = next_state_node_opt.unwrap();
 
-                        // Update state graph
-                        if let Some(mut next_one) = current.as_mut().next.0 {
-                            next_one.as_mut().prev = current.as_ref().prev;
+                // Update syntax node
+                {
+                    match current.as_ref().statement.as_ref().preceding {
+                        Some(Preceding::Parent(mut parent)) => {
+                            let following = match (
+                                current.as_ref().statement.as_ref().child,
+                                current.as_ref().statement.as_ref().next,
+                            ) {
+                                (Some(x), None) | (None, Some(x)) => x,
+                                (Some(x), Some(_)) if x == next_state_node.as_ref().statement => x,
+                                (Some(_), Some(x)) if x == next_state_node.as_ref().statement => x,
+                                _ => unreachable!(),
+                            };
+                            parent.as_mut().child = Some(following);
                         }
-                        if let Some(mut next_two) = current.as_mut().next.1 {
-                            next_two.as_mut().prev = current.as_ref().prev;
+                        Some(Preceding::Previous(mut previous)) => {
+                            let following = match (
+                                current.as_ref().statement.as_ref().child,
+                                current.as_ref().statement.as_ref().next,
+                            ) {
+                                (Some(x), None) | (None, Some(x)) => x,
+                                (Some(x), Some(_)) if x == next_state_node.as_ref().statement => x,
+                                (Some(_), Some(x)) if x == next_state_node.as_ref().statement => x,
+                                _ => unreachable!(),
+                            };
+                            previous.as_mut().next = Some(following);
                         }
-                        let mut prev = current.as_ref().prev.unwrap();
-                        prev.as_mut().next = current.as_ref().next;
-                        let old_state = current;
-                        current = prev;
-
-                        // Deallocate nodes
-                        alloc::dealloc(
-                            old_state.as_ptr().cast(),
-                            alloc::Layout::new::<NewStateNode>(),
-                        );
-                        alloc::dealloc(old_node.as_ptr().cast(), alloc::Layout::new::<NewNode>());
+                        None => {
+                            debug_assert_eq!(current.as_ref().statement, first_node);
+                            first_node = next_state_node.as_ref().statement;
+                        }
+                        _ => unreachable!(),
                     }
-                    _ => todo!(),
+                    alloc::dealloc(
+                        current.as_ref().statement.as_ptr().cast(),
+                        alloc::Layout::new::<NewNode>(),
+                    );
+                }
+
+                // Update state node
+                {
+                    next_state_node.as_mut().prev = current.as_ref().prev;
+                    current.as_ref().prev.unwrap().as_mut().next = (Some(next_state_node), None);
+                    alloc::dealloc(
+                        current.as_ptr().cast(),
+                        alloc::Layout::new::<NewStateNode>(),
+                    );
                 }
             }
             _ => todo!(),
         }
-
-        match node.next {
-            (Some(next), None) | (None, Some(next)) => {
-                match node.statement.as_ref().statement.op {
-                    Op::Intrinsic(Intrinsic::If(_)) | Op::Intrinsic(Intrinsic::Loop) => {
-                        let statement_ref = next.as_ref().statement.as_ref();
-                        let mut temp = {
-                            let ptr =
-                                alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
-                            ptr::write(ptr, NewNode::new(statement_ref.statement.clone()));
-                            NonNull::new(ptr).unwrap()
-                        };
-
-                        // Succedding item may be child or next
-                        temp.as_mut().preceding = statement_ref.preceding;
-                        match statement_ref.preceding.unwrap() {
-                            Preceding::Parent(_) => {
-                                current_new_node.as_mut().child = Some(temp);
-                            }
-                            Preceding::Previous(_) => {
-                                current_new_node.as_mut().next = Some(temp);
-                            }
-                        }
-                        current_new_node = temp;
-
-                        stack.push(next);
-                    }
-                    _ => {
-                        let statement_ref = next.as_ref().statement.as_ref();
-                        let mut temp = {
-                            let ptr =
-                                alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
-                            ptr::write(ptr, NewNode::new(statement_ref.statement.clone()));
-                            NonNull::new(ptr).unwrap()
-                        };
-
-                        // Succedding item can only be next
-                        temp.as_mut().preceding = Some(Preceding::Previous(current_new_node));
-                        current_new_node.as_mut().child = None;
-                        current_new_node.as_mut().next = Some(temp);
-                        current_new_node = temp;
-
-                        stack.push(next);
-                    }
-                }
-            }
-            (Some(_), Some(_)) => todo!(),
-            (None, None) => break,
-        }
     }
-    (new_nodes, read)
+    (first_node, read)
 }
 
 pub unsafe fn finish_optimized_tree(
@@ -289,10 +286,6 @@ unsafe fn new_passback_end(mut node: NonNull<NewStateNode>, end: GraphNodeEnd) {
     debug_assert!(node.as_ref().unexplored.0.is_empty());
     debug_assert!(node.as_ref().unexplored.1.is_empty());
     debug_assert!(node.as_ref().cost.is_none());
-
-    dbg!(&end);
-    println!("{:?}", &node.as_ref().state);
-    dbg!(&node.as_ref().statement.as_ref().statement.op);
 
     // TODO Simplify this.
     let type_state_cost = TypeState::from(node.as_ref().state.clone()).cost();

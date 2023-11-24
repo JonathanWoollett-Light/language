@@ -75,8 +75,9 @@ mod tests {
 
     fn match_nodes(actual: NonNull<NewNode>, expected: &[Statement]) {
         // println!("match_nodes:");
-        let mut index = 0;
         let mut stack = vec![(actual, 0)];
+
+        let mut actual = Vec::new();
         while let Some((current, s)) = stack.pop() {
             let node = unsafe { current.as_ref() };
             if let Some(next) = node.next {
@@ -86,9 +87,9 @@ mod tests {
                 stack.push((child, s + 1));
             }
             // println!("{}{:?}", "    ".repeat(s), node.statement);
-            assert_eq!(Some(&node.statement), expected.get(index));
-            index += 1;
+            actual.push(node.statement.clone());
         }
+        assert_eq!(actual, expected);
     }
 
     fn test_parsing(s: &str, expected: &[Statement]) -> NonNull<NewNode> {
