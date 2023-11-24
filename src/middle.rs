@@ -13,7 +13,7 @@ const DEFAULT_LOOP_LIMIT: usize = 100;
 #[allow(dead_code)]
 const UNROLL_LIMIT: usize = 4096;
 
-pub unsafe fn get_optimized_tree(
+pub unsafe fn build_optimized_tree(
     graph: NonNull<NewStateNode>,
 ) -> (NonNull<NewNode>, HashSet<Identifier>) {
     let mut types = HashMap::new();
@@ -33,7 +33,6 @@ pub unsafe fn get_optimized_tree(
     let mut current_new_node = new_nodes;
     while let Some(mut current) = stack.pop() {
         let node = current.as_mut();
-        // dbg!(&node.statement.as_ref().statement);
 
         match node.statement.as_ref().statement.op {
             Op::Intrinsic(Intrinsic::Assign) => {
@@ -122,6 +121,9 @@ pub unsafe fn get_optimized_tree(
                     _ => todo!(),
                 }
             }
+            // `current` is not used after `current = prev;` but it may be in the future, and I
+            // don't want to obfuscate this complex logic further.
+            #[allow(unused_assignments)]
             Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => {
                 match node.next {
                     (Some(_), None) | (None, Some(_)) => {
@@ -163,8 +165,6 @@ pub unsafe fn get_optimized_tree(
             }
             _ => todo!(),
         }
-
-        // dbg!(&node.statement.as_ref().statement);
 
         match node.next {
             (Some(next), None) | (None, Some(next)) => {
@@ -218,7 +218,7 @@ pub unsafe fn get_optimized_tree(
     (new_nodes, read)
 }
 
-pub unsafe fn strip_optimized_tree(
+pub unsafe fn finish_optimized_tree(
     new_nodes: NonNull<NewNode>,
     read: HashSet<Identifier>,
 ) -> NonNull<NewNode> {
@@ -244,6 +244,8 @@ pub unsafe fn strip_optimized_tree(
                             }
                             None => {
                                 debug_assert_eq!(first, current);
+                                // dbg!(&current.as_ref().child.unwrap().as_ref().statement);
+                                // dbg!(&current.as_ref().statement);
                                 first = current.as_ref().next.unwrap();
                             }
                         }
@@ -276,11 +278,11 @@ pub unsafe fn strip_optimized_tree(
 pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
     // Construct new optimized abstract syntax tree.
     // TODO This doesn't dealloc anything in `graph` which may be very very big. Do this deallocation.
-    let (new_nodes, read) = get_optimized_tree(graph);
+    let (new_nodes, read) = build_optimized_tree(graph);
 
     dbg!(&read);
 
-    strip_optimized_tree(new_nodes, read)
+    finish_optimized_tree(new_nodes, read)
 }
 
 unsafe fn new_passback_end(mut node: NonNull<NewStateNode>, end: GraphNodeEnd) {

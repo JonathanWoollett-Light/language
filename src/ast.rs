@@ -96,6 +96,7 @@ pub struct Variable {
     pub identifier: Identifier,
     pub index: Option<Box<Index>>,
 }
+
 pub type Identifier = Vec<u8>;
 
 impl std::fmt::Debug for Variable {

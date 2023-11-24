@@ -49,6 +49,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
     use std::fs::remove_file;
     use std::fs::OpenOptions;
     use std::io::Write;
@@ -145,6 +146,25 @@ mod tests {
         let new_nodes = unsafe { optimize(nodes) };
         match_nodes(new_nodes, expected);
         new_nodes
+    }
+    fn test_optimization_new(
+        nodes: NonNull<NewStateNode>,
+        expected_build: &[Statement],
+        expected_read: HashSet<Identifier>,
+        expected_finish: &[Statement],
+    ) -> NonNull<NewNode> {
+        unsafe {
+            let (new_nodes, read) = build_optimized_tree(nodes);
+
+            match_nodes(new_nodes, expected_build);
+            assert_eq!(read, expected_read);
+
+            let finish = finish_optimized_tree(new_nodes, read);
+
+            match_nodes(finish, expected_finish);
+
+            finish
+        }
     }
 
     fn test_assembling(nodes: NonNull<NewNode>, expected_assembly: &str, expected_exitcode: i32) {
@@ -244,8 +264,14 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization(
+        let optimized = test_optimization_new(
             path,
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(0))],
+            }],
+            HashSet::from([]),
             &[Statement {
                 comptime: false,
                 op: Op::Syscall(Syscall::Exit),
@@ -290,8 +316,14 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization(
+        let optimized = test_optimization_new(
             path,
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(1))],
+            }],
+            HashSet::from([]),
             &[Statement {
                 comptime: false,
                 op: Op::Syscall(Syscall::Exit),
@@ -336,8 +368,14 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization(
+        let optimized = test_optimization_new(
             path,
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(12))],
+            }],
+            HashSet::from([]),
             &[Statement {
                 comptime: false,
                 op: Op::Syscall(Syscall::Exit),
@@ -387,9 +425,16 @@ mod tests {
             &[&[TypeValueState::new()]],
             &[TypeValueState::new()],
         );
+
         // Optimization
-        let optimized = test_optimization(
+        let optimized = test_optimization_new(
             path,
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(1))],
+            }],
+            HashSet::from([]),
             &[Statement {
                 comptime: false,
                 op: Op::Syscall(Syscall::Exit),
@@ -555,8 +600,25 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization(
+        let optimized = test_optimization_new(
             path,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Type),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Type(Type::U8),
+                        Value::Literal(Literal::Integer(1)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+            ],
+            HashSet::from([]),
             &[Statement {
                 comptime: false,
                 op: Op::Syscall(Syscall::Exit),
@@ -718,8 +780,25 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization(
+        let optimized = test_optimization_new(
             path,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Type),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Type(Type::U8),
+                        Value::Literal(Literal::Integer(1)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(1))],
+                },
+            ],
+            HashSet::from([]),
             &[Statement {
                 comptime: false,
                 op: Op::Syscall(Syscall::Exit),
@@ -925,8 +1004,25 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization(
+        let optimized = test_optimization_new(
             path,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Type),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Type(Type::U8),
+                        Value::Literal(Literal::Integer(1)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(2))],
+                },
+            ],
+            HashSet::from([]),
             &[Statement {
                 comptime: false,
                 op: Op::Syscall(Syscall::Exit),
@@ -1137,8 +1233,25 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization(
+        let optimized = test_optimization_new(
             path,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Type),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Type(Type::U8),
+                        Value::Literal(Literal::Integer(1)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+            ],
+            HashSet::from([]),
             &[Statement {
                 comptime: false,
                 op: Op::Syscall(Syscall::Exit),
@@ -1349,8 +1462,25 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization(
+        let optimized = test_optimization_new(
             path,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Type),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Type(Type::U8),
+                        Value::Literal(Literal::Integer(2)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(1))],
+                },
+            ],
+            HashSet::from([]),
             &[Statement {
                 comptime: false,
                 op: Op::Syscall(Syscall::Exit),
