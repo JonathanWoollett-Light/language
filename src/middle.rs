@@ -191,7 +191,6 @@ pub unsafe fn build_optimized_tree(
                             debug_assert_eq!(current.as_ref().statement, first_node);
                             first_node = next_state_node.as_ref().statement;
                         }
-                        _ => unreachable!(),
                     }
                     alloc::dealloc(
                         current.as_ref().statement.as_ptr().cast(),
@@ -566,19 +565,6 @@ unsafe fn explore_if(
     }
 }
 
-unsafe fn print_ast(nodes: NonNull<NewNode>) {
-    let mut stack = vec![(nodes, 0)];
-    while let Some((current, indent)) = stack.pop() {
-        println!("{}{:?}", "    ".repeat(indent), current.as_ref().statement);
-        if let Some(next) = current.as_ref().next {
-            stack.push((next, indent));
-        }
-        if let Some(child) = current.as_ref().child {
-            stack.push((child, indent + 1));
-        }
-    }
-}
-
 pub unsafe fn roots(node: NonNull<NewNode>) -> Vec<NonNull<NewStateNode>> {
     get_possible_states(&node.as_ref().statement, &TypeValueState::new())
         .into_iter()
@@ -796,6 +782,7 @@ pub struct Explorer<'a> {
     roots: &'a [NonNull<NewStateNode>],
     stack: Vec<NonNull<NewStateNode>>,
 }
+
 impl<'a> Explorer<'a> {
     pub unsafe fn new(roots: &'a [NonNull<NewStateNode>]) -> Self {
         Self {
@@ -812,17 +799,6 @@ impl<'a> Explorer<'a> {
             Explore::Finished(pick_path(self.roots))
         }
     }
-}
-
-pub unsafe fn explore(roots: &[NonNull<NewStateNode>]) -> NonNull<NewStateNode> {
-    dbg!(&roots);
-
-    let mut stack = Vec::from(roots);
-    while let Some(current) = stack.pop() {
-        explore_node(current, &mut stack);
-        close_path(current);
-    }
-    pick_path(roots)
 }
 
 pub unsafe fn pick_path(roots: &[NonNull<NewStateNode>]) -> NonNull<NewStateNode> {

@@ -12,7 +12,6 @@ extern crate test;
 use std::io::Read;
 
 mod ast;
-use ast::*;
 mod frontend;
 use frontend::*;
 mod middle;
@@ -31,7 +30,14 @@ fn main() {
         let mut iter = reader.bytes().peekable();
         let nodes = get_nodes(&mut iter).unwrap();
         let roots = roots(nodes);
-        let path = explore(&roots);
+        let mut explorer = Explorer::new(&roots);
+        let path = loop {
+            match explorer.next() {
+                Explore::Current(_) => continue,
+                Explore::Finished(x) => break x,
+            }
+        };
+
         let optimized_nodes = optimize(path);
         // let nodes = optimize_nodes(&nodes);
         let _assembly = assembly_from_node(optimized_nodes);
@@ -49,6 +55,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::*;
     use std::collections::HashSet;
     use std::fs::remove_file;
     use std::fs::OpenOptions;
@@ -143,12 +150,7 @@ mod tests {
         }
     }
 
-    fn test_optimization(nodes: NonNull<NewStateNode>, expected: &[Statement]) -> NonNull<NewNode> {
-        let new_nodes = unsafe { optimize(nodes) };
-        match_nodes(new_nodes, expected);
-        new_nodes
-    }
-    fn test_optimization_new(
+    fn test_optimization(
         nodes: NonNull<NewStateNode>,
         expected_build: &[Statement],
         expected_read: HashSet<Identifier>,
@@ -265,7 +267,7 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization_new(
+        let optimized = test_optimization(
             path,
             &[Statement {
                 comptime: false,
@@ -317,7 +319,7 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization_new(
+        let optimized = test_optimization(
             path,
             &[Statement {
                 comptime: false,
@@ -369,7 +371,7 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization_new(
+        let optimized = test_optimization(
             path,
             &[Statement {
                 comptime: false,
@@ -428,7 +430,7 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization_new(
+        let optimized = test_optimization(
             path,
             &[Statement {
                 comptime: false,
@@ -601,7 +603,7 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization_new(
+        let optimized = test_optimization(
             path,
             &[
                 Statement {
@@ -781,7 +783,7 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization_new(
+        let optimized = test_optimization(
             path,
             &[
                 Statement {
@@ -1005,7 +1007,7 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization_new(
+        let optimized = test_optimization(
             path,
             &[
                 Statement {
@@ -1234,7 +1236,7 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization_new(
+        let optimized = test_optimization(
             path,
             &[
                 Statement {
@@ -1463,7 +1465,7 @@ mod tests {
         );
 
         // Optimization
-        let optimized = test_optimization_new(
+        let optimized = test_optimization(
             path,
             &[
                 Statement {
