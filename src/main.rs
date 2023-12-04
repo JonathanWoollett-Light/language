@@ -1792,8 +1792,7 @@ mod tests {
         ldrb w0, [x0]\n\
         svc #0\n\
         .bss\n\
-        x:\n\
-        .skip 1\n\
+        x: .skip 1\n\
     "
             ),
             data as i32,
@@ -2074,8 +2073,7 @@ mod tests {
         mov x0, #0\n\
         svc #0\n\
         .bss\n\
-        x:\n\
-        .skip 1\n\
+        x: .skip 1\n\
         "
             ),
             0,

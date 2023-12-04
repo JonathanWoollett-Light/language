@@ -97,12 +97,9 @@ pub fn instruction_from_node(
             Op::Special(Special::Type) => match arg {
                 [Value::Variable(Variable { identifier, .. }), Value::Type(value_type)] => {
                     type_data.insert(identifier.clone(), value_type.clone());
-                    write!(
+                    writeln!(
                         bss,
-                        "\
-                        {}:\n\
-                        .skip {}\n\
-                    ",
+                        "{}: .skip {}",
                         std::str::from_utf8(identifier).unwrap(),
                         value_type.bytes()
                     )
@@ -481,12 +478,9 @@ pub fn instruction_from_node(
                     index: None,
                 }), Value::Type(variable_type), Value::Literal(Literal::Integer(fd))] => {
                     type_data.insert(identifier.clone(), variable_type.clone());
-                    write!(
+                    writeln!(
                         bss,
-                        "\
-                        {}:\n\
-                        .skip {}\n\
-                    ",
+                        "{}: .skip {}",
                         std::str::from_utf8(identifier).unwrap(),
                         variable_type.bytes()
                     )
@@ -531,15 +525,16 @@ pub fn instruction_from_node(
                 }
                 _ => todo!(),
             },
-            Op::Syscall(Syscall::MemfdCreate) => match arg {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                })] => match type_data.get(identifier) {
-                    Some(Type::I64) => {
-                        write!(
-                            &mut assembly,
-                            "\
+            Op::Syscall(Syscall::MemfdCreate) => {
+                match arg {
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    })] => match type_data.get(identifier) {
+                        Some(Type::I64) => {
+                            write!(
+                                &mut assembly,
+                                "\
                             mov x8, #{}\n\
                             ldr x0, =empty\n\
                             mov x1, #0\n\
@@ -547,28 +542,21 @@ pub fn instruction_from_node(
                             ldr x1, ={}\n\
                             str w0, [x1, 4]\n\
                         ",
-                            libc::SYS_memfd_create,
-                            std::str::from_utf8(identifier).unwrap()
-                        )
-                        .unwrap();
-
-                        // Define an empty null terminated string.
-                        if !*empty {
-                            write!(
-                                data,
-                                "\
-                                empty:\n\
-                                .word 0\n\
-                            "
+                                libc::SYS_memfd_create,
+                                std::str::from_utf8(identifier).unwrap()
                             )
                             .unwrap();
-                            *empty = true;
+
+                            // Define an empty null terminated string.
+                            if !*empty {
+                                writeln!(data, "empty: .word 0").unwrap();
+                                *empty = true;
+                            }
                         }
-                    }
-                    Some(Type::I32) => {
-                        write!(
-                            &mut assembly,
-                            "\
+                        Some(Type::I32) => {
+                            write!(
+                                &mut assembly,
+                                "\
                             mov x8, #{}\n\
                             ldr x0, =empty\n\
                             mov x1, #0\n\
@@ -576,28 +564,22 @@ pub fn instruction_from_node(
                             ldr x1, ={}\n\
                             str w0, [x1]\n\
                         ",
-                            libc::SYS_memfd_create,
-                            std::str::from_utf8(identifier).unwrap()
-                        )
-                        .unwrap();
-
-                        // Define an empty null terminated string.
-                        if !*empty {
-                            write!(
-                                data,
-                                "\
-                                empty:\n\
-                                .word 0\n\
-                            "
+                                libc::SYS_memfd_create,
+                                std::str::from_utf8(identifier).unwrap()
                             )
                             .unwrap();
-                            *empty = true;
+
+                            // Define an empty null terminated string.
+                            if !*empty {
+                                writeln!(data, "empty: .word 0").unwrap();
+                                *empty = true;
+                            }
                         }
-                    }
+                        _ => todo!(),
+                    },
                     _ => todo!(),
-                },
-                _ => todo!(),
-            },
+                }
+            }
             _ => todo!(),
         }
 
