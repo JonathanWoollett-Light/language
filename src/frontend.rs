@@ -466,11 +466,10 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
 
             if let Ok(syscall) = Syscall::try_from(lhs.variable().unwrap().identifier.as_slice()) {
                 println!("syscall: {syscall:?}");
-                let tail = get_values(bytes);
                 return Statement {
                     comptime,
                     op: Op::Syscall(syscall),
-                    arg: tail.iter().cloned().collect(),
+                    arg: get_values(bytes),
                 };
             }
 
