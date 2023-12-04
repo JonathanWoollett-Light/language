@@ -121,7 +121,7 @@
         <div class="grid">
             <div><p class="code">x := read 0<br>write 1 x<br>exit 0</p></div>
             <div><p class="code">x := read u8 0<br>write 1 x<br>exit 0</p></div>
-            <div><p class="code assembly">_start:<br>mov x8, #63<br>mov x0, #0<br>ldr x1, =x<br>mov x2, #1<br>svc #0<br>mov x8, #64<br>mov x0, #1<br>ldr x1, =x<br>mov x2, #1<br>svc #0<br>mov x8, #93<br>mov x0, #0<br>svc #0<br>.bss<br>x: .skip 1</p></div>
+            <div><p class="code assembly">.global _start<br>start:<br>mov x8, #63<br>mov x0, #0<br>ldr x1, =x<br>mov x2, #1<br>svc #0<br>mov x8, #64<br>mov x0, #1<br>ldr x1, =x<br>mov x2, #1<br>svc #0<br>mov x8, #93<br>mov x0, #0<br>svc #0<br>.bss<br>x: .skip 1</p></div>
         </div>
     </main>
   </body>
