@@ -13,6 +13,9 @@
             border-radius: 3px;
             white-space:pre-wrap;
         }
+        .assembly {
+            font-size: 14px;
+        }
     </style>
   </head>
   <body>
@@ -78,42 +81,47 @@
         <div class="grid">
             <div><p class="code">exit 0</p></div>
             <div><p class="code">exit 0</p></div>
-            <div><p class="code">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #0<br>svc #0</p></div>
+            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #0<br>svc #0</p></div>
         </div>
         <div class="grid">
             <div><p class="code">exit 1<br>exit 2</p></div>
             <div><p class="code">exit 1</p></div>
-            <div><p class="code">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #1<br>svc #0</p></div>
+            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #1<br>svc #0</p></div>
         </div>
         <div class="grid">
             <div><p class="code">x := 1<br>exit 0</p></div>
             <div><p class="code">exit 0</p></div>
-            <div><p class="code">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #0<br>svc #0</p></div>
+            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #0<br>svc #0</p></div>
         </div>
         <div class="grid">
             <div><p class="code">x := 1<br>exit x</p></div>
             <div><p class="code">exit 1</p></div>
-            <div><p class="code">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #1<br>svc #0</p></div>
+            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #1<br>svc #0</p></div>
         </div>
         <div class="grid">
             <div><p class="code">x := 1<br>x += 1<br>exit x</p></div>
             <div><p class="code">exit 2</p></div>
-            <div><p class="code">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #2<br>svc #0</p></div>
+            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #2<br>svc #0</p></div>
         </div>
         <div class="grid">
             <div><p class="code">x := 1<br>if x = 2<br>    exit 1<br>exit 0</p></div>
             <div><p class="code">exit 0</p></div>
-            <div><p class="code">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #0<br>svc #0</p></div>
+            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #0<br>svc #0</p></div>
         </div>
         <div class="grid">
             <div><p class="code">x := 2<br>if x = 2<br>    exit 1<br>exit 0</p></div>
             <div><p class="code">exit 1</p></div>
-            <div><p class="code">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #1<br>svc #0</p></div>
+            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #1<br>svc #0</p></div>
         </div>
         <div class="grid">
             <div><p class="code">x := read 1<br>exit x</p></div>
             <div><p class="code">x := read u8 1<br>exit x</p></div>
-            <div><p class="code">.global _start<br>_start:<br>mov x8, #63<br>mov x0, #1<br>ldr x1, =x<br>mov x2, #1<br>svc #0<br>mov x8, #93<br>ldr x0, =x<br>ldrb w0, [x0]<br>svc #0<br>.bss<br>x: .skip 1</p></div>
+            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #63<br>mov x0, #1<br>ldr x1, =x<br>mov x2, #1<br>svc #0<br>mov x8, #93<br>ldr x0, =x<br>ldrb w0, [x0]<br>svc #0<br>.bss<br>x: .skip 1</p></div>
+        </div>
+        <div class="grid">
+            <div><p class="code">x := read 1<br>write 1<br>exit x</p></div>
+            <div><p class="code">x := read u8 1<br>write x<br>exit 0</p></div>
+            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #63<br>mov x0, #1<br>ldr x1, =x<br>mov x2, #1<br>svc #0<br>mov x8, #93<br>ldr x0, =x<br>ldrb w0, [x0]<br>svc #0<br>.bss<br>x: .skip 1</p></div>
         </div>
     </main>
   </body>
