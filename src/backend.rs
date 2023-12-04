@@ -476,6 +476,37 @@ pub fn instruction_from_node(
                     )
                     .unwrap();
                 }
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), Value::Type(variable_type), Value::Literal(Literal::Integer(fd))] => {
+                    type_data.insert(identifier.clone(), variable_type.clone());
+                    write!(
+                        bss,
+                        "\
+                        {}:\n\
+                        .skip {}\n\
+                    ",
+                        std::str::from_utf8(identifier).unwrap(),
+                        variable_type.bytes()
+                    )
+                    .unwrap();
+
+                    write!(
+                        &mut assembly,
+                        "\
+                        mov x8, #{}\n\
+                        mov x0, #{fd}\n\
+                        ldr x1, ={}\n\
+                        mov x2, #{}\n\
+                        svc #0\n\
+                    ",
+                        libc::SYS_read,
+                        std::str::from_utf8(identifier).unwrap(),
+                        variable_type.bytes()
+                    )
+                    .unwrap();
+                }
                 _ => todo!(),
             },
             Op::Syscall(Syscall::Write) => match arg {

@@ -1,9 +1,11 @@
 use crate::ast::*;
 use crate::LOOP_LIMIT;
+use std::alloc;
 use std::io::Bytes;
 use std::io::Read;
 use std::iter::once;
 use std::iter::Peekable;
+use std::ptr::{self, NonNull};
 
 const RUNTIME_IDENTIFIER: &[u8] = b"comptime";
 
@@ -288,9 +290,6 @@ pub fn get_values<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Value> {
     }
     values
 }
-
-use std::alloc;
-use std::ptr::{self, NonNull};
 
 #[cfg_attr(test, instrument(level = "TRACE", skip(bytes)))]
 pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Option<NonNull<NewNode>> {

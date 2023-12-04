@@ -60,6 +60,7 @@ mod tests {
     use std::fs::remove_file;
     use std::fs::OpenOptions;
     use std::io::Write;
+    use std::mem::size_of;
 
     use std::process::Command;
     use std::ptr::NonNull;
@@ -84,7 +85,9 @@ mod tests {
         // println!("match_nodes:");
         let mut stack = vec![(actual, 0)];
 
-        let mut actual = Vec::new();
+        println!("Checking nodes");
+        let mut any_check = true;
+        let mut expected_iter = expected.iter();
         while let Some((current, s)) = stack.pop() {
             let node = unsafe { current.as_ref() };
             if let Some(next) = node.next {
@@ -93,10 +96,19 @@ mod tests {
             if let Some(child) = node.child {
                 stack.push((child, s + 1));
             }
-            // println!("{}{:?}", "    ".repeat(s), node.statement);
-            actual.push(node.statement.clone());
+
+            let actual_statement = Some(&node.statement);
+            let expected_statement = expected_iter.next();
+
+            let check = actual_statement == expected_statement;
+            if !check {
+                any_check = false;
+            }
+            let mark = if check { "✓" } else { "✗" };
+            println!("{mark}   {actual_statement:?}\n    {expected_statement:?}");
         }
-        assert_eq!(actual, expected);
+        println!();
+        assert!(any_check);
     }
 
     fn test_parsing(s: &str, expected: &[Statement]) -> NonNull<NewNode> {
@@ -130,9 +142,20 @@ mod tests {
     ) -> NonNull<NewStateNode> {
         unsafe {
             let roots = roots(nodes);
+
+            println!("Checking roots");
+            let mut any_check = true;
             for (actual, expected) in roots.iter().zip(expected_roots.iter()) {
-                assert_eq!(&actual.as_ref().state, expected);
+                let actual_state = &actual.as_ref().state;
+                let check = actual_state == expected;
+                if !check {
+                    any_check = false;
+                }
+                let mark = if check { "✓" } else { "✗" };
+                println!("{mark}   {actual_state:?}\n    {expected:?}");
             }
+            println!();
+            assert!(any_check);
 
             let mut explorer = Explorer::new(&roots);
             let mut expected_iter = expected_states.iter();
@@ -159,6 +182,8 @@ mod tests {
     ) -> NonNull<NewNode> {
         unsafe {
             let (new_nodes, read) = build_optimized_tree(nodes);
+
+            // assert!(false);
 
             match_nodes(new_nodes, expected_build);
             assert_eq!(read, expected_read);
@@ -1511,7 +1536,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "false")]
+    #[test]
     fn eleven() {
         // Create pipe and write an i32 to it.
         let mut pipe_out = [0, 0];
@@ -1524,93 +1549,243 @@ mod tests {
         assert_eq!(res, size_of::<u8>() as _);
 
         // Format code
-        let eleven = format!("x := read {read}\nexit x");
+        let source = format!("x := read {read}\nexit x");
 
-        // Parse code to AST
-        let nodes = parse(&eleven);
-        assert_eq!(
+        // Parsing
+        let nodes = test_parsing(
+            &source,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Read),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Literal(Literal::Integer(read as _)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Variable(Variable::new("x"))],
+                },
+            ],
+        );
+
+        // unsafe {
+        //     println!("----------------checking parsing----------------");
+        //     let mut stack = vec![nodes];
+        //     while let Some(current) = stack.pop() {
+        //         println!("current: {:?}",current);
+        //         match current.as_ref().statement.arg.as_slice() {
+        //             [Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(_))] => {
+        //                 println!("identifier.as_ptr(): {:?}",identifier.as_ptr());
+        //                 println!("identifier.capacity(): {:?}",identifier.capacity());
+        //                 println!("identifier.len(): {:?}",identifier.len());
+        //             }
+        //             _ => {}
+        //         }
+
+        //         if let Some(next) = current.as_ref().next {
+        //             stack.push(next);
+        //         }
+        //         if let Some(child) = current.as_ref().child {
+        //             stack.push(child);
+        //         }
+        //     }
+        //     println!("----------------------------------------------------");
+        // }
+
+        // Exploration
+        let path = test_exploration(
             nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Read),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(read as _)),
-                        ]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Variable(Variable::new("x"))]
-                    },
-                    child: None,
-                    next: None,
-                }
-            ]
-        );
-        let optimized_nodes = optimize(&nodes);
-        assert_eq!(
-            optimized_nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Special(Special::Type),
-                        arg: vec![Value::Variable(Variable::new("x")), Value::Type(Type::U8)]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Read),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(read as _)),
-                        ]
-                    },
-                    child: None,
-                    next: Some(2),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Variable(Variable::new("x"))]
-                    },
-                    child: None,
-                    next: None,
-                }
-            ]
+            &[
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I64(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I32(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I16(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I8(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U64(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U32(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U16(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::any())),
+                )]),
+            ],
+            &[
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U16(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U16(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U32(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U64(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I8(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I8(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I16(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I16(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I32(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I32(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I64(MyRange::any())),
+                )])],
+            ],
+            &[
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::any())),
+                )]),
+            ],
         );
 
-        // Parse AST to assembly
-        let expected_assembly = format!(
-            "\
-            .global _start\n\
-            _start:\n\
-            mov x8, #63\n\
-            mov x0, #{read}\n\
-            ldr x1, =x\n\
-            mov x2, #1\n\
-            svc #0\n\
-            mov x8, #93\n\
-            ldr x0, =x\n\
-            ldrb w0, [x0]\n\
-            svc #0\n\
-            .bss\n\
-            x:\n\
-            .skip 1\n\
-        "
+        // unsafe {
+        //     println!("----------------checking exploration----------------");
+        //     let mut stack = vec![path];
+        //     while let Some(current) = stack.pop() {
+        //         println!("current: {:?}",current);
+        //         println!("statement: {:?}",current.as_ref().statement);
+        //         match current.as_ref().statement.as_ref().statement.arg.as_slice() {
+        //             [Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(_))] => {
+        //                 println!("identifier.as_ptr(): {:?}",identifier.as_ptr());
+        //                 println!("identifier.capacity(): {:?}",identifier.capacity());
+        //                 println!("identifier.len(): {:?}",identifier.len());
+        //             }
+        //             _ => {}
+        //         }
+
+        //         if let Some(one) = current.as_ref().next.0 {
+        //             stack.push(one);
+        //         }
+        //         if let Some(two) = current.as_ref().next.1 {
+        //             stack.push(two);
+        //         }
+        //     }
+        //     println!("----------------------------------------------------");
+        // }
+
+        // Optimization
+        let optimized = test_optimization(
+            path,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Read),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Type(Type::U8),
+                        Value::Literal(Literal::Integer(read as _)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Variable(Variable::new("x"))],
+                },
+            ],
+            HashSet::from([Identifier::from("x")]),
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Read),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Type(Type::U8),
+                        Value::Literal(Literal::Integer(read as _)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Variable(Variable::new("x"))],
+                },
+            ],
         );
-        assemble(&optimized_nodes, &expected_assembly, data as i32);
+
+        // assert!(false);
+
+        // Assembly
+        test_assembling(
+            optimized,
+            &format!(
+                "\
+        .global _start\n\
+        _start:\n\
+        mov x8, #63\n\
+        mov x0, #{read}\n\
+        ldr x1, =x\n\
+        mov x2, #1\n\
+        svc #0\n\
+        mov x8, #93\n\
+        ldr x0, =x\n\
+        ldrb w0, [x0]\n\
+        svc #0\n\
+        .bss\n\
+        x:\n\
+        .skip 1\n\
+    "
+            ),
+            data as i32,
+        );
         unsafe {
             libc::close(read);
             libc::close(write);

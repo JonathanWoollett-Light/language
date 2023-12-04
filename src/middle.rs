@@ -16,6 +16,31 @@ const UNROLL_LIMIT: usize = 4096;
 pub unsafe fn build_optimized_tree(
     graph: NonNull<NewStateNode>,
 ) -> (NonNull<NewNode>, HashSet<Identifier>) {
+    // unsafe {
+    //     println!("------------checking optimization input------------");
+    //     let mut stack = vec![graph];
+    //     while let Some(current) = stack.pop() {
+    //         println!("current: {:?}",current);
+    //         println!("statement: {:?}",current.as_ref().statement);
+    //         match current.as_ref().statement.as_ref().statement.arg.as_slice() {
+    //             [Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(_))] => {
+    //                 println!("identifier.as_ptr(): {:?}",identifier.as_ptr());
+    //                 println!("identifier.capacity(): {:?}",identifier.capacity());
+    //                 println!("identifier.len(): {:?}",identifier.len());
+    //             }
+    //             _ => {}
+    //         }
+
+    //         if let Some(one) = current.as_ref().next.0 {
+    //             stack.push(one);
+    //         }
+    //         if let Some(two) = current.as_ref().next.1 {
+    //             stack.push(two);
+    //         }
+    //     }
+    //     println!("----------------------------------------------------");
+    // }
+
     let mut types = HashMap::new();
     let mut read = HashSet::new();
 
@@ -24,6 +49,9 @@ pub unsafe fn build_optimized_tree(
     let mut stack = vec![graph];
     let mut first_node = graph.as_ref().statement;
     while let Some(mut current) = stack.pop() {
+        // println!("current: {current:?}");
+        // println!("statement: {:?}",current.as_ref().statement);
+
         let next_state_node_opt = match current.as_ref().next {
             (Some(x), None) | (None, Some(x)) => {
                 stack.push(x);
@@ -43,7 +71,9 @@ pub unsafe fn build_optimized_tree(
             }
         };
 
-        dbg!(&current.as_ref().statement.as_ref().statement.op);
+        // dbg!(&current.as_ref().statement.as_ref().statement.op);
+
+        println!("op: {:?}", current.as_ref().statement.as_ref().statement.op);
 
         match current.as_ref().statement.as_ref().statement.op {
             Op::Intrinsic(Intrinsic::Assign) => {
@@ -100,7 +130,6 @@ pub unsafe fn build_optimized_tree(
             //
             // `current` is not used after `current = prev;` but it may be in the future, and I
             // don't want to obfuscate this complex logic further.
-            #[allow(unused_assignments)]
             Op::Intrinsic(Intrinsic::AddAssign) => {
                 match current.as_ref().statement.as_ref().statement.arg.as_slice() {
                     [Value::Variable(Variable {
@@ -169,7 +198,6 @@ pub unsafe fn build_optimized_tree(
             }
             // `current` is not used after `current = prev;` but it may be in the future, and I
             // don't want to obfuscate this complex logic further.
-            #[allow(unused_assignments)]
             Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => {
                 // We unwrap here since it would be an error for an if to be the last node.
                 let mut next_state_node = next_state_node_opt.unwrap();
@@ -222,9 +250,53 @@ pub unsafe fn build_optimized_tree(
                     );
                 }
             }
+            Op::Syscall(Syscall::Read) => {
+                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }), Value::Literal(Literal::Integer(_))] => {
+                        let state =
+                            Type::from(current.as_ref().state.get(identifier).unwrap().clone());
+
+                        // println!("identifier.as_ptr(): {:?}",identifier.as_ptr());
+                        // println!("identifier.capacity(): {:?}",identifier.capacity());
+                        // println!("identifier.len(): {:?}",identifier.len());
+
+                        // This will may move `identifier` so we need to re-acquire it after.
+                        current
+                            .as_mut()
+                            .statement
+                            .as_mut()
+                            .statement
+                            .arg
+                            .insert(1, Value::Type(state));
+                        let Variable { identifier, .. } = current
+                            .as_ref()
+                            .statement
+                            .as_ref()
+                            .statement
+                            .arg[0]
+                            .variable()
+                            .unwrap();
+
+                        // println!("identifier.as_ptr(): {:?}",identifier.as_ptr());
+                        // println!("identifier.capacity(): {:?}",identifier.capacity());
+                        // println!("identifier.len(): {:?}",identifier.len());
+                        // assert!(false);
+                        // println!("checking ident: {identifier:?}");
+                        // assert!(false);
+                        let ident_clone = identifier.clone();
+                        // assert!(false);
+                        read.insert(ident_clone);
+                    }
+                    _ => todo!(),
+                }
+            }
             _ => todo!(),
         }
     }
+
     (first_node, read)
 }
 
@@ -849,6 +921,7 @@ unsafe fn dealloc_tree(first: NonNull<NewStateNode>) {
         alloc::dealloc(cursor.as_ptr().cast(), alloc::Layout::new::<NewStateNode>());
     }
 }
+
 /// Given an incoming state (`state`) and a node, outputs the possible outgoing states.
 fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<TypeValueState> {
     match statement.op {
@@ -1330,14 +1403,14 @@ impl From<TypeValueInteger> for Type {
 impl TypeValueInteger {
     pub fn any() -> [Self; 8] {
         [
-            Self::U8(MyRange::any()),
-            Self::U16(MyRange::any()),
-            Self::U32(MyRange::any()),
-            Self::U64(MyRange::any()),
-            Self::I8(MyRange::any()),
-            Self::I16(MyRange::any()),
-            Self::I32(MyRange::any()),
             Self::I64(MyRange::any()),
+            Self::I32(MyRange::any()),
+            Self::I16(MyRange::any()),
+            Self::I8(MyRange::any()),
+            Self::U64(MyRange::any()),
+            Self::U32(MyRange::any()),
+            Self::U16(MyRange::any()),
+            Self::U8(MyRange::any()),
         ]
     }
 
@@ -2126,7 +2199,7 @@ impl<
     fn excludes(&self, x: T) -> bool {
         self.min() > x || self.max() < x
     }
-    fn any() -> Self {
+    pub fn any() -> Self {
         Self::new(T::min_value(), T::max_value())
     }
     fn max(&self) -> T {

@@ -54,6 +54,12 @@ impl Value {
             _ => None,
         }
     }
+    pub fn variable(&self) -> Option<&Variable> {
+        match self {
+            Self::Variable(variable) => Some(variable),
+            _ => None,
+        }
+    }
 }
 
 impl Default for Value {
