@@ -426,14 +426,6 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             op: Op::Intrinsic(Intrinsic::Loop),
             arg: get_values(bytes),
         },
-        // Exit
-        (b"exit", None) => {
-            Statement {
-                comptime,
-                op: Op::Syscall(Syscall::Exit),
-                arg: get_values(bytes),
-            }
-        }
         // If
         (b"if", None) => {
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
@@ -470,6 +462,18 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                 "{:?}",
                 std::str::from_utf8(&bytes.map(Result::unwrap).collect::<Vec<_>>())
             );
+            // println!("lhs: {lhs:?}");
+
+            if let Ok(syscall) = Syscall::try_from(lhs.variable().unwrap().identifier.as_slice()) {
+                println!("syscall: {syscall:?}");
+                let tail = get_values(bytes);
+                return Statement {
+                    comptime,
+                    op: Op::Syscall(syscall),
+                    arg: tail.iter().cloned().collect(),
+                };
+            }
+
             match bytes.next().map(Result::unwrap) {
                 // Add, Sub, Mul, Div, Rem
                 Some(p) if let Some(arithmetic) = Intrinsic::arithmetic_assign(p) => {

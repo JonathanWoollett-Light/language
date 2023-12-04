@@ -193,6 +193,7 @@ impl TryFrom<&[u8]> for Syscall {
     type Error = ();
     fn try_from(x: &[u8]) -> Result<Self, Self::Error> {
         match x {
+            b"exit" => Ok(Self::Exit),
             b"write" => Ok(Self::Write),
             b"read" => Ok(Self::Read),
             b"memfd_create" => Ok(Self::MemfdCreate),

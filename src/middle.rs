@@ -73,7 +73,7 @@ pub unsafe fn build_optimized_tree(
 
         // dbg!(&current.as_ref().statement.as_ref().statement.op);
 
-        println!("op: {:?}", current.as_ref().statement.as_ref().statement.op);
+        // println!("op: {:?}", current.as_ref().statement.as_ref().statement.op);
 
         match current.as_ref().statement.as_ref().statement.op {
             Op::Intrinsic(Intrinsic::Assign) => {
@@ -259,10 +259,6 @@ pub unsafe fn build_optimized_tree(
                         let state =
                             Type::from(current.as_ref().state.get(identifier).unwrap().clone());
 
-                        // println!("identifier.as_ptr(): {:?}",identifier.as_ptr());
-                        // println!("identifier.capacity(): {:?}",identifier.capacity());
-                        // println!("identifier.len(): {:?}",identifier.len());
-
                         // This will may move `identifier` so we need to re-acquire it after.
                         current
                             .as_mut()
@@ -280,15 +276,20 @@ pub unsafe fn build_optimized_tree(
                             .variable()
                             .unwrap();
 
-                        // println!("identifier.as_ptr(): {:?}",identifier.as_ptr());
-                        // println!("identifier.capacity(): {:?}",identifier.capacity());
-                        // println!("identifier.len(): {:?}",identifier.len());
-                        // assert!(false);
-                        // println!("checking ident: {identifier:?}");
-                        // assert!(false);
                         let ident_clone = identifier.clone();
-                        // assert!(false);
                         read.insert(ident_clone);
+                    }
+                    _ => todo!(),
+                }
+            }
+            Op::Syscall(Syscall::Write) => {
+                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
+                    [Value::Literal(Literal::Integer(_)), Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    })] => {
+                        debug_assert!(current.as_ref().state.contains_key(identifier));
+                        read.insert(identifier.clone());
                     }
                     _ => todo!(),
                 }
@@ -1149,11 +1150,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Syscall(Syscall::Write) => match statement.arg.as_slice() {
-            [Value::Variable(Variable {
-                identifier: empty, ..
-            }), Value::Literal(Literal::Integer(_)), Value::Variable(Variable { identifier, .. })]
-                if empty == b"_" =>
-            {
+            [Value::Literal(Literal::Integer(_)), Value::Variable(Variable { identifier, .. })] => {
                 match state.get(identifier) {
                     // All defined values have known sizes so can be written.
                     Some(_) => vec![state.clone()],
@@ -1222,6 +1219,9 @@ impl TypeValueState {
     }
     fn insert(&mut self, key: Identifier, value: TypeValue) -> Option<TypeValue> {
         self.0.insert(key, value)
+    }
+    fn contains_key(&self, key: &Identifier) -> bool {
+        self.0.contains_key(key)
     }
 }
 impl<const N: usize> From<[(Identifier, TypeValue); N]> for TypeValueState {

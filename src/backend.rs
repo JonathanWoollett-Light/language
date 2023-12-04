@@ -510,13 +510,10 @@ pub fn instruction_from_node(
                 _ => todo!(),
             },
             Op::Syscall(Syscall::Write) => match arg {
-                [Value::Variable(Variable {
-                    identifier: v,
-                    index: None,
-                }), Value::Literal(Literal::Integer(fd)), Value::Variable(Variable {
+                [Value::Literal(Literal::Integer(fd)), Value::Variable(Variable {
                     identifier,
                     index: None,
-                })] if v == b"_" => {
+                })] => {
                     write!(
                         &mut assembly,
                         "\

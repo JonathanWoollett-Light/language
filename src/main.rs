@@ -118,8 +118,10 @@ mod tests {
     }
 
     unsafe fn check_states(actual: NonNull<NewStateNode>, expected: &[TypeValueState]) {
+        println!("    Checking states");
+        let mut any_check = true;
         let mut stack = vec![actual];
-        let mut set = Vec::new();
+        let mut expected_iter = expected.iter();
         while let Some(current) = stack.pop() {
             let node = current.as_ref();
             if let Some(next_one) = node.next.0 {
@@ -128,10 +130,20 @@ mod tests {
             if let Some(next_two) = node.next.1 {
                 stack.push(next_two);
             }
-            set.push(node.state.clone());
-        }
 
-        assert_eq!(set, expected);
+            let expected_item = expected_iter.next();
+            let check = Some(&node.state) == expected_item;
+            if !check {
+                any_check = false;
+            }
+            let mark = if check { "✓" } else { "✗" };
+            println!(
+                "    {mark}   {:?}\n        {expected_item:?}",
+                Some(&node.state)
+            );
+        }
+        println!();
+        assert!(any_check);
     }
 
     fn test_exploration(
@@ -157,18 +169,20 @@ mod tests {
             println!();
             assert!(any_check);
 
+            println!("Checking exploration");
             let mut explorer = Explorer::new(&roots);
             let mut expected_iter = expected_states.iter();
-            let finished =
-                loop {
-                    match explorer.next() {
-                        Explore::Current(current) => {
-                            check_states(current, expected_iter.next().unwrap())
-                        }
-                        Explore::Finished(finished) => break finished,
+            let finished = loop {
+                match explorer.next() {
+                    Explore::Current(current) => {
+                        let temp = expected_iter.next().unwrap();
+                        println!("expected check: {temp:?}");
+                        check_states(current, temp)
                     }
-                };
-            println!("finished");
+                    Explore::Finished(finished) => break finished,
+                }
+            };
+            println!("checking finish");
             check_states(finished, expected_path);
             finished
         }
@@ -1761,8 +1775,6 @@ mod tests {
             ],
         );
 
-        // assert!(false);
-
         // Assembly
         test_assembling(
             optimized,
@@ -1786,13 +1798,14 @@ mod tests {
             ),
             data as i32,
         );
+
         unsafe {
             libc::close(read);
             libc::close(write);
         }
     }
 
-    #[cfg(feature = "false")]
+    #[test]
     fn twelve() {
         // Create pipe and write an i32 to it.
         let mut pipe_out = [0, 0];
@@ -1805,123 +1818,268 @@ mod tests {
         assert_eq!(res, size_of::<u8>() as _);
 
         // Format code
-        let eleven = format!("x := read {read}\n_ := write {write} x\nexit 0");
+        let source = format!("x := read {read}\nwrite {write} x\nexit 0");
 
-        // Parse code to AST
-        let nodes = parse(&eleven);
-        assert_eq!(
+        // Parsing
+        let nodes = test_parsing(
+            &source,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Read),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Literal(Literal::Integer(read as _)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Write),
+                    arg: vec![
+                        Value::Literal(Literal::Integer(write as _)),
+                        Value::Variable(Variable::new("x")),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+            ],
+        );
+
+        // Exploration
+        let path = test_exploration(
             nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Read),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(read as _))
-                        ]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Write),
-                        arg: vec![
-                            Value::Variable(Variable::new("_")),
-                            Value::Literal(Literal::Integer(write as _)),
-                            Value::Variable(Variable::new("x"))
-                        ]
-                    },
-                    child: None,
-                    next: Some(2),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Literal(Literal::Integer(0))]
-                    },
-                    child: None,
-                    next: None,
-                },
-            ]
-        );
-        let optimized_nodes = optimize(&nodes);
-        assert_eq!(
-            optimized_nodes,
-            [
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Special(Special::Type),
-                        arg: vec![Value::Variable(Variable::new("x")), Value::Type(Type::U8)]
-                    },
-                    child: None,
-                    next: Some(1),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Read),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(read as _)),
-                        ]
-                    },
-                    child: None,
-                    next: Some(2),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Write),
-                        arg: vec![
-                            Value::Variable(Variable::new("_")),
-                            Value::Literal(Literal::Integer(write as _)),
-                            Value::Variable(Variable::new("x")),
-                        ]
-                    },
-                    child: None,
-                    next: Some(3),
-                },
-                Node {
-                    statement: Statement {
-                        comptime: false,
-                        op: Op::Syscall(Syscall::Exit),
-                        arg: vec![Value::Literal(Literal::Integer(0))]
-                    },
-                    child: None,
-                    next: None,
-                },
-            ]
+            &[
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I64(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I32(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I16(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I8(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U64(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U32(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U16(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::any())),
+                )]),
+            ],
+            &[
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U16(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U16(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U16(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U32(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U32(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U32(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U64(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U64(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U64(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I8(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I8(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I8(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I16(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I16(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I16(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I32(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I32(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I32(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I64(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I64(MyRange::any())),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I64(MyRange::any())),
+                )])],
+            ],
+            &[
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::any())),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::any())),
+                )]),
+            ],
         );
 
-        // Parse AST to assembly
-        let expected_assembly = format!(
-            "\
-            .global _start\n\
-            _start:\n\
-            mov x8, #63\n\
-            mov x0, #{read}\n\
-            ldr x1, =x\n\
-            mov x2, #1\n\
-            svc #0\n\
-            mov x8, #64\n\
-            mov x0, #{write}\n\
-            ldr x1, =x\n\
-            mov x2, #1\n\
-            svc #0\n\
-            mov x8, #93\n\
-            mov x0, #0\n\
-            svc #0\n\
-            .bss\n\
-            x:\n\
-            .skip 1\n\
-        "
+        // Optimization
+        let optimized = test_optimization(
+            path,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Read),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Type(Type::U8),
+                        Value::Literal(Literal::Integer(read as _)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Write),
+                    arg: vec![
+                        Value::Literal(Literal::Integer(write as _)),
+                        Value::Variable(Variable::new("x")),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+            ],
+            HashSet::from([Identifier::from("x")]),
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Read),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Type(Type::U8),
+                        Value::Literal(Literal::Integer(read as _)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Write),
+                    arg: vec![
+                        Value::Literal(Literal::Integer(write as _)),
+                        Value::Variable(Variable::new("x")),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+            ],
         );
-        assemble(&optimized_nodes, &expected_assembly, 0);
+
+        // Assembly
+        test_assembling(
+            optimized,
+            &format!(
+                "\
+        .global _start\n\
+        _start:\n\
+        mov x8, #63\n\
+        mov x0, #{read}\n\
+        ldr x1, =x\n\
+        mov x2, #1\n\
+        svc #0\n\
+        mov x8, #64\n\
+        mov x0, #{write}\n\
+        ldr x1, =x\n\
+        mov x2, #1\n\
+        svc #0\n\
+        mov x8, #93\n\
+        mov x0, #0\n\
+        svc #0\n\
+        .bss\n\
+        x:\n\
+        .skip 1\n\
+        "
+            ),
+            0,
+        );
 
         // Read the value from pipe
         let mut buffer = [0u8; size_of::<u8>()];
