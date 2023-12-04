@@ -267,14 +267,10 @@ pub unsafe fn build_optimized_tree(
                             .statement
                             .arg
                             .insert(1, Value::Type(state));
-                        let Variable { identifier, .. } = current
-                            .as_ref()
-                            .statement
-                            .as_ref()
-                            .statement
-                            .arg[0]
-                            .variable()
-                            .unwrap();
+                        let Variable { identifier, .. } =
+                            current.as_ref().statement.as_ref().statement.arg[0]
+                                .variable()
+                                .unwrap();
 
                         let ident_clone = identifier.clone();
                         read.insert(ident_clone);
@@ -689,31 +685,28 @@ pub unsafe fn explore_node(
     debug_assert!(current_ref.next.1.is_none());
 
     match statement.op {
-        Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => {
-            match statement.arg.as_slice() {
-                [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] =>
-                {
-                    let _scope = current_ref.scope;
-                    let y = current_ref
-                        .state
-                        .get(identifier)
-                        .unwrap()
-                        .integer()
-                        .unwrap();
+        Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => match statement.arg.as_slice() {
+            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
+                let _scope = current_ref.scope;
+                let y = current_ref
+                    .state
+                    .get(identifier)
+                    .unwrap()
+                    .integer()
+                    .unwrap();
 
-                    let if_bool = if y.value() == Some(*x) {
-                        IfBool::True
-                    } else if y.excludes(*x) {
-                        IfBool::False
-                    } else {
-                        IfBool::Unknown
-                    };
+                let if_bool = if y.value() == Some(*x) {
+                    IfBool::True
+                } else if y.excludes(*x) {
+                    IfBool::False
+                } else {
+                    IfBool::Unknown
+                };
 
-                    current_ref.unexplored = explore_if(if_bool, current, stack);
-                }
-                _ => todo!(),
+                current_ref.unexplored = explore_if(if_bool, current, stack);
             }
-        }
+            _ => todo!(),
+        },
         Op::Intrinsic(Intrinsic::If(Cmp::Lt)) => match statement.arg.as_slice() {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
                 let _scope = current_ref.scope;
@@ -843,11 +836,10 @@ pub unsafe fn explore_node(
         // See 1 & 2
         _ => {
             let scope = current_ref.scope;
-            current_ref.unexplored =
-                (
-                    new_append(current, scope, ast_node.next.unwrap(), stack),
-                    Vec::new(),
-                );
+            current_ref.unexplored = (
+                new_append(current, scope, ast_node.next.unwrap(), stack),
+                Vec::new(),
+            );
         }
     }
 }
@@ -1109,29 +1101,27 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Special(Special::Require(Cmp::Le)) => {
-            match statement.arg.as_slice() {
-                [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
-                    match state.get(identifier) {
-                        Some(TypeValue::Integer(y)) => match y.less_than_or_equal(*x) {
-                            true => {
-                                let mut new_state = state.clone();
-                                let integer = new_state
-                                    .get_mut(identifier)
-                                    .unwrap()
-                                    .integer_mut()
-                                    .unwrap();
-                                integer.set_max(*x).unwrap();
-                                vec![new_state]
-                            }
-                            false => Vec::new(),
-                        },
-                        _ => todo!(),
-                    }
+        Op::Special(Special::Require(Cmp::Le)) => match statement.arg.as_slice() {
+            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
+                match state.get(identifier) {
+                    Some(TypeValue::Integer(y)) => match y.less_than_or_equal(*x) {
+                        true => {
+                            let mut new_state = state.clone();
+                            let integer = new_state
+                                .get_mut(identifier)
+                                .unwrap()
+                                .integer_mut()
+                                .unwrap();
+                            integer.set_max(*x).unwrap();
+                            vec![new_state]
+                        }
+                        false => Vec::new(),
+                    },
+                    _ => todo!(),
                 }
-                _ => todo!(),
             }
-        }
+            _ => todo!(),
+        },
         Op::Syscall(Syscall::Read) => match statement.arg.as_slice() {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(_))] => {
                 match state.get(identifier) {
@@ -1177,15 +1167,13 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             },
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::Loop) => {
-            match statement.arg.as_slice() {
-                [] => vec![state.clone()],
-                [Value::Literal(Literal::Integer(integer))] if u64::try_from(*integer).is_ok() => {
-                    vec![state.clone()]
-                }
-                _ => todo!(),
+        Op::Intrinsic(Intrinsic::Loop) => match statement.arg.as_slice() {
+            [] => vec![state.clone()],
+            [Value::Literal(Literal::Integer(integer))] if u64::try_from(*integer).is_ok() => {
+                vec![state.clone()]
             }
-        }
+            _ => todo!(),
+        },
         Op::Intrinsic(Intrinsic::Break) => match statement.arg.as_slice() {
             [] => vec![state.clone()],
             _ => todo!(),

@@ -17,46 +17,34 @@ pub fn get_type<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Type {
     match bytes.next().map(Result::unwrap) {
         Some(b'i') => match bytes.next().map(Result::unwrap) {
             Some(b'8') => Type::I8,
-            Some(b'1') => {
-                match bytes.next().map(Result::unwrap) {
-                    Some(b'6') => Type::I16,
-                    _ => panic!(),
-                }
-            }
-            Some(b'3') => {
-                match bytes.next().map(Result::unwrap) {
-                    Some(b'2') => Type::I32,
-                    _ => panic!(),
-                }
-            }
-            Some(b'6') => {
-                match bytes.next().map(Result::unwrap) {
-                    Some(b'4') => Type::I64,
-                    _ => panic!(),
-                }
-            }
+            Some(b'1') => match bytes.next().map(Result::unwrap) {
+                Some(b'6') => Type::I16,
+                _ => panic!(),
+            },
+            Some(b'3') => match bytes.next().map(Result::unwrap) {
+                Some(b'2') => Type::I32,
+                _ => panic!(),
+            },
+            Some(b'6') => match bytes.next().map(Result::unwrap) {
+                Some(b'4') => Type::I64,
+                _ => panic!(),
+            },
             _ => panic!(),
         },
         Some(b'u') => match bytes.next().map(Result::unwrap) {
             Some(b'8') => Type::U8,
-            Some(b'1') => {
-                match bytes.next().map(Result::unwrap) {
-                    Some(b'6') => Type::U16,
-                    _ => panic!(),
-                }
-            }
-            Some(b'3') => {
-                match bytes.next().map(Result::unwrap) {
-                    Some(b'2') => Type::U32,
-                    _ => panic!(),
-                }
-            }
-            Some(b'6') => {
-                match bytes.next().map(Result::unwrap) {
-                    Some(b'4') => Type::U64,
-                    _ => panic!(),
-                }
-            }
+            Some(b'1') => match bytes.next().map(Result::unwrap) {
+                Some(b'6') => Type::U16,
+                _ => panic!(),
+            },
+            Some(b'3') => match bytes.next().map(Result::unwrap) {
+                Some(b'2') => Type::U32,
+                _ => panic!(),
+            },
+            Some(b'6') => match bytes.next().map(Result::unwrap) {
+                Some(b'4') => Type::U64,
+                _ => panic!(),
+            },
             _ => panic!(),
         },
         _ => panic!(),
@@ -256,7 +244,9 @@ pub fn get_value<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Value {
                     _ => panic!(),
                 }
             }
-            Value::Literal(Literal::String(std::str::from_utf8(&string).unwrap().to_string()))
+            Value::Literal(Literal::String(
+                std::str::from_utf8(&string).unwrap().to_string(),
+            ))
         }
         _ => panic!(
             "unexpected: {:?}",
@@ -437,13 +427,11 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             let arg = vec![lhs, rhs];
             Statement { comptime, op, arg }
         }
-        (b"break", None) => {
-            Statement {
-                comptime,
-                op: Op::Intrinsic(Intrinsic::Break),
-                arg: Vec::new(),
-            }
-        }
+        (b"break", None) => Statement {
+            comptime,
+            op: Op::Intrinsic(Intrinsic::Break),
+            arg: Vec::new(),
+        },
         (b"require", None) => {
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             let lhs = get_value(bytes);

@@ -222,19 +222,17 @@ mod tests {
 
         let path = format!("/tmp/{}", Uuid::new_v4());
         let assembly_path = format!("{path}.s");
-        let mut file =
-            OpenOptions::new()
-                .create(true)
-                .write(true)
-                .open(&assembly_path)
-                .unwrap();
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(&assembly_path)
+            .unwrap();
         file.write_all(assembly.as_bytes()).unwrap();
         let object_path = format!("{path}.o");
-        let output =
-            Command::new("as")
-                .args(["-o", &object_path, &assembly_path])
-                .output()
-                .unwrap();
+        let output = Command::new("as")
+            .args(["-o", &object_path, &assembly_path])
+            .output()
+            .unwrap();
         assert_eq!(
             output.stdout,
             [],
@@ -291,15 +289,14 @@ mod tests {
         const SOURCE: &str = "exit 0";
 
         // Parsing
-        let nodes =
-            test_parsing(
-                SOURCE,
-                &[Statement {
-                    comptime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(0))],
-                }],
-            );
+        let nodes = test_parsing(
+            SOURCE,
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(0))],
+            }],
+        );
 
         // Exploration
         let path = test_exploration(
@@ -344,15 +341,14 @@ mod tests {
         const SOURCE: &str = "exit 1";
 
         // Parsing
-        let nodes =
-            test_parsing(
-                SOURCE,
-                &[Statement {
-                    comptime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(1))],
-                }],
-            );
+        let nodes = test_parsing(
+            SOURCE,
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(1))],
+            }],
+        );
 
         // Exploration
         let path = test_exploration(
@@ -397,15 +393,14 @@ mod tests {
         const SOURCE: &str = "exit 12";
 
         // Parsing
-        let nodes =
-            test_parsing(
-                SOURCE,
-                &[Statement {
-                    comptime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(12))],
-                }],
-            );
+        let nodes = test_parsing(
+            SOURCE,
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(12))],
+            }],
+        );
 
         // Exploration
         let path = test_exploration(
@@ -3104,9 +3099,9 @@ exit 1"#
                         Value::Variable(Variable::new("diff")),
                         Value::Variable(Variable {
                             identifier: vec![b'b', b'u', b'f'],
-                            index: Some(
-                                Box::new(Index::Offset(Offset::Variable(Variable::new("pos"))))
-                            ),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
+                                "pos",
+                            ))))),
                         }),
                         Value::Variable(Variable::new("target")),
                     ],
@@ -3134,9 +3129,9 @@ exit 1"#
                     arg: vec![
                         Value::Variable(Variable {
                             identifier: vec![b'm', b'e', b'm'],
-                            index: Some(Box::new(
-                                Index::Offset(Offset::Variable(Variable::new("diff_offset")))
-                            )),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
+                                "diff_offset",
+                            ))))),
                         }),
                         Value::Literal(Literal::Integer(-1)),
                     ],
@@ -3153,9 +3148,9 @@ exit 1"#
                         Value::Literal(Literal::Integer(output_write as _)),
                         Value::Variable(Variable {
                             identifier: vec![b'm', b'e', b'm'],
-                            index: Some(Box::new(
-                                Index::Offset(Offset::Variable(Variable::new("diff_offset")))
-                            )),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
+                                "diff_offset",
+                            ))))),
                         }),
                     ],
                 },
@@ -3192,9 +3187,9 @@ exit 1"#
                         Value::Variable(Variable::new("buff_offset")),
                         Value::Variable(Variable {
                             identifier: vec![b'b', b'u', b'f'],
-                            index: Some(
-                                Box::new(Index::Offset(Offset::Variable(Variable::new("pos"))))
-                            ),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
+                                "pos",
+                            ))))),
                         }),
                         Value::Variable(Variable::new("target_min")),
                     ],
@@ -3209,9 +3204,9 @@ exit 1"#
                     arg: vec![
                         Value::Variable(Variable {
                             identifier: vec![b'm', b'e', b'm'],
-                            index: Some(Box::new(
-                                Index::Offset(Offset::Variable(Variable::new("buff_offset")))
-                            )),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
+                                "buff_offset",
+                            ))))),
                         }),
                         Value::Variable(Variable::new("index")),
                     ],
@@ -3311,9 +3306,9 @@ exit 1"#
                         Value::Variable(Variable::new("diff")),
                         Value::Variable(Variable {
                             identifier: vec![b'b', b'u', b'f'],
-                            index: Some(
-                                Box::new(Index::Offset(Offset::Variable(Variable::new("pos"))))
-                            ),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
+                                "pos",
+                            ))))),
                         }),
                         Value::Variable(Variable::new("target")),
                     ],
@@ -3341,9 +3336,9 @@ exit 1"#
                     arg: vec![
                         Value::Variable(Variable {
                             identifier: vec![b'm', b'e', b'm'],
-                            index: Some(Box::new(
-                                Index::Offset(Offset::Variable(Variable::new("diff_offset")))
-                            )),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
+                                "diff_offset",
+                            ))))),
                         }),
                         Value::Literal(Literal::Integer(-1)),
                     ],
@@ -3360,9 +3355,9 @@ exit 1"#
                         Value::Literal(Literal::Integer(output_write as _)),
                         Value::Variable(Variable {
                             identifier: vec![b'm', b'e', b'm'],
-                            index: Some(Box::new(
-                                Index::Offset(Offset::Variable(Variable::new("diff_offset")))
-                            )),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
+                                "diff_offset",
+                            ))))),
                         }),
                     ],
                 },
@@ -3399,9 +3394,9 @@ exit 1"#
                         Value::Variable(Variable::new("buff_offset")),
                         Value::Variable(Variable {
                             identifier: vec![b'b', b'u', b'f'],
-                            index: Some(
-                                Box::new(Index::Offset(Offset::Variable(Variable::new("pos"))))
-                            ),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
+                                "pos",
+                            ))))),
                         }),
                         Value::Variable(Variable::new("target_min")),
                     ],
@@ -3416,9 +3411,9 @@ exit 1"#
                     arg: vec![
                         Value::Variable(Variable {
                             identifier: vec![b'm', b'e', b'm'],
-                            index: Some(Box::new(
-                                Index::Offset(Offset::Variable(Variable::new("buff_offset")))
-                            )),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
+                                "buff_offset",
+                            ))))),
                         }),
                         Value::Variable(Variable::new("index")),
                     ],
