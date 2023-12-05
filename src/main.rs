@@ -175,9 +175,7 @@ mod tests {
             let finished = loop {
                 match explorer.next() {
                     Explore::Current(current) => {
-                        let temp = expected_iter.next().unwrap();
-                        println!("expected check: {temp:?}");
-                        check_states(current, temp)
+                        check_states(current, expected_iter.next().unwrap());
                     }
                     Explore::Finished(finished) => break finished,
                 }
@@ -2083,6 +2081,343 @@ mod tests {
             libc::close(read);
             libc::close(write);
         }
+    }
+
+    #[test]
+    fn thirteen() {
+        const SOURCE: &str = "x := 1\nx += 2\nx *= 3\nx /= 4\nx -= 5\nexit x";
+
+        // Parsing
+        let nodes = test_parsing(
+            SOURCE,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::Assign),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Literal(Literal::Integer(1)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::AddAssign),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Literal(Literal::Integer(2)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::MulAssign),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Literal(Literal::Integer(3)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::DivAssign),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Literal(Literal::Integer(4)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::SubAssign),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Literal(Literal::Integer(5)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Variable(Variable::new("x"))],
+                },
+            ],
+        );
+
+        // Exploration
+        let path = test_exploration(
+            nodes,
+            &[
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
+                )]),
+            ],
+            &[
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(3))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(9))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(253))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(253))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(3))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(9))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(65533))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(65533))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(3))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(9))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(4294967293))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(3))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(9))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(18446744073709551613))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(3))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(9))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(-3))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(-3))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(3))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(9))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(-3))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(-3))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(3))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(9))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(-3))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(-3))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(3))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(9))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(-3))),
+                )])],
+                &[TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(-3))),
+                )])],
+            ],
+            &[
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(3))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(9))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(253))),
+                )]),
+                TypeValueState::from([(
+                    ident("x"),
+                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(253))),
+                )]),
+            ],
+        );
+
+        // Optimization
+        let optimized = test_optimization(
+            path,
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(253))],
+            }],
+            HashSet::from([]),
+            &[Statement {
+                comptime: false,
+                op: Op::Syscall(Syscall::Exit),
+                arg: vec![Value::Literal(Literal::Integer(253))],
+            }],
+        );
+
+        // Assembly
+        test_assembling(
+            optimized,
+            "\
+            .global _start\n\
+            _start:\n\
+            mov x8, #93\n\
+            mov x0, #253\n\
+            svc #0\n\
+        ",
+            253,
+        );
     }
 
     #[cfg(feature = "false")]

@@ -2,8 +2,13 @@ use crate::ast::*;
 use num_traits::bounds::Bounded;
 use num_traits::identities::One;
 use num_traits::identities::Zero;
+use num_traits::ops::checked::CheckedDiv;
+use num_traits::ops::overflowing::OverflowingAdd;
+use num_traits::ops::overflowing::OverflowingMul;
+use num_traits::ops::overflowing::OverflowingSub;
+use num_traits::Signed;
+use num_traits::Unsigned;
 use std::alloc;
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ptr;
@@ -127,10 +132,208 @@ pub unsafe fn build_optimized_tree(
                 }
             }
             // On the linear path, these statements can simply be removed.
-            //
-            // `current` is not used after `current = prev;` but it may be in the future, and I
-            // don't want to obfuscate this complex logic further.
             Op::Intrinsic(Intrinsic::AddAssign) => {
+                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }), Value::Literal(Literal::Integer(_))] => {
+                        let varible_state = current.as_ref().state.get(identifier).unwrap();
+                        match varible_state {
+                            TypeValue::Integer(TypeValueInteger::U8(range))
+                                if let Some(exact) = range.value() =>
+                            {
+                                // We unwrap here since it would be an error for an add assign to be the last node.
+                                let mut next_state_node = next_state_node_opt.unwrap();
+
+                                // Update syntax node
+                                {
+                                    match current.as_ref().statement.as_ref().preceding {
+                                        Some(Preceding::Parent(mut parent)) => {
+                                            debug_assert_eq!(
+                                                current.as_ref().statement.as_ref().child,
+                                                None
+                                            );
+                                            parent.as_mut().child =
+                                                current.as_ref().statement.as_ref().next;
+                                        }
+                                        Some(Preceding::Previous(mut previous)) => {
+                                            debug_assert_eq!(
+                                                current.as_ref().statement.as_ref().child,
+                                                None
+                                            );
+                                            previous.as_mut().next =
+                                                current.as_ref().statement.as_ref().next;
+                                        }
+                                        None => {
+                                            debug_assert_eq!(
+                                                current.as_ref().statement,
+                                                first_node
+                                            );
+                                            // We unwrap here since if there is no next node, this
+                                            // is both the 1st node and last node, thus removing it is an error.
+                                            first_node = next_state_node.as_ref().statement;
+                                        }
+                                    }
+                                    alloc::dealloc(
+                                        current.as_ref().statement.as_ptr().cast(),
+                                        alloc::Layout::new::<NewNode>(),
+                                    );
+                                }
+
+                                // Update state node
+                                {
+                                    next_state_node.as_mut().prev = current.as_ref().prev;
+                                    current.as_ref().prev.unwrap().as_mut().next =
+                                        (Some(next_state_node), None);
+                                    alloc::dealloc(
+                                        current.as_ptr().cast(),
+                                        alloc::Layout::new::<NewStateNode>(),
+                                    );
+                                }
+                            }
+                            _ => todo!(),
+                        }
+                    }
+                    _ => todo!(),
+                }
+            }
+            // On the linear path, these statements can simply be removed.
+            Op::Intrinsic(Intrinsic::SubAssign) => {
+                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }), Value::Literal(Literal::Integer(_))] => {
+                        let varible_state = current.as_ref().state.get(identifier).unwrap();
+                        match varible_state {
+                            TypeValue::Integer(TypeValueInteger::U8(range))
+                                if let Some(exact) = range.value() =>
+                            {
+                                // We unwrap here since it would be an error for an add assign to be the last node.
+                                let mut next_state_node = next_state_node_opt.unwrap();
+
+                                // Update syntax node
+                                {
+                                    match current.as_ref().statement.as_ref().preceding {
+                                        Some(Preceding::Parent(mut parent)) => {
+                                            debug_assert_eq!(
+                                                current.as_ref().statement.as_ref().child,
+                                                None
+                                            );
+                                            parent.as_mut().child =
+                                                current.as_ref().statement.as_ref().next;
+                                        }
+                                        Some(Preceding::Previous(mut previous)) => {
+                                            debug_assert_eq!(
+                                                current.as_ref().statement.as_ref().child,
+                                                None
+                                            );
+                                            previous.as_mut().next =
+                                                current.as_ref().statement.as_ref().next;
+                                        }
+                                        None => {
+                                            debug_assert_eq!(
+                                                current.as_ref().statement,
+                                                first_node
+                                            );
+                                            // We unwrap here since if there is no next node, this
+                                            // is both the 1st node and last node, thus removing it is an error.
+                                            first_node = next_state_node.as_ref().statement;
+                                        }
+                                    }
+                                    alloc::dealloc(
+                                        current.as_ref().statement.as_ptr().cast(),
+                                        alloc::Layout::new::<NewNode>(),
+                                    );
+                                }
+
+                                // Update state node
+                                {
+                                    next_state_node.as_mut().prev = current.as_ref().prev;
+                                    current.as_ref().prev.unwrap().as_mut().next =
+                                        (Some(next_state_node), None);
+                                    alloc::dealloc(
+                                        current.as_ptr().cast(),
+                                        alloc::Layout::new::<NewStateNode>(),
+                                    );
+                                }
+                            }
+                            _ => todo!(),
+                        }
+                    }
+                    _ => todo!(),
+                }
+            }
+            // On the linear path, these statements can simply be removed.
+            Op::Intrinsic(Intrinsic::MulAssign) => {
+                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }), Value::Literal(Literal::Integer(_))] => {
+                        let varible_state = current.as_ref().state.get(identifier).unwrap();
+                        match varible_state {
+                            TypeValue::Integer(TypeValueInteger::U8(range))
+                                if let Some(exact) = range.value() =>
+                            {
+                                // We unwrap here since it would be an error for an add assign to be the last node.
+                                let mut next_state_node = next_state_node_opt.unwrap();
+
+                                // Update syntax node
+                                {
+                                    match current.as_ref().statement.as_ref().preceding {
+                                        Some(Preceding::Parent(mut parent)) => {
+                                            debug_assert_eq!(
+                                                current.as_ref().statement.as_ref().child,
+                                                None
+                                            );
+                                            parent.as_mut().child =
+                                                current.as_ref().statement.as_ref().next;
+                                        }
+                                        Some(Preceding::Previous(mut previous)) => {
+                                            debug_assert_eq!(
+                                                current.as_ref().statement.as_ref().child,
+                                                None
+                                            );
+                                            previous.as_mut().next =
+                                                current.as_ref().statement.as_ref().next;
+                                        }
+                                        None => {
+                                            debug_assert_eq!(
+                                                current.as_ref().statement,
+                                                first_node
+                                            );
+                                            // We unwrap here since if there is no next node, this
+                                            // is both the 1st node and last node, thus removing it is an error.
+                                            first_node = next_state_node.as_ref().statement;
+                                        }
+                                    }
+                                    alloc::dealloc(
+                                        current.as_ref().statement.as_ptr().cast(),
+                                        alloc::Layout::new::<NewNode>(),
+                                    );
+                                }
+
+                                // Update state node
+                                {
+                                    next_state_node.as_mut().prev = current.as_ref().prev;
+                                    current.as_ref().prev.unwrap().as_mut().next =
+                                        (Some(next_state_node), None);
+                                    alloc::dealloc(
+                                        current.as_ptr().cast(),
+                                        alloc::Layout::new::<NewStateNode>(),
+                                    );
+                                }
+                            }
+                            _ => todo!(),
+                        }
+                    }
+                    _ => todo!(),
+                }
+            }
+            // On the linear path, these statements can simply be removed.
+            Op::Intrinsic(Intrinsic::DivAssign) => {
                 match current.as_ref().statement.as_ref().statement.arg.as_slice() {
                     [Value::Variable(Variable {
                         identifier,
@@ -1033,7 +1236,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
         Op::Intrinsic(Intrinsic::SubAssign) => match statement.arg.as_slice() {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
                 match state.get(identifier) {
-                    Some(TypeValue::Integer(y)) => match y.overflowing_sub(*x) {
+                    Some(TypeValue::Integer(y)) => match y.checked_sub(*x) {
                         Ok(z) => {
                             let mut new_state = state.clone();
                             *new_state
@@ -1053,7 +1256,47 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
         Op::Intrinsic(Intrinsic::AddAssign) => match statement.arg.as_slice() {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
                 match state.get(identifier) {
-                    Some(TypeValue::Integer(y)) => match y.overflowing_add(*x) {
+                    Some(TypeValue::Integer(y)) => match y.checked_add(*x) {
+                        Ok(z) => {
+                            let mut new_state = state.clone();
+                            *new_state
+                                .get_mut(identifier)
+                                .unwrap()
+                                .integer_mut()
+                                .unwrap() = z;
+                            vec![new_state]
+                        }
+                        _ => todo!(),
+                    },
+                    _ => todo!(),
+                }
+            }
+            _ => todo!(),
+        },
+        Op::Intrinsic(Intrinsic::MulAssign) => match statement.arg.as_slice() {
+            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
+                match state.get(identifier) {
+                    Some(TypeValue::Integer(y)) => match y.checked_mul(*x) {
+                        Ok(z) => {
+                            let mut new_state = state.clone();
+                            *new_state
+                                .get_mut(identifier)
+                                .unwrap()
+                                .integer_mut()
+                                .unwrap() = z;
+                            vec![new_state]
+                        }
+                        _ => todo!(),
+                    },
+                    _ => todo!(),
+                }
+            }
+            _ => todo!(),
+        },
+        Op::Intrinsic(Intrinsic::DivAssign) => match statement.arg.as_slice() {
+            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
+                match state.get(identifier) {
+                    Some(TypeValue::Integer(y)) => match y.checked_div(*x) {
                         Ok(z) => {
                             let mut new_state = state.clone();
                             *new_state
@@ -1775,129 +2018,154 @@ impl TypeValueInteger {
         }
     }
 
-    fn overflowing_sub(&self, rhs: i128) -> Result<Self, ()> {
+    fn checked_sub(&self, rhs: i128) -> Result<Self, ()> {
         match self {
             Self::U8(range) => {
-                let rhs = u8::try_from(rhs).map_err(drop)?;
-                Ok(Self::U8(MyRange::new(
-                    range.start.overflowing_sub(rhs).0,
-                    range.end.overflowing_sub(rhs).0,
-                )))
+                let rhs = MyRange::from(u8::try_from(rhs).map_err(drop)?);
+                Ok(Self::U8(range.clone() - rhs))
             }
             Self::U16(range) => {
-                let rhs = u16::try_from(rhs).map_err(drop)?;
-                Ok(Self::U16(MyRange::new(
-                    range.start.overflowing_sub(rhs).0,
-                    range.end.overflowing_sub(rhs).0,
-                )))
+                let rhs = MyRange::from(u16::try_from(rhs).map_err(drop)?);
+                Ok(Self::U16(range.clone() - rhs))
             }
             Self::U32(range) => {
-                let rhs = u32::try_from(rhs).map_err(drop)?;
-                Ok(Self::U32(MyRange::new(
-                    range.start.overflowing_sub(rhs).0,
-                    range.end.overflowing_sub(rhs).0,
-                )))
+                let rhs = MyRange::from(u32::try_from(rhs).map_err(drop)?);
+                Ok(Self::U32(range.clone() - rhs))
             }
             Self::U64(range) => {
-                let rhs = u64::try_from(rhs).map_err(drop)?;
-                Ok(Self::U64(MyRange::new(
-                    range.start.overflowing_sub(rhs).0,
-                    range.end.overflowing_sub(rhs).0,
-                )))
+                let rhs = MyRange::from(u64::try_from(rhs).map_err(drop)?);
+                Ok(Self::U64(range.clone() - rhs))
             }
             Self::I8(range) => {
-                let rhs = i8::try_from(rhs).map_err(drop)?;
-                Ok(Self::I8(MyRange::new(
-                    range.start.overflowing_sub(rhs).0,
-                    range.end.overflowing_sub(rhs).0,
-                )))
+                let rhs = MyRange::from(i8::try_from(rhs).map_err(drop)?);
+                Ok(Self::I8(range.clone() - rhs))
             }
             Self::I16(range) => {
-                let rhs = i16::try_from(rhs).map_err(drop)?;
-                Ok(Self::I16(MyRange::new(
-                    range.start.overflowing_sub(rhs).0,
-                    range.end.overflowing_sub(rhs).0,
-                )))
+                let rhs = MyRange::from(i16::try_from(rhs).map_err(drop)?);
+                Ok(Self::I16(range.clone() - rhs))
             }
             Self::I32(range) => {
-                let rhs = i32::try_from(rhs).map_err(drop)?;
-                Ok(Self::I32(MyRange::new(
-                    range.start.overflowing_sub(rhs).0,
-                    range.end.overflowing_sub(rhs).0,
-                )))
+                let rhs = MyRange::from(i32::try_from(rhs).map_err(drop)?);
+                Ok(Self::I32(range.clone() - rhs))
             }
             Self::I64(range) => {
-                let rhs = i64::try_from(rhs).map_err(drop)?;
-                Ok(Self::I64(MyRange::new(
-                    range.start.overflowing_sub(rhs).0,
-                    range.end.overflowing_sub(rhs).0,
-                )))
+                let rhs = MyRange::from(i64::try_from(rhs).map_err(drop)?);
+                Ok(Self::I64(range.clone() - rhs))
             }
         }
     }
 
-    fn overflowing_add(&self, rhs: i128) -> Result<Self, ()> {
+    fn checked_add(&self, rhs: i128) -> Result<Self, ()> {
         match self {
             Self::U8(range) => {
-                let rhs = u8::try_from(rhs).map_err(drop)?;
-                Ok(Self::U8(MyRange::new(
-                    range.start.overflowing_add(rhs).0,
-                    range.end.overflowing_add(rhs).0,
-                )))
+                let rhs = MyRange::from(u8::try_from(rhs).map_err(drop)?);
+                Ok(Self::U8(range.clone() + rhs))
             }
             Self::U16(range) => {
-                let rhs = u16::try_from(rhs).map_err(drop)?;
-                Ok(Self::U16(MyRange::new(
-                    range.start.overflowing_add(rhs).0,
-                    range.end.overflowing_add(rhs).0,
-                )))
+                let rhs = MyRange::from(u16::try_from(rhs).map_err(drop)?);
+                Ok(Self::U16(range.clone() + rhs))
             }
             Self::U32(range) => {
-                let rhs = u32::try_from(rhs).map_err(drop)?;
-                Ok(Self::U32(MyRange::new(
-                    range.start.overflowing_add(rhs).0,
-                    range.end.overflowing_add(rhs).0,
-                )))
+                let rhs = MyRange::from(u32::try_from(rhs).map_err(drop)?);
+                Ok(Self::U32(range.clone() + rhs))
             }
             Self::U64(range) => {
-                let rhs = u64::try_from(rhs).map_err(drop)?;
-                Ok(Self::U64(MyRange::new(
-                    range.start.overflowing_add(rhs).0,
-                    range.end.overflowing_add(rhs).0,
-                )))
+                let rhs = MyRange::from(u64::try_from(rhs).map_err(drop)?);
+                Ok(Self::U64(range.clone() + rhs))
             }
             Self::I8(range) => {
-                let rhs = i8::try_from(rhs).map_err(drop)?;
-                Ok(Self::I8(MyRange::new(
-                    range.start.overflowing_add(rhs).0,
-                    range.end.overflowing_add(rhs).0,
-                )))
+                let rhs = MyRange::from(i8::try_from(rhs).map_err(drop)?);
+                Ok(Self::I8(range.clone() + rhs))
             }
             Self::I16(range) => {
-                let rhs = i16::try_from(rhs).map_err(drop)?;
-                Ok(Self::I16(MyRange::new(
-                    range.start.overflowing_add(rhs).0,
-                    range.end.overflowing_add(rhs).0,
-                )))
+                let rhs = MyRange::from(i16::try_from(rhs).map_err(drop)?);
+                Ok(Self::I16(range.clone() + rhs))
             }
             Self::I32(range) => {
-                let rhs = i32::try_from(rhs).map_err(drop)?;
-                Ok(Self::I32(MyRange::new(
-                    range.start.overflowing_add(rhs).0,
-                    range.end.overflowing_add(rhs).0,
-                )))
+                let rhs = MyRange::from(i32::try_from(rhs).map_err(drop)?);
+                Ok(Self::I32(range.clone() + rhs))
             }
             Self::I64(range) => {
-                let rhs = i64::try_from(rhs).map_err(drop)?;
-                Ok(Self::I64(MyRange::new(
-                    range.start.overflowing_add(rhs).0,
-                    range.end.overflowing_add(rhs).0,
-                )))
+                let rhs = MyRange::from(i64::try_from(rhs).map_err(drop)?);
+                Ok(Self::I64(range.clone() + rhs))
             }
         }
     }
 
-    #[cfg(not(feature = "16"))]
+    fn checked_mul(&self, rhs: i128) -> Result<Self, ()> {
+        match self {
+            Self::U8(range) => {
+                let rhs = MyRange::from(u8::try_from(rhs).map_err(drop)?);
+                Ok(Self::U8(range.clone() * rhs))
+            }
+            Self::U16(range) => {
+                let rhs = MyRange::from(u16::try_from(rhs).map_err(drop)?);
+                Ok(Self::U16(range.clone() * rhs))
+            }
+            Self::U32(range) => {
+                let rhs = MyRange::from(u32::try_from(rhs).map_err(drop)?);
+                Ok(Self::U32(range.clone() * rhs))
+            }
+            Self::U64(range) => {
+                let rhs = MyRange::from(u64::try_from(rhs).map_err(drop)?);
+                Ok(Self::U64(range.clone() * rhs))
+            }
+            Self::I8(range) => {
+                let rhs = MyRange::from(i8::try_from(rhs).map_err(drop)?);
+                Ok(Self::I8(range.clone() * rhs))
+            }
+            Self::I16(range) => {
+                let rhs = MyRange::from(i16::try_from(rhs).map_err(drop)?);
+                Ok(Self::I16(range.clone() * rhs))
+            }
+            Self::I32(range) => {
+                let rhs = MyRange::from(i32::try_from(rhs).map_err(drop)?);
+                Ok(Self::I32(range.clone() * rhs))
+            }
+            Self::I64(range) => {
+                let rhs = MyRange::from(i64::try_from(rhs).map_err(drop)?);
+                Ok(Self::I64(range.clone() * rhs))
+            }
+        }
+    }
+
+    fn checked_div(&self, rhs: i128) -> Result<Self, ()> {
+        match self {
+            Self::U8(range) => {
+                let rhs = MyRange::from(u8::try_from(rhs).map_err(drop)?);
+                Ok(Self::U8(range.clone().checked_div(rhs).map_err(drop)?))
+            }
+            Self::U16(range) => {
+                let rhs = MyRange::from(u16::try_from(rhs).map_err(drop)?);
+                Ok(Self::U16(range.clone().checked_div(rhs).map_err(drop)?))
+            }
+            Self::U32(range) => {
+                let rhs = MyRange::from(u32::try_from(rhs).map_err(drop)?);
+                Ok(Self::U32(range.clone().checked_div(rhs).map_err(drop)?))
+            }
+            Self::U64(range) => {
+                let rhs = MyRange::from(u64::try_from(rhs).map_err(drop)?);
+                Ok(Self::U64(range.clone().checked_div(rhs).map_err(drop)?))
+            }
+            Self::I8(range) => {
+                let rhs = MyRange::from(i8::try_from(rhs).map_err(drop)?);
+                Ok(Self::I8(range.clone().checked_div(rhs).map_err(drop)?))
+            }
+            Self::I16(range) => {
+                let rhs = MyRange::from(i16::try_from(rhs).map_err(drop)?);
+                Ok(Self::I16(range.clone().checked_div(rhs).map_err(drop)?))
+            }
+            Self::I32(range) => {
+                let rhs = MyRange::from(i32::try_from(rhs).map_err(drop)?);
+                Ok(Self::I32(range.clone().checked_div(rhs).map_err(drop)?))
+            }
+            Self::I64(range) => {
+                let rhs = MyRange::from(i64::try_from(rhs).map_err(drop)?);
+                Ok(Self::I64(range.clone().checked_div(rhs).map_err(drop)?))
+            }
+        }
+    }
+
     fn possible(x: i128) -> Vec<Self> {
         const I64_MIN: i128 = i64::MIN as i128;
         const I32_MIN: i128 = i32::MIN as i128;
@@ -1912,116 +2180,76 @@ impl TypeValueInteger {
         const U16_EDGE: i128 = u8::MAX as i128 + 1;
 
         match x {
-            I64_MIN..I32_MIN => vec![Self::I64(MyRange::new(x as i64, x as i64))],
+            I64_MIN..I32_MIN => vec![Self::I64(MyRange::from(x as i64))],
             I32_MIN..I16_MIN => vec![
-                Self::I64(MyRange::new(x as i64, x as i64)),
-                Self::I32(MyRange::new(x as i32, x as i32)),
+                Self::I64(MyRange::from(x as i64)),
+                Self::I32(MyRange::from(x as i32)),
             ],
             I16_MIN..I8_MIN => vec![
-                Self::I64(MyRange::new(x as i64, x as i64)),
-                Self::I32(MyRange::new(x as i32, x as i32)),
-                Self::I16(MyRange::new(x as i16, x as i16)),
+                Self::I64(MyRange::from(x as i64)),
+                Self::I32(MyRange::from(x as i32)),
+                Self::I16(MyRange::from(x as i16)),
             ],
             I8_MIN..0 => vec![
-                Self::I64(MyRange::new(x as i64, x as i64)),
-                Self::I32(MyRange::new(x as i32, x as i32)),
-                Self::I16(MyRange::new(x as i16, x as i16)),
-                Self::I8(MyRange::new(x as i8, x as i8)),
+                Self::I64(MyRange::from(x as i64)),
+                Self::I32(MyRange::from(x as i32)),
+                Self::I16(MyRange::from(x as i16)),
+                Self::I8(MyRange::from(x as i8)),
             ],
             0..U8_MAX => vec![
-                Self::I64(MyRange::new(x as i64, x as i64)),
-                Self::I32(MyRange::new(x as i32, x as i32)),
-                Self::I16(MyRange::new(x as i16, x as i16)),
-                Self::I8(MyRange::new(x as i8, x as i8)),
-                Self::U64(MyRange::new(x as u64, x as u64)),
-                Self::U32(MyRange::new(x as u32, x as u32)),
-                Self::U16(MyRange::new(x as u16, x as u16)),
-                Self::U8(MyRange::new(x as u8, x as u8)),
+                Self::I64(MyRange::from(x as i64)),
+                Self::I32(MyRange::from(x as i32)),
+                Self::I16(MyRange::from(x as i16)),
+                Self::I8(MyRange::from(x as i8)),
+                Self::U64(MyRange::from(x as u64)),
+                Self::U32(MyRange::from(x as u32)),
+                Self::U16(MyRange::from(x as u16)),
+                Self::U8(MyRange::from(x as u8)),
             ],
             U8_MAX => vec![
-                Self::I64(MyRange::new(x as i64, x as i64)),
-                Self::I32(MyRange::new(x as i32, x as i32)),
-                Self::I16(MyRange::new(x as i16, x as i16)),
-                Self::U64(MyRange::new(x as u64, x as u64)),
-                Self::U32(MyRange::new(x as u32, x as u32)),
-                Self::U16(MyRange::new(x as u16, x as u16)),
-                Self::U8(MyRange::new(x as u8, x as u8)),
+                Self::I64(MyRange::from(x as i64)),
+                Self::I32(MyRange::from(x as i32)),
+                Self::I16(MyRange::from(x as i16)),
+                Self::U64(MyRange::from(x as u64)),
+                Self::U32(MyRange::from(x as u32)),
+                Self::U16(MyRange::from(x as u16)),
+                Self::U8(MyRange::from(x as u8)),
             ],
             U16_EDGE..U16_MAX => vec![
-                Self::I64(MyRange::new(x as i64, x as i64)),
-                Self::I32(MyRange::new(x as i32, x as i32)),
-                Self::I16(MyRange::new(x as i16, x as i16)),
-                Self::U64(MyRange::new(x as u64, x as u64)),
-                Self::U32(MyRange::new(x as u32, x as u32)),
-                Self::U16(MyRange::new(x as u16, x as u16)),
+                Self::I64(MyRange::from(x as i64)),
+                Self::I32(MyRange::from(x as i32)),
+                Self::I16(MyRange::from(x as i16)),
+                Self::U64(MyRange::from(x as u64)),
+                Self::U32(MyRange::from(x as u32)),
+                Self::U16(MyRange::from(x as u16)),
             ],
             U16_MAX => vec![
-                Self::I64(MyRange::new(x as i64, x as i64)),
-                Self::I32(MyRange::new(x as i32, x as i32)),
-                Self::U64(MyRange::new(x as u64, x as u64)),
-                Self::U32(MyRange::new(x as u32, x as u32)),
-                Self::U16(MyRange::new(x as u16, x as u16)),
+                Self::I64(MyRange::from(x as i64)),
+                Self::I32(MyRange::from(x as i32)),
+                Self::U64(MyRange::from(x as u64)),
+                Self::U32(MyRange::from(x as u32)),
+                Self::U16(MyRange::from(x as u16)),
             ],
             U32_EDGE..U32_MAX => vec![
-                Self::I64(MyRange::new(x as i64, x as i64)),
-                Self::I32(MyRange::new(x as i32, x as i32)),
-                Self::U64(MyRange::new(x as u64, x as u64)),
-                Self::U32(MyRange::new(x as u32, x as u32)),
+                Self::I64(MyRange::from(x as i64)),
+                Self::I32(MyRange::from(x as i32)),
+                Self::U64(MyRange::from(x as u64)),
+                Self::U32(MyRange::from(x as u32)),
             ],
             U32_MAX => vec![
-                Self::I64(MyRange::new(x as i64, x as i64)),
-                Self::U64(MyRange::new(x as u64, x as u64)),
-                Self::U32(MyRange::new(x as u32, x as u32)),
+                Self::I64(MyRange::from(x as i64)),
+                Self::U64(MyRange::from(x as u64)),
+                Self::U32(MyRange::from(x as u32)),
             ],
             U64_EDGE..U64_MAX => vec![
-                Self::I64(MyRange::new(x as i64, x as i64)),
-                Self::U64(MyRange::new(x as u64, x as u64)),
+                Self::I64(MyRange::from(x as i64)),
+                Self::U64(MyRange::from(x as u64)),
             ],
-            U64_MAX => vec![Self::U64(MyRange::new(x as u64, x as u64))],
+            U64_MAX => vec![Self::U64(MyRange::from(x as u64))],
             _ => panic!(),
         }
     }
 
-    // A 16bit feature that reduces the set of types to `u8`, `i8` `u16` and `i16` to make debugging easier.
-    #[cfg(feature = "16")]
-    fn possible(x: i128) -> Vec<Self> {
-        const I64_MIN: i128 = i64::MIN as i128;
-        const I32_MIN: i128 = i32::MIN as i128;
-        const I16_MIN: i128 = i16::MIN as i128;
-        const I8_MIN: i128 = i8::MIN as i128;
-        const U64_MAX: i128 = u64::MAX as i128;
-        const U32_MAX: i128 = u32::MAX as i128;
-        const U16_MAX: i128 = u16::MAX as i128;
-        const U8_MAX: i128 = u8::MAX as i128;
-        const U64_EDGE: i128 = u32::MAX as i128 + 1;
-        const U32_EDGE: i128 = u16::MAX as i128 + 1;
-        const U16_EDGE: i128 = u8::MAX as i128 + 1;
-
-        match x {
-            I16_MIN..I8_MIN => vec![Self::I16(MyRange::new(x as i16, x as i16))],
-            I8_MIN..0 => vec![
-                Self::I16(MyRange::new(x as i16, x as i16)),
-                Self::I8(MyRange::new(x as i8, x as i8)),
-            ],
-            0..U8_MAX => vec![
-                Self::I16(MyRange::new(x as i16, x as i16)),
-                Self::I8(MyRange::new(x as i8, x as i8)),
-                Self::U16(MyRange::new(x as u16, x as u16)),
-                Self::U8(MyRange::new(x as u8, x as u8)),
-            ],
-            U8_MAX => vec![
-                Self::I16(MyRange::new(x as i16, x as i16)),
-                Self::U16(MyRange::new(x as u16, x as u16)),
-                Self::U8(MyRange::new(x as u8, x as u8)),
-            ],
-            U16_EDGE..U16_MAX => vec![
-                Self::I16(MyRange::new(x as i16, x as i16)),
-                Self::U16(MyRange::new(x as u16, x as u16)),
-            ],
-            U16_MAX => vec![Self::U16(MyRange::new(x as u16, x as u16))],
-            _ => panic!(),
-        }
-    }
     fn value(&self) -> Option<i128> {
         match self {
             Self::U8(x) => x.value().map(i128::from),
@@ -2036,95 +2264,162 @@ impl TypeValueInteger {
     }
 }
 
-#[cfg(not(feature = "16"))]
-#[allow(dead_code)]
-fn possible_integer(x: i128) -> Vec<Type> {
-    const I64_MIN: i128 = i64::MIN as i128;
-    const I32_MIN: i128 = i32::MIN as i128;
-    const I16_MIN: i128 = i16::MIN as i128;
-    const I8_MIN: i128 = i8::MIN as i128;
-    const U64_MAX: i128 = u64::MAX as i128;
-    const U32_MAX: i128 = u32::MAX as i128;
-    const U16_MAX: i128 = u16::MAX as i128;
-    const U8_MAX: i128 = u8::MAX as i128;
-    const U64_EDGE: i128 = u32::MAX as i128 + 1;
-    const U32_EDGE: i128 = u16::MAX as i128 + 1;
-    const U16_EDGE: i128 = u8::MAX as i128 + 1;
-
-    match x {
-        I64_MIN..I32_MIN => vec![Type::I64],
-        I32_MIN..I16_MIN => vec![Type::I64, Type::I32],
-        I16_MIN..I8_MIN => vec![Type::I64, Type::I32, Type::I16],
-        I8_MIN..0 => vec![Type::I64, Type::I32, Type::I16, Type::I8],
-        0..U8_MAX => vec![
-            Type::I64,
-            Type::I32,
-            Type::I16,
-            Type::I8,
-            Type::U64,
-            Type::U32,
-            Type::U16,
-            Type::U8,
-        ],
-        U8_MAX => vec![
-            Type::I64,
-            Type::I32,
-            Type::I16,
-            Type::U64,
-            Type::U32,
-            Type::U16,
-            Type::U8,
-        ],
-        U16_EDGE..U16_MAX => vec![
-            Type::I64,
-            Type::I32,
-            Type::I16,
-            Type::U64,
-            Type::U32,
-            Type::U16,
-        ],
-        U16_MAX => vec![Type::I64, Type::I32, Type::U64, Type::U32, Type::U16],
-        U32_EDGE..U32_MAX => vec![Type::I64, Type::I32, Type::U64, Type::U32],
-        U32_MAX => vec![Type::I64, Type::U64, Type::U32],
-        U64_EDGE..U64_MAX => vec![Type::I64, Type::U64],
-        U64_MAX => vec![Type::U64],
-        _ => panic!(),
-    }
-}
-
-// A 16bit feature that reduces the set of types to `u8`, `i8` `u16` and `i16` to make debugging easier.
-#[cfg(feature = "16")]
-fn possible_integer(x: i128) -> Vec<Type> {
-    const I64_MIN: i128 = i64::MIN as i128;
-    const I32_MIN: i128 = i32::MIN as i128;
-    const I16_MIN: i128 = i16::MIN as i128;
-    const I8_MIN: i128 = i8::MIN as i128;
-    const U64_MAX: i128 = u64::MAX as i128;
-    const U32_MAX: i128 = u32::MAX as i128;
-    const U16_MAX: i128 = u16::MAX as i128;
-    const U8_MAX: i128 = u8::MAX as i128;
-    const U64_EDGE: i128 = u32::MAX as i128 + 1;
-    const U32_EDGE: i128 = u16::MAX as i128 + 1;
-    const U16_EDGE: i128 = u8::MAX as i128 + 1;
-
-    match x {
-        I16_MIN..I8_MIN => vec![Type::I16],
-        I8_MIN..0 => vec![Type::I16, Type::I8],
-        0..U8_MAX => vec![Type::I16, Type::I8, Type::U16, Type::U8],
-        U8_MAX => vec![Type::I16, Type::U16, Type::U8],
-        U16_EDGE..U16_MAX => vec![Type::I16, Type::U16],
-        U16_MAX => vec![Type::U16],
-        _ => panic!(),
-    }
-}
-
 // An inclusive range that supports wrapping around.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MyRange<
     T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
 > {
-    start: T,
-    end: T,
+    domain: std::ops::RangeInclusive<T>,
+    min: Option<T>,
+    abs_min: Option<T>,
+    max: Option<T>,
+    transform: Vec<Transform<T>>,
+}
+
+impl<
+        T: Copy
+            + Ord
+            + std::ops::Sub<Output = T>
+            + std::ops::Add<Output = T>
+            + Bounded
+            + Zero
+            + One
+            + CheckedDiv,
+    > MyRange<T>
+{
+    fn checked_div(&self, other: Self) -> Result<Self, ()> {
+        match (self.transform.is_empty(), other.transform.is_empty()) {
+            (true, true)
+                if let Some(lhs) = self.value()
+                    && let Some(rhs) = other.value() =>
+            {
+                let sum = lhs.checked_div(&rhs).ok_or(())?;
+                Ok(Self {
+                    domain: sum..=sum,
+                    min: Some(sum),
+                    abs_min: Some(sum),
+                    max: Some(sum),
+                    transform: Vec::new(),
+                })
+            }
+            _ => todo!(),
+        }
+    }
+}
+
+impl<
+        T: Copy
+            + Ord
+            + std::ops::Sub<Output = T>
+            + std::ops::Add<Output = T>
+            + Bounded
+            + Zero
+            + One
+            + OverflowingAdd,
+    > std::ops::Add for MyRange<T>
+{
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        match (self.transform.is_empty(), other.transform.is_empty()) {
+            (true, true)
+                if let Some(lhs) = self.value()
+                    && let Some(rhs) = other.value() =>
+            {
+                let (sum, _) = lhs.overflowing_add(&rhs);
+                Self {
+                    domain: sum..=sum,
+                    min: Some(sum),
+                    abs_min: Some(sum),
+                    max: Some(sum),
+                    transform: Vec::new(),
+                }
+            }
+            _ => todo!(),
+        }
+    }
+}
+
+impl<
+        T: Copy
+            + Ord
+            + std::ops::Sub<Output = T>
+            + std::ops::Add<Output = T>
+            + Bounded
+            + Zero
+            + One
+            + OverflowingMul,
+    > std::ops::Mul for MyRange<T>
+{
+    type Output = Self;
+
+    fn mul(self, other: Self) -> Self {
+        match (self.transform.is_empty(), other.transform.is_empty()) {
+            (true, true)
+                if let Some(lhs) = self.value()
+                    && let Some(rhs) = other.value() =>
+            {
+                let (sum, _) = lhs.overflowing_mul(&rhs);
+                Self {
+                    domain: sum..=sum,
+                    min: Some(sum),
+                    abs_min: Some(sum),
+                    max: Some(sum),
+                    transform: Vec::new(),
+                }
+            }
+            _ => todo!(),
+        }
+    }
+}
+
+impl<
+        T: Copy
+            + Ord
+            + std::ops::Sub<Output = T>
+            + std::ops::Add<Output = T>
+            + Bounded
+            + Zero
+            + One
+            + OverflowingSub,
+    > std::ops::Sub for MyRange<T>
+{
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self {
+        match (self.transform.is_empty(), other.transform.is_empty()) {
+            (true, true)
+                if let Some(lhs) = self.value()
+                    && let Some(rhs) = other.value() =>
+            {
+                let (sum, _) = lhs.overflowing_sub(&rhs);
+                Self {
+                    domain: sum..=sum,
+                    min: Some(sum),
+                    abs_min: Some(sum),
+                    max: Some(sum),
+                    transform: Vec::new(),
+                }
+            }
+            _ => todo!(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Transform<
+    T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
+> {
+    op: TransformOp,
+    rhs: MyRange<T>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TransformOp {
+    Add,
+    Sub,
+    Div,
+    Mul,
 }
 
 impl<
@@ -2132,25 +2427,59 @@ impl<
     > From<T> for MyRange<T>
 {
     fn from(x: T) -> Self {
-        Self { start: x, end: x }
+        Self {
+            domain: x..=x,
+            min: Some(x),
+            abs_min: Some(x),
+            max: Some(x),
+            transform: Vec::new(),
+        }
     }
 }
 
 impl<
-        T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
-    > Ord for MyRange<T>
+        T: Copy
+            + Ord
+            + std::ops::Sub<Output = T>
+            + std::ops::Add<Output = T>
+            + Bounded
+            + Zero
+            + One
+            + Signed,
+    > MyRange<T>
 {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.len().cmp(&other.len())
+    fn from_signed(domain: std::ops::RangeInclusive<T>) -> MyRange<T> {
+        Self {
+            domain: domain.clone(),
+            min: Some(*domain.start()),
+            abs_min: Some(std::cmp::min(
+                num_traits::abs(*domain.start()),
+                num_traits::abs(*domain.end()),
+            )),
+            max: Some(*domain.end()),
+            transform: Vec::new(),
+        }
     }
 }
-
 impl<
-        T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
-    > PartialOrd for MyRange<T>
+        T: Copy
+            + Ord
+            + std::ops::Sub<Output = T>
+            + std::ops::Add<Output = T>
+            + Bounded
+            + Zero
+            + One
+            + Unsigned,
+    > MyRange<T>
 {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+    fn from_unsigned(domain: std::ops::RangeInclusive<T>) -> MyRange<T> {
+        Self {
+            domain: domain.clone(),
+            min: Some(*domain.start()),
+            abs_min: Some(*domain.start()),
+            max: Some(*domain.end()),
+            transform: Vec::new(),
+        }
     }
 }
 
@@ -2160,75 +2489,83 @@ impl<
     > MyRange<T>
 {
     fn len(&self) -> T {
-        match self.start.cmp(&self.end) {
-            Ordering::Greater => (T::max_value() - self.start) + self.end + T::one(),
-            Ordering::Equal => T::zero(),
-            Ordering::Less => self.end - self.start,
-        }
-    }
-    fn new(start: T, end: T) -> Self {
-        Self { start, end }
+        *self.domain.end() - *self.domain.start()
     }
     fn less_than(&self, x: T) -> bool {
-        self.max() < x
-    }
-    fn greater_than(&self, x: T) -> bool {
-        self.min() > x
-    }
-    fn greater_than_or_equal(&self, x: T) -> bool {
-        self.min() >= x
+        if let Some(max) = self.max {
+            max < x
+        } else {
+            todo!()
+        }
     }
     fn less_than_or_equal(&self, x: T) -> bool {
-        self.max() <= x
+        if let Some(max) = self.max {
+            max <= x
+        } else {
+            todo!()
+        }
     }
+    fn greater_than(&self, x: T) -> bool {
+        if let Some(min) = self.max {
+            min > x
+        } else {
+            todo!()
+        }
+    }
+    fn greater_than_or_equal(&self, x: T) -> bool {
+        if let Some(min) = self.max {
+            min >= x
+        } else {
+            todo!()
+        }
+    }
+
     fn contains(&self, x: T) -> bool {
-        self.min() <= x && self.max() >= x
+        if self.transform.is_empty() {
+            self.domain.contains(&x)
+        } else {
+            todo!()
+        }
     }
     fn excludes(&self, x: T) -> bool {
-        self.min() > x || self.max() < x
+        if self.transform.is_empty() {
+            self.min.unwrap() > x || self.max.unwrap() < x
+        } else {
+            todo!()
+        }
     }
     pub fn any() -> Self {
-        Self::new(T::min_value(), T::max_value())
+        Self {
+            domain: T::min_value()..=T::max_value(),
+            min: Some(T::min_value()),
+            abs_min: Some(T::zero()),
+            max: Some(T::max_value()),
+            transform: Vec::new(),
+        }
     }
     fn max(&self) -> T {
-        match self.start.cmp(&self.end) {
-            Ordering::Greater => T::max_value(),
-            Ordering::Equal => self.start,
-            Ordering::Less => self.end,
+        if let Some(max) = self.max {
+            max
+        } else {
+            todo!()
         }
     }
     fn min(&self) -> T {
-        match self.start.cmp(&self.end) {
-            Ordering::Greater => T::min_value(),
-            Ordering::Equal => self.end,
-            Ordering::Less => self.start,
+        if let Some(min) = self.min {
+            min
+        } else {
+            todo!()
         }
     }
     fn set_max(&mut self, x: T) {
-        match self.start.cmp(&self.end) {
-            Ordering::Greater => todo!(),
-            Ordering::Equal => match x.cmp(&self.start) {
-                Ordering::Greater => {}
-                Ordering::Equal => {}
-                Ordering::Less => todo!(),
-            },
-            Ordering::Less => todo!(),
-        }
+        self.max = Some(x);
     }
     fn set_min(&mut self, x: T) {
-        match self.start.cmp(&self.end) {
-            Ordering::Greater => todo!(),
-            Ordering::Equal => match x.cmp(&self.start) {
-                Ordering::Greater => todo!(),
-                Ordering::Equal => {}
-                Ordering::Less => {}
-            },
-            Ordering::Less => todo!(),
-        }
+        self.min = Some(x);
     }
     fn value(&self) -> Option<T> {
-        if self.start == self.end {
-            Some(self.start)
+        if self.transform.is_empty() && self.domain.start() == self.domain.end() {
+            Some(*self.domain.start())
         } else {
             None
         }
