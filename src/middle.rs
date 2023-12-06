@@ -175,6 +175,9 @@ pub unsafe fn build_optimized_tree(
                                             first_node = next_state_node.as_ref().statement;
                                         }
                                     }
+                                    next_state_node.as_mut().statement.as_mut().preceding =
+                                        current.as_ref().statement.as_ref().preceding;
+
                                     alloc::dealloc(
                                         current.as_ref().statement.as_ptr().cast(),
                                         alloc::Layout::new::<NewNode>(),
@@ -242,6 +245,9 @@ pub unsafe fn build_optimized_tree(
                                             first_node = next_state_node.as_ref().statement;
                                         }
                                     }
+                                    next_state_node.as_mut().statement.as_mut().preceding =
+                                        current.as_ref().statement.as_ref().preceding;
+
                                     alloc::dealloc(
                                         current.as_ref().statement.as_ptr().cast(),
                                         alloc::Layout::new::<NewNode>(),
@@ -308,7 +314,10 @@ pub unsafe fn build_optimized_tree(
                                             // is both the 1st node and last node, thus removing it is an error.
                                             first_node = next_state_node.as_ref().statement;
                                         }
-                                    }
+                                    };
+                                    next_state_node.as_mut().statement.as_mut().preceding =
+                                        current.as_ref().statement.as_ref().preceding;
+
                                     alloc::dealloc(
                                         current.as_ref().statement.as_ptr().cast(),
                                         alloc::Layout::new::<NewNode>(),
@@ -376,6 +385,9 @@ pub unsafe fn build_optimized_tree(
                                             first_node = next_state_node.as_ref().statement;
                                         }
                                     }
+                                    next_state_node.as_mut().statement.as_mut().preceding =
+                                        current.as_ref().statement.as_ref().preceding;
+
                                     alloc::dealloc(
                                         current.as_ref().statement.as_ptr().cast(),
                                         alloc::Layout::new::<NewNode>(),
@@ -437,6 +449,9 @@ pub unsafe fn build_optimized_tree(
                             first_node = next_state_node.as_ref().statement;
                         }
                     }
+                    next_state_node.as_mut().statement.as_mut().preceding =
+                        current.as_ref().statement.as_ref().preceding;
+
                     alloc::dealloc(
                         current.as_ref().statement.as_ptr().cast(),
                         alloc::Layout::new::<NewNode>(),
@@ -515,8 +530,8 @@ pub unsafe fn finish_optimized_tree(
                     identifier,
                     index: None,
                 }), Value::Type(_), Value::Literal(_)] => {
+                    dbg!(&read);
                     if !read.contains(identifier) {
-                        dbg!();
                         match current.as_ref().preceding {
                             Some(Preceding::Parent(mut parent)) => {
                                 parent.as_mut().child = current.as_ref().next;

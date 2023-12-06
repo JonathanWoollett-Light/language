@@ -2393,11 +2393,22 @@ mod tests {
         // Optimization
         let optimized = test_optimization(
             path,
-            &[Statement {
-                comptime: false,
-                op: Op::Syscall(Syscall::Exit),
-                arg: vec![Value::Literal(Literal::Integer(253))],
-            }],
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Type),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Type(Type::U8),
+                        Value::Literal(Literal::Integer(1)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Literal(Literal::Integer(253))],
+                },
+            ],
             HashSet::from([]),
             &[Statement {
                 comptime: false,
