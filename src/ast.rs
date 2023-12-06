@@ -146,11 +146,17 @@ pub enum Intrinsic {
     MulAssign,
     DivAssign,
     RemAssign,
+    AndAssign,
+    OrAssign,
+    XorAssign,
     Add,
     Sub,
     Mul,
     Div,
     Rem,
+    And,
+    Or,
+    Xor,
     If(Cmp),
     Loop,
     Break,
@@ -164,6 +170,9 @@ impl Intrinsic {
             b'*' => Some(Self::MulAssign),
             b'/' => Some(Self::DivAssign),
             b'%' => Some(Self::RemAssign),
+            b'&' => Some(Self::AndAssign),
+            b'|' => Some(Self::OrAssign),
+            b'^' => Some(Self::XorAssign),
             _ => None,
         }
     }
@@ -174,6 +183,9 @@ impl Intrinsic {
             b'*' => Some(Self::Mul),
             b'/' => Some(Self::Div),
             b'%' => Some(Self::Rem),
+            b'&' => Some(Self::And),
+            b'|' => Some(Self::Or),
+            b'^' => Some(Self::Xor),
             _ => None,
         }
     }

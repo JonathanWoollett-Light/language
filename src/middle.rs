@@ -18,6 +18,52 @@ const DEFAULT_LOOP_LIMIT: usize = 100;
 #[allow(dead_code)]
 const UNROLL_LIMIT: usize = 4096;
 
+unsafe fn remove_node(
+    next_state_node_opt: Option<NonNull<NewStateNode>>,
+    current: NonNull<NewStateNode>,
+    first_node: &mut NonNull<NewNode>,
+) {
+    // We unwrap here since it would be an error for an add assign to be the last node.
+    let mut next_state_node = next_state_node_opt.unwrap();
+
+    // Update syntax node
+    {
+        match current.as_ref().statement.as_ref().preceding {
+            Some(Preceding::Parent(mut parent)) => {
+                debug_assert_eq!(current.as_ref().statement.as_ref().child, None);
+                parent.as_mut().child = current.as_ref().statement.as_ref().next;
+            }
+            Some(Preceding::Previous(mut previous)) => {
+                debug_assert_eq!(current.as_ref().statement.as_ref().child, None);
+                previous.as_mut().next = current.as_ref().statement.as_ref().next;
+            }
+            None => {
+                debug_assert_eq!(current.as_ref().statement, *first_node);
+                // We unwrap here since if there is no next node, this
+                // is both the 1st node and last node, thus removing it is an error.
+                *first_node = next_state_node.as_ref().statement;
+            }
+        }
+        next_state_node.as_mut().statement.as_mut().preceding =
+            current.as_ref().statement.as_ref().preceding;
+
+        alloc::dealloc(
+            current.as_ref().statement.as_ptr().cast(),
+            alloc::Layout::new::<NewNode>(),
+        );
+    }
+
+    // Update state node
+    {
+        next_state_node.as_mut().prev = current.as_ref().prev;
+        current.as_ref().prev.unwrap().as_mut().next = (Some(next_state_node), None);
+        alloc::dealloc(
+            current.as_ptr().cast(),
+            alloc::Layout::new::<NewStateNode>(),
+        );
+    }
+}
+
 pub unsafe fn build_optimized_tree(
     graph: NonNull<NewStateNode>,
 ) -> (NonNull<NewNode>, HashSet<Identifier>) {
@@ -163,59 +209,9 @@ pub unsafe fn build_optimized_tree(
                         let varible_state = current.as_ref().state.get(identifier).unwrap();
                         match varible_state {
                             TypeValue::Integer(TypeValueInteger::U8(range))
-                                if let Some(exact) = range.value() =>
+                                if range.value().is_some() =>
                             {
-                                // We unwrap here since it would be an error for an add assign to be the last node.
-                                let mut next_state_node = next_state_node_opt.unwrap();
-
-                                // Update syntax node
-                                {
-                                    match current.as_ref().statement.as_ref().preceding {
-                                        Some(Preceding::Parent(mut parent)) => {
-                                            debug_assert_eq!(
-                                                current.as_ref().statement.as_ref().child,
-                                                None
-                                            );
-                                            parent.as_mut().child =
-                                                current.as_ref().statement.as_ref().next;
-                                        }
-                                        Some(Preceding::Previous(mut previous)) => {
-                                            debug_assert_eq!(
-                                                current.as_ref().statement.as_ref().child,
-                                                None
-                                            );
-                                            previous.as_mut().next =
-                                                current.as_ref().statement.as_ref().next;
-                                        }
-                                        None => {
-                                            debug_assert_eq!(
-                                                current.as_ref().statement,
-                                                first_node
-                                            );
-                                            // We unwrap here since if there is no next node, this
-                                            // is both the 1st node and last node, thus removing it is an error.
-                                            first_node = next_state_node.as_ref().statement;
-                                        }
-                                    }
-                                    next_state_node.as_mut().statement.as_mut().preceding =
-                                        current.as_ref().statement.as_ref().preceding;
-
-                                    alloc::dealloc(
-                                        current.as_ref().statement.as_ptr().cast(),
-                                        alloc::Layout::new::<NewNode>(),
-                                    );
-                                }
-
-                                // Update state node
-                                {
-                                    next_state_node.as_mut().prev = current.as_ref().prev;
-                                    current.as_ref().prev.unwrap().as_mut().next =
-                                        (Some(next_state_node), None);
-                                    alloc::dealloc(
-                                        current.as_ptr().cast(),
-                                        alloc::Layout::new::<NewStateNode>(),
-                                    );
-                                }
+                                remove_node(next_state_node_opt, current, &mut first_node)
                             }
                             _ => todo!(),
                         }
@@ -233,59 +229,9 @@ pub unsafe fn build_optimized_tree(
                         let varible_state = current.as_ref().state.get(identifier).unwrap();
                         match varible_state {
                             TypeValue::Integer(TypeValueInteger::U8(range))
-                                if let Some(exact) = range.value() =>
+                                if range.value().is_some() =>
                             {
-                                // We unwrap here since it would be an error for an add assign to be the last node.
-                                let mut next_state_node = next_state_node_opt.unwrap();
-
-                                // Update syntax node
-                                {
-                                    match current.as_ref().statement.as_ref().preceding {
-                                        Some(Preceding::Parent(mut parent)) => {
-                                            debug_assert_eq!(
-                                                current.as_ref().statement.as_ref().child,
-                                                None
-                                            );
-                                            parent.as_mut().child =
-                                                current.as_ref().statement.as_ref().next;
-                                        }
-                                        Some(Preceding::Previous(mut previous)) => {
-                                            debug_assert_eq!(
-                                                current.as_ref().statement.as_ref().child,
-                                                None
-                                            );
-                                            previous.as_mut().next =
-                                                current.as_ref().statement.as_ref().next;
-                                        }
-                                        None => {
-                                            debug_assert_eq!(
-                                                current.as_ref().statement,
-                                                first_node
-                                            );
-                                            // We unwrap here since if there is no next node, this
-                                            // is both the 1st node and last node, thus removing it is an error.
-                                            first_node = next_state_node.as_ref().statement;
-                                        }
-                                    }
-                                    next_state_node.as_mut().statement.as_mut().preceding =
-                                        current.as_ref().statement.as_ref().preceding;
-
-                                    alloc::dealloc(
-                                        current.as_ref().statement.as_ptr().cast(),
-                                        alloc::Layout::new::<NewNode>(),
-                                    );
-                                }
-
-                                // Update state node
-                                {
-                                    next_state_node.as_mut().prev = current.as_ref().prev;
-                                    current.as_ref().prev.unwrap().as_mut().next =
-                                        (Some(next_state_node), None);
-                                    alloc::dealloc(
-                                        current.as_ptr().cast(),
-                                        alloc::Layout::new::<NewStateNode>(),
-                                    );
-                                }
+                                remove_node(next_state_node_opt, current, &mut first_node)
                             }
                             _ => todo!(),
                         }
@@ -303,59 +249,9 @@ pub unsafe fn build_optimized_tree(
                         let varible_state = current.as_ref().state.get(identifier).unwrap();
                         match varible_state {
                             TypeValue::Integer(TypeValueInteger::U8(range))
-                                if let Some(exact) = range.value() =>
+                                if range.value().is_some() =>
                             {
-                                // We unwrap here since it would be an error for an add assign to be the last node.
-                                let mut next_state_node = next_state_node_opt.unwrap();
-
-                                // Update syntax node
-                                {
-                                    match current.as_ref().statement.as_ref().preceding {
-                                        Some(Preceding::Parent(mut parent)) => {
-                                            debug_assert_eq!(
-                                                current.as_ref().statement.as_ref().child,
-                                                None
-                                            );
-                                            parent.as_mut().child =
-                                                current.as_ref().statement.as_ref().next;
-                                        }
-                                        Some(Preceding::Previous(mut previous)) => {
-                                            debug_assert_eq!(
-                                                current.as_ref().statement.as_ref().child,
-                                                None
-                                            );
-                                            previous.as_mut().next =
-                                                current.as_ref().statement.as_ref().next;
-                                        }
-                                        None => {
-                                            debug_assert_eq!(
-                                                current.as_ref().statement,
-                                                first_node
-                                            );
-                                            // We unwrap here since if there is no next node, this
-                                            // is both the 1st node and last node, thus removing it is an error.
-                                            first_node = next_state_node.as_ref().statement;
-                                        }
-                                    };
-                                    next_state_node.as_mut().statement.as_mut().preceding =
-                                        current.as_ref().statement.as_ref().preceding;
-
-                                    alloc::dealloc(
-                                        current.as_ref().statement.as_ptr().cast(),
-                                        alloc::Layout::new::<NewNode>(),
-                                    );
-                                }
-
-                                // Update state node
-                                {
-                                    next_state_node.as_mut().prev = current.as_ref().prev;
-                                    current.as_ref().prev.unwrap().as_mut().next =
-                                        (Some(next_state_node), None);
-                                    alloc::dealloc(
-                                        current.as_ptr().cast(),
-                                        alloc::Layout::new::<NewStateNode>(),
-                                    );
-                                }
+                                remove_node(next_state_node_opt, current, &mut first_node)
                             }
                             _ => todo!(),
                         }
@@ -373,59 +269,66 @@ pub unsafe fn build_optimized_tree(
                         let varible_state = current.as_ref().state.get(identifier).unwrap();
                         match varible_state {
                             TypeValue::Integer(TypeValueInteger::U8(range))
-                                if let Some(exact) = range.value() =>
+                                if range.value().is_some() =>
                             {
-                                // We unwrap here since it would be an error for an add assign to be the last node.
-                                let mut next_state_node = next_state_node_opt.unwrap();
-
-                                // Update syntax node
-                                {
-                                    match current.as_ref().statement.as_ref().preceding {
-                                        Some(Preceding::Parent(mut parent)) => {
-                                            debug_assert_eq!(
-                                                current.as_ref().statement.as_ref().child,
-                                                None
-                                            );
-                                            parent.as_mut().child =
-                                                current.as_ref().statement.as_ref().next;
-                                        }
-                                        Some(Preceding::Previous(mut previous)) => {
-                                            debug_assert_eq!(
-                                                current.as_ref().statement.as_ref().child,
-                                                None
-                                            );
-                                            previous.as_mut().next =
-                                                current.as_ref().statement.as_ref().next;
-                                        }
-                                        None => {
-                                            debug_assert_eq!(
-                                                current.as_ref().statement,
-                                                first_node
-                                            );
-                                            // We unwrap here since if there is no next node, this
-                                            // is both the 1st node and last node, thus removing it is an error.
-                                            first_node = next_state_node.as_ref().statement;
-                                        }
-                                    }
-                                    next_state_node.as_mut().statement.as_mut().preceding =
-                                        current.as_ref().statement.as_ref().preceding;
-
-                                    alloc::dealloc(
-                                        current.as_ref().statement.as_ptr().cast(),
-                                        alloc::Layout::new::<NewNode>(),
-                                    );
-                                }
-
-                                // Update state node
-                                {
-                                    next_state_node.as_mut().prev = current.as_ref().prev;
-                                    current.as_ref().prev.unwrap().as_mut().next =
-                                        (Some(next_state_node), None);
-                                    alloc::dealloc(
-                                        current.as_ptr().cast(),
-                                        alloc::Layout::new::<NewStateNode>(),
-                                    );
-                                }
+                                remove_node(next_state_node_opt, current, &mut first_node)
+                            }
+                            _ => todo!(),
+                        }
+                    }
+                    _ => todo!(),
+                }
+            }
+            Op::Intrinsic(Intrinsic::AndAssign) => {
+                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }), Value::Literal(Literal::Integer(_))] => {
+                        let varible_state = current.as_ref().state.get(identifier).unwrap();
+                        match varible_state {
+                            TypeValue::Integer(TypeValueInteger::U8(range))
+                                if range.value().is_some() =>
+                            {
+                                remove_node(next_state_node_opt, current, &mut first_node)
+                            }
+                            _ => todo!(),
+                        }
+                    }
+                    _ => todo!(),
+                }
+            }
+            Op::Intrinsic(Intrinsic::OrAssign) => {
+                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }), Value::Literal(Literal::Integer(_))] => {
+                        let varible_state = current.as_ref().state.get(identifier).unwrap();
+                        match varible_state {
+                            TypeValue::Integer(TypeValueInteger::U8(range))
+                                if range.value().is_some() =>
+                            {
+                                remove_node(next_state_node_opt, current, &mut first_node)
+                            }
+                            _ => todo!(),
+                        }
+                    }
+                    _ => todo!(),
+                }
+            }
+            Op::Intrinsic(Intrinsic::XorAssign) => {
+                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }), Value::Literal(Literal::Integer(_))] => {
+                        let varible_state = current.as_ref().state.get(identifier).unwrap();
+                        match varible_state {
+                            TypeValue::Integer(TypeValueInteger::U8(range))
+                                if range.value().is_some() =>
+                            {
+                                remove_node(next_state_node_opt, current, &mut first_node)
                             }
                             _ => todo!(),
                         }
@@ -1347,6 +1250,66 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
+        Op::Intrinsic(Intrinsic::AndAssign) => match statement.arg.as_slice() {
+            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
+                match state.get(identifier) {
+                    Some(TypeValue::Integer(y)) => match y.checked_and(*x) {
+                        Ok(z) => {
+                            let mut new_state = state.clone();
+                            *new_state
+                                .get_mut(identifier)
+                                .unwrap()
+                                .integer_mut()
+                                .unwrap() = z;
+                            vec![new_state]
+                        }
+                        _ => todo!(),
+                    },
+                    _ => todo!(),
+                }
+            }
+            _ => todo!(),
+        },
+        Op::Intrinsic(Intrinsic::OrAssign) => match statement.arg.as_slice() {
+            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
+                match state.get(identifier) {
+                    Some(TypeValue::Integer(y)) => match y.checked_or(*x) {
+                        Ok(z) => {
+                            let mut new_state = state.clone();
+                            *new_state
+                                .get_mut(identifier)
+                                .unwrap()
+                                .integer_mut()
+                                .unwrap() = z;
+                            vec![new_state]
+                        }
+                        _ => todo!(),
+                    },
+                    _ => todo!(),
+                }
+            }
+            _ => todo!(),
+        },
+        Op::Intrinsic(Intrinsic::XorAssign) => match statement.arg.as_slice() {
+            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
+                match state.get(identifier) {
+                    Some(TypeValue::Integer(y)) => match y.checked_xor(*x) {
+                        Ok(z) => {
+                            let mut new_state = state.clone();
+                            *new_state
+                                .get_mut(identifier)
+                                .unwrap()
+                                .integer_mut()
+                                .unwrap() = z;
+                            vec![new_state]
+                        }
+                        _ => todo!(),
+                    },
+                    _ => todo!(),
+                }
+            }
+            _ => todo!(),
+        },
         Op::Intrinsic(Intrinsic::If(_)) => match statement.arg.as_slice() {
             [Value::Literal(Literal::Integer(_)), Value::Variable(Variable { identifier, .. })]
             | [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(_))] => {
@@ -2200,6 +2163,117 @@ impl TypeValueInteger {
         }
     }
 
+    fn checked_and(&self, rhs: i128) -> Result<Self, ()> {
+        match self {
+            Self::U8(range) => {
+                let rhs = MyRange::from(u8::try_from(rhs).map_err(drop)?);
+                Ok(Self::U8(range.clone() & rhs))
+            }
+            Self::U16(range) => {
+                let rhs = MyRange::from(u16::try_from(rhs).map_err(drop)?);
+                Ok(Self::U16(range.clone() & rhs))
+            }
+            Self::U32(range) => {
+                let rhs = MyRange::from(u32::try_from(rhs).map_err(drop)?);
+                Ok(Self::U32(range.clone() & rhs))
+            }
+            Self::U64(range) => {
+                let rhs = MyRange::from(u64::try_from(rhs).map_err(drop)?);
+                Ok(Self::U64(range.clone() & rhs))
+            }
+            Self::I8(range) => {
+                let rhs = MyRange::from(i8::try_from(rhs).map_err(drop)?);
+                Ok(Self::I8(range.clone() & rhs))
+            }
+            Self::I16(range) => {
+                let rhs = MyRange::from(i16::try_from(rhs).map_err(drop)?);
+                Ok(Self::I16(range.clone() & rhs))
+            }
+            Self::I32(range) => {
+                let rhs = MyRange::from(i32::try_from(rhs).map_err(drop)?);
+                Ok(Self::I32(range.clone() & rhs))
+            }
+            Self::I64(range) => {
+                let rhs = MyRange::from(i64::try_from(rhs).map_err(drop)?);
+                Ok(Self::I64(range.clone() & rhs))
+            }
+        }
+    }
+
+    fn checked_or(&self, rhs: i128) -> Result<Self, ()> {
+        match self {
+            Self::U8(range) => {
+                let rhs = MyRange::from(u8::try_from(rhs).map_err(drop)?);
+                Ok(Self::U8(range.clone() | rhs))
+            }
+            Self::U16(range) => {
+                let rhs = MyRange::from(u16::try_from(rhs).map_err(drop)?);
+                Ok(Self::U16(range.clone() | rhs))
+            }
+            Self::U32(range) => {
+                let rhs = MyRange::from(u32::try_from(rhs).map_err(drop)?);
+                Ok(Self::U32(range.clone() | rhs))
+            }
+            Self::U64(range) => {
+                let rhs = MyRange::from(u64::try_from(rhs).map_err(drop)?);
+                Ok(Self::U64(range.clone() | rhs))
+            }
+            Self::I8(range) => {
+                let rhs = MyRange::from(i8::try_from(rhs).map_err(drop)?);
+                Ok(Self::I8(range.clone() | rhs))
+            }
+            Self::I16(range) => {
+                let rhs = MyRange::from(i16::try_from(rhs).map_err(drop)?);
+                Ok(Self::I16(range.clone() | rhs))
+            }
+            Self::I32(range) => {
+                let rhs = MyRange::from(i32::try_from(rhs).map_err(drop)?);
+                Ok(Self::I32(range.clone() | rhs))
+            }
+            Self::I64(range) => {
+                let rhs = MyRange::from(i64::try_from(rhs).map_err(drop)?);
+                Ok(Self::I64(range.clone() | rhs))
+            }
+        }
+    }
+
+    fn checked_xor(&self, rhs: i128) -> Result<Self, ()> {
+        match self {
+            Self::U8(range) => {
+                let rhs = MyRange::from(u8::try_from(rhs).map_err(drop)?);
+                Ok(Self::U8(range.clone() ^ rhs))
+            }
+            Self::U16(range) => {
+                let rhs = MyRange::from(u16::try_from(rhs).map_err(drop)?);
+                Ok(Self::U16(range.clone() ^ rhs))
+            }
+            Self::U32(range) => {
+                let rhs = MyRange::from(u32::try_from(rhs).map_err(drop)?);
+                Ok(Self::U32(range.clone() ^ rhs))
+            }
+            Self::U64(range) => {
+                let rhs = MyRange::from(u64::try_from(rhs).map_err(drop)?);
+                Ok(Self::U64(range.clone() ^ rhs))
+            }
+            Self::I8(range) => {
+                let rhs = MyRange::from(i8::try_from(rhs).map_err(drop)?);
+                Ok(Self::I8(range.clone() ^ rhs))
+            }
+            Self::I16(range) => {
+                let rhs = MyRange::from(i16::try_from(rhs).map_err(drop)?);
+                Ok(Self::I16(range.clone() ^ rhs))
+            }
+            Self::I32(range) => {
+                let rhs = MyRange::from(i32::try_from(rhs).map_err(drop)?);
+                Ok(Self::I32(range.clone() ^ rhs))
+            }
+            Self::I64(range) => {
+                let rhs = MyRange::from(i64::try_from(rhs).map_err(drop)?);
+                Ok(Self::I64(range.clone() ^ rhs))
+            }
+        }
+    }
+
     fn possible(x: i128) -> Vec<Self> {
         const I64_MIN: i128 = i64::MIN as i128;
         const I32_MIN: i128 = i32::MIN as i128;
@@ -2427,6 +2501,105 @@ impl<
                     && let Some(rhs) = other.value() =>
             {
                 let (sum, _) = lhs.overflowing_sub(&rhs);
+                Self {
+                    domain: sum..=sum,
+                    min: Some(sum),
+                    abs_min: Some(sum),
+                    max: Some(sum),
+                    transform: Vec::new(),
+                }
+            }
+            _ => todo!(),
+        }
+    }
+}
+
+impl<
+        T: Copy
+            + Ord
+            + std::ops::Sub<Output = T>
+            + std::ops::Add<Output = T>
+            + Bounded
+            + Zero
+            + One
+            + std::ops::BitAnd<Output = T>,
+    > std::ops::BitAnd for MyRange<T>
+{
+    type Output = Self;
+
+    fn bitand(self, other: Self) -> Self {
+        match (self.transform.is_empty(), other.transform.is_empty()) {
+            (true, true)
+                if let Some(lhs) = self.value()
+                    && let Some(rhs) = other.value() =>
+            {
+                let sum = lhs & rhs;
+                Self {
+                    domain: sum..=sum,
+                    min: Some(sum),
+                    abs_min: Some(sum),
+                    max: Some(sum),
+                    transform: Vec::new(),
+                }
+            }
+            _ => todo!(),
+        }
+    }
+}
+
+impl<
+        T: Copy
+            + Ord
+            + std::ops::Sub<Output = T>
+            + std::ops::Add<Output = T>
+            + Bounded
+            + Zero
+            + One
+            + std::ops::BitOr<Output = T>,
+    > std::ops::BitOr for MyRange<T>
+{
+    type Output = Self;
+
+    fn bitor(self, other: Self) -> Self {
+        match (self.transform.is_empty(), other.transform.is_empty()) {
+            (true, true)
+                if let Some(lhs) = self.value()
+                    && let Some(rhs) = other.value() =>
+            {
+                let sum = lhs | rhs;
+                Self {
+                    domain: sum..=sum,
+                    min: Some(sum),
+                    abs_min: Some(sum),
+                    max: Some(sum),
+                    transform: Vec::new(),
+                }
+            }
+            _ => todo!(),
+        }
+    }
+}
+
+impl<
+        T: Copy
+            + Ord
+            + std::ops::Sub<Output = T>
+            + std::ops::Add<Output = T>
+            + Bounded
+            + Zero
+            + One
+            + std::ops::BitXor<Output = T>,
+    > std::ops::BitXor for MyRange<T>
+{
+    type Output = Self;
+
+    fn bitxor(self, other: Self) -> Self {
+        match (self.transform.is_empty(), other.transform.is_empty()) {
+            (true, true)
+                if let Some(lhs) = self.value()
+                    && let Some(rhs) = other.value() =>
+            {
+                let sum = lhs ^ rhs;
                 Self {
                     domain: sum..=sum,
                     min: Some(sum),
