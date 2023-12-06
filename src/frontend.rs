@@ -442,6 +442,15 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             let arg = vec![lhs, rhs];
             Statement { comptime, op, arg }
         }
+        (b"def", None) => {
+            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+            let ident = get_variable(bytes);
+            Statement {
+                comptime,
+                op: Op::Intrinsic(Intrinsic::Def),
+                arg: vec![Value::Variable(ident)],
+            }
+        }
         _ => {
             let lhs = Value::Variable(variable);
             assert_eq!(

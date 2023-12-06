@@ -2575,6 +2575,53 @@ mod tests {
         );
     }
 
+    #[test]
+    fn fourteen() {
+        const SOURCE: &str = "def add\n    out := in[0] + in[1]\nx := add 1 2\nexit x";
+
+        // Parsing
+        let nodes = test_parsing(
+            SOURCE,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::Def),
+                    arg: vec![Value::Variable(Variable::new("add"))],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::Add),
+                    arg: vec![
+                        Value::Variable(Variable::new("out")),
+                        Value::Variable(Variable {
+                            identifier: Vec::from(b"in"),
+                            index: Some(Box::new(Index::Offset(Offset::Integer(0)))),
+                        }),
+                        Value::Variable(Variable {
+                            identifier: Vec::from(b"in"),
+                            index: Some(Box::new(Index::Offset(Offset::Integer(1)))),
+                        }),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::Assign),
+                    arg: vec![
+                        Value::Variable(Variable::new("x")),
+                        Value::Variable(Variable::new("add")),
+                        Value::Literal(Literal::Integer(1)),
+                        Value::Literal(Literal::Integer(2)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Variable(Variable::new("x"))],
+                },
+            ],
+        );
+    }
+
     #[cfg(feature = "false")]
     fn thirteen() {
         const THIRTEEN: &str = "x := memfd_create\nexit 0";

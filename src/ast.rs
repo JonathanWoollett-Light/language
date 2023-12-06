@@ -160,6 +160,7 @@ pub enum Intrinsic {
     If(Cmp),
     Loop,
     Break,
+    Def,
 }
 
 impl Intrinsic {
