@@ -70,7 +70,6 @@
             <li><span class="code">verify</span>: Like <span class="code">require</span> but does not exhaustively check the condition. <span class="code">verify x < 2</span> will apply a number of steps of gradient descent to search for the minium of <span class="code">x</span> to verify the conidition. While this is not formal verification it provides an effective and almost always correct mechanism to test conditions at compile time that would be too computationally expensive to exhaustively prove.</li>
         </ol>
         <h3>Examples</h3>
-        <p class="code">def add<br>    out := in[0] + in[1] # 1 + 2<br>x := add 1 2 # 3<br>write 1 x<br>require x = 3 # true<br>assume x = 4<br>require x = 4 # true<br>assert x = 4 # false, but this statement will get removed by the compiler due to the <span class="code">assume</span>.</p>
         <div class="grid">
             <div><p>Source</p></div>
             <div><p>Optimized</p></div>
@@ -120,6 +119,11 @@
             <div><p class="code">x := read 0<br>write 1 x<br>exit 0</p></div>
             <div><p class="code">x := read u8 0<br>write 1 x<br>exit 0</p></div>
             <div><p class="code assembly">.global _start<br>start:<br>mov x8, #63<br>mov x0, #0<br>ldr x1, =x<br>mov x2, #1<br>svc #0<br>mov x8, #64<br>mov x0, #1<br>ldr x1, =x<br>mov x2, #1<br>svc #0<br>mov x8, #93<br>mov x0, #0<br>svc #0<br>.bss<br>x: .skip 1</p></div>
+        </div>
+        <div class="grid">
+            <div><p class="code">def add<br>    out := in[0] + in[1]<br>x := add 1 2<br>write 1 x<br>require x = 3<br>assume x = 4<br>require x = 4<br>assert x = 4</p></div>
+            <div><p class="code">write 1 3</p></div>
+            <div><p></p></div>
         </div>
     </main>
   </body>
