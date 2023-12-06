@@ -66,7 +66,7 @@
             <li><span class="code">assert</span>: A condition that calls <span class="code">exit</span> if false at run-time.</li>
         </ol>
         <h3>Examples</h3>
-        <p class="code">def add<br>    lhs = in[0] # 1<br>    rhs = in[1] # 2<br>    out = rhs + lhs # 3<br>x := add 1 2 # 3<br>comptime write 1 x<br>require x = 3 # true<br>assume x = 4<br>require x = 4 # true<br>assert x = 4 # false, but this statement will get removed by the compiler due to the <span class="code">assume</span>.</p>
+        <p class="code">def add<br>    out := in[0] + in[1] # 1 + 2<br>x := add 1 2 # 3<br>comptime write 1 x<br>require x = 3 # true<br>assume x = 4<br>require x = 4 # true<br>assert x = 4 # false, but this statement will get removed by the compiler due to the <span class="code">assume</span>.</p>
         <div class="grid">
             <div><p>Source</p></div>
             <div><p>Optimized</p></div>
