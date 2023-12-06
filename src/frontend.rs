@@ -453,7 +453,6 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             // println!("lhs: {lhs:?}");
 
             if let Ok(syscall) = Syscall::try_from(lhs.variable().unwrap().identifier.as_slice()) {
-                println!("syscall: {syscall:?}");
                 return Statement {
                     comptime,
                     op: Op::Syscall(syscall),

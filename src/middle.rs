@@ -105,6 +105,28 @@ pub unsafe fn build_optimized_tree(
                                 .insert(1, Value::Type(variable_type));
                         }
                     }
+                    [Value::Variable(Variable {
+                        identifier,
+                        index: None,
+                    }), Value::Literal(Literal::String(_))] => {
+                        let variable_state =
+                            current.as_ref().state.get(identifier).unwrap().clone();
+                        let variable_type = Type::from(variable_state);
+                        let existing = types.insert(identifier, variable_type.clone());
+
+                        // If not already declared this declares the type of the variable.
+                        if existing.is_none() {
+                            current.as_mut().statement.as_mut().statement.op =
+                                Op::Special(Special::Type);
+                            current
+                                .as_mut()
+                                .statement
+                                .as_mut()
+                                .statement
+                                .arg
+                                .insert(1, Value::Type(variable_type));
+                        }
+                    }
                     _ => todo!(),
                 }
             }
@@ -530,7 +552,6 @@ pub unsafe fn finish_optimized_tree(
                     identifier,
                     index: None,
                 }), Value::Type(_), Value::Literal(_)] => {
-                    dbg!(&read);
                     if !read.contains(identifier) {
                         match current.as_ref().preceding {
                             Some(Preceding::Parent(mut parent)) => {
@@ -576,8 +597,6 @@ pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
     // Construct new optimized abstract syntax tree.
     // TODO This doesn't dealloc anything in `graph` which may be very very big. Do this deallocation.
     let (new_nodes, read) = build_optimized_tree(graph);
-
-    dbg!(&read);
 
     finish_optimized_tree(new_nodes, read)
 }

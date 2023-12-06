@@ -9,7 +9,8 @@
 
 extern crate test;
 
-use std::io::Read;
+use clap::Parser;
+use std::io::{Read, Write};
 
 mod ast;
 mod frontend;
@@ -22,11 +23,17 @@ use backend::*;
 #[cfg(debug_assertions)]
 const LOOP_LIMIT: usize = 200;
 
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(long)]
+    source: String,
+}
+
 #[allow(unreachable_code)]
 fn main() {
     unsafe {
-        let empty = std::io::empty();
-        let reader = std::io::BufReader::new(empty);
+        let args = Args::parse();
+        let reader = std::io::BufReader::new(args.source.as_bytes());
         let mut iter = reader.bytes().peekable();
         let nodes = get_nodes(&mut iter).unwrap();
         let roots = roots(nodes);
@@ -39,18 +46,10 @@ fn main() {
         };
 
         let optimized_nodes = optimize(path);
-        // let nodes = optimize_nodes(&nodes);
-        let _assembly = assembly_from_node(optimized_nodes);
+        let assembly = assembly_from_node(optimized_nodes);
+        std::io::stdout().write_all(assembly.as_bytes()).unwrap();
     }
-
-    todo!()
 }
-
-// use tracing_subscriber::fmt::format::FmtSpan;
-// tracing_subscriber::fmt::fmt()
-//     .with_max_level(tracing_subscriber::filter::LevelFilter::TRACE)
-//     .with_span_events(FmtSpan::ENTER)
-//     .init();
 
 #[cfg(test)]
 mod tests {
