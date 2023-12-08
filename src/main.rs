@@ -61,6 +61,8 @@ mod tests {
     use std::io::Write;
     use std::mem::size_of;
 
+    use itertools::EitherOrBoth;
+    use itertools::Itertools;
     use std::process::Command;
     use std::ptr::NonNull;
     use uuid::Uuid;
@@ -87,24 +89,47 @@ mod tests {
         println!("Checking nodes");
         let mut any_check = true;
         let mut expected_iter = expected.iter();
-        while let Some((current, s)) = stack.pop() {
-            let node = unsafe { current.as_ref() };
-            if let Some(next) = node.next {
-                stack.push((next, s));
-            }
-            if let Some(child) = node.child {
-                stack.push((child, s + 1));
-            }
 
-            let actual_statement = Some(&node.statement);
-            let expected_statement = expected_iter.next();
+        loop {
+            let node = stack.pop();
+            let expected = expected_iter.next();
+            match (node, expected) {
+                (Some((current, s)), None) => {
+                    let node = unsafe { current.as_ref() };
+                    if let Some(next) = node.next {
+                        stack.push((next, s));
+                    }
+                    if let Some(child) = node.child {
+                        stack.push((child, s + 1));
+                    }
+                    let actual_statement = &node.statement;
 
-            let check = actual_statement == expected_statement;
-            if !check {
-                any_check = false;
+                    any_check = false;
+                    println!("✗   {actual_statement:?}\n    None");
+                }
+                (None, Some(expected_statement)) => {
+                    any_check = false;
+                    println!("✗   None\n    {expected_statement:?}");
+                }
+                (Some((current, s)), Some(expected_statement)) => {
+                    let node = unsafe { current.as_ref() };
+                    if let Some(next) = node.next {
+                        stack.push((next, s));
+                    }
+                    if let Some(child) = node.child {
+                        stack.push((child, s + 1));
+                    }
+
+                    let actual_statement = &node.statement;
+                    let check = actual_statement == expected_statement;
+                    if !check {
+                        any_check = false;
+                    }
+                    let mark = if check { "✓" } else { "✗" };
+                    println!("{mark}   {actual_statement:?}\n    {expected_statement:?}");
+                }
+                (None, None) => break,
             }
-            let mark = if check { "✓" } else { "✗" };
-            println!("{mark}   {actual_statement:?}\n    {expected_statement:?}");
         }
         println!();
         assert!(any_check);
@@ -2575,6 +2600,12 @@ mod tests {
         );
     }
 
+    fn test_inlining(nodes: NonNull<NewNode>, expected: &[Statement]) -> NonNull<NewNode> {
+        let actual = unsafe { inline_functions(nodes) };
+        match_nodes(actual, expected);
+        actual
+    }
+
     #[test]
     fn fourteen() {
         const SOURCE: &str = "def add\n    out := in[0] + in[1]\nx := add 1 2\nexit x";
@@ -2621,12 +2652,44 @@ mod tests {
             ],
         );
 
-        // Exploration
-        let path = test_exploration(nodes,
-            &[],
-            &[],
-            &[]
+        let inlined = test_inlining(
+            nodes,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::Assign),
+                    arg: vec![
+                        Value::Variable(Variable::new("b")),
+                        Value::Literal(Literal::Integer(1)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::Assign),
+                    arg: vec![
+                        Value::Variable(Variable::new("c")),
+                        Value::Literal(Literal::Integer(2)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::Add),
+                    arg: vec![
+                        Value::Variable(Variable::new("a")),
+                        Value::Variable(Variable::new("b")),
+                        Value::Variable(Variable::new("c")),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Syscall(Syscall::Exit),
+                    arg: vec![Value::Variable(Variable::new("a"))],
+                },
+            ],
         );
+
+        // Exploration
+        // let path = test_exploration(nodes, &[], &[], &[]);
     }
 
     #[cfg(feature = "false")]
