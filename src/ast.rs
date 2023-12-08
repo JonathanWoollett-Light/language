@@ -60,6 +60,12 @@ impl Value {
             _ => None,
         }
     }
+    pub fn variable_mut(&mut self) -> Option<&mut Variable> {
+        match self {
+            Self::Variable(variable) => Some(variable),
+            _ => None,
+        }
+    }
 }
 
 impl Default for Value {
@@ -97,7 +103,7 @@ impl Default for Literal {
     }
 }
 
-#[derive(Eq, PartialEq, Default, Clone)]
+#[derive(Eq, PartialEq, Default, Clone, Hash)]
 pub struct Variable {
     pub identifier: Identifier,
     pub index: Option<Box<Index>>,
@@ -114,18 +120,19 @@ impl std::fmt::Debug for Variable {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Index {
     Slice(Slice),
     Offset(Offset),
 }
-#[derive(Debug, Eq, PartialEq, Clone)]
+
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub struct Slice {
     pub start: Option<Offset>,
     pub stop: Option<Offset>,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Offset {
     Integer(u64),
     Variable(Variable),

@@ -811,6 +811,329 @@ pub unsafe fn roots(node: NonNull<NewNode>) -> Vec<NonNull<NewStateNode>> {
         .collect()
 }
 
+use std::cell::Cell;
+use std::rc::Rc;
+
+pub unsafe fn copy_and_update_idents(node: NonNull<NewNode>) -> NonNull<NewNode> {
+    let mut first = None;
+
+    // The map from function identifiers their first node.
+    let mut functions = HashMap::new();
+
+    // An iterator yielding unique identifiers.
+    let mut identifier_iterator = (0..).map(|index|{
+        const N: u8 = b'z' - b'a';
+        let ident = (0..index / N).map(|_|b'z').chain(std::iter::once((index % N) + b'a')).collect::<Vec<_>>();
+        ident
+    });
+
+    let mut stack = vec![(node, None, Rc::new(Cell::new(HashMap::new())))];
+    while let Some((current, preceding, mut variable_map)) = stack.pop() {
+        match current.as_ref().statement.op {
+            // Function definition
+            Op::Intrinsic(Intrinsic::Def) => match current.as_ref().statement.arg.as_slice() {
+                [Value::Variable(Variable { identifier ,index: None })] => {
+                    // Insert function definition.
+                    let pre_existing = functions.insert(identifier, current.as_ref().child.unwrap());
+                    assert!(pre_existing.is_none());
+
+                    if let Some(next) = current.as_ref().next {
+                        stack.push((next, preceding, variable_map));
+                    }
+                }
+                _ => todo!()
+            }
+            
+            Op::Intrinsic(Intrinsic::Assign) => match current.as_ref().statement.arg.as_slice() {
+                // Function call
+                [first @ Value::Variable(Variable { identifier: lhs ,index: None }), Value::Variable(Variable { identifier: rhs ,index: None }), tail @ ..] if let Some(def) = functions.get(rhs) => {                    
+                    let function = functions.get(rhs).unwrap();
+
+                    let head_iter = std::iter::once({
+                        let new_variable = identifier_iterator.next().unwrap();
+                        (
+                            Variable { identifier: Vec::from(b"out"), index: None }, 
+                            Variable { identifier: new_variable, index: None }
+                        )
+                    });
+                    let tail_iter = tail.iter().enumerate().map(|(i,old_value)| match old_value {
+                        Value::Literal(_) => todo!(),
+                        Value::Variable(old_variable) => {
+                            let new_variable = identifier_iterator.next().unwrap();
+                            (
+                                Variable { identifier: Vec::from(b"in"), index: Some(Box::new(Index::Offset(Offset::Integer(i as u64))))}, 
+                                Variable { identifier: new_variable, index: None }
+                            )
+                        },
+                        Value::Type(_) => todo!()
+                    });
+                    let variable_map = Rc::new(Cell::new(head_iter.chain(tail_iter).collect()));
+                    stack.push((*function, preceding, variable_map));
+                }
+                [Value::Variable(_), ..] => {
+                    // Create new node.
+                    let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
+                    ptr::copy(current.as_ptr(), dst, 1);
+                    let mut new = NonNull::new(dst).unwrap();
+
+                    let [Value::Variable(variable), tail @ ..] = new.as_mut().statement.arg.as_mut_slice();
+
+                    // Update new preceding.
+                    match preceding {
+                        Some(Preceding::Parent(mut parent)) => {
+                            debug_assert!(parent.as_ref().child.is_none());
+                            parent.as_mut().child = Some(new);
+                        },
+                        Some(Preceding::Previous(mut previous)) => {
+                            debug_assert!(previous.as_ref().next.is_none());
+                            previous.as_mut().next = Some(new);
+                        },
+                        None => {
+                            first = Some(new);
+                        }
+                    }
+
+                    // Update new variable
+                    let new_identifier = identifier_iterator.next().unwrap();
+                    let new_variable = Variable { identifier: new_identifier, index: None };
+                    let res = variable_map.get_mut().insert(variable.clone(),new_variable.clone());
+                    assert!(res.is_none()); // Assert isn't pre-existing
+                    *variable = new_variable;
+
+                    // Update existing variables
+                    for tail_variable in tail.iter_mut().filter_map(Value::variable_mut) {
+                        let new_tail_variable = variable_map.get_mut().get(tail_variable).unwrap();
+                        *tail_variable =  new_tail_variable.clone();
+                    }
+
+                    debug_assert!(current.as_ref().child.is_none());
+                    if let Some(next) = current.as_ref().next {
+                        stack.push((next, Some(Preceding::Previous(new)), variable_map));
+                        new.as_mut().next = None;
+                    }
+                }
+                _ => todo!()
+            },
+            Op::Special(Special::Type) => match current.as_ref().statement.arg.as_slice() {
+                [Value::Variable(_), ..] => {
+                    // Create new node.
+                    let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
+                    ptr::copy(current.as_ptr(), dst, 1);
+                    let mut new = NonNull::new(dst).unwrap();
+
+                    let [Value::Variable(variable), tail @ ..] = new.as_mut().statement.arg.as_mut_slice();
+
+                    // Update new preceding.
+                    match preceding {
+                        Some(Preceding::Parent(mut parent)) => {
+                            debug_assert!(parent.as_ref().child.is_none());
+                            parent.as_mut().child = Some(new);
+                        },
+                        Some(Preceding::Previous(mut previous)) => {
+                            debug_assert!(previous.as_ref().next.is_none());
+                            previous.as_mut().next = Some(new);
+                        },
+                        None => {
+                            first = Some(new);
+                        }
+                    }
+
+                    // Update new variable
+                    let new_identifier = identifier_iterator.next().unwrap();
+                    let new_variable = Variable { identifier: new_identifier, index: None };
+                    let res = variable_map.get_mut().insert(variable.clone(),new_variable.clone());
+                    assert!(res.is_none()); // Assert isn't pre-existing
+                    *variable = new_variable;
+
+                    // Update existing variables
+                    for tail_variable in tail.iter_mut().filter_map(Value::variable_mut) {
+                        let new_tail_variable = variable_map.get_mut().get(tail_variable).unwrap();
+                        *tail_variable =  new_tail_variable.clone();
+                    }
+
+                    // Update child/next.
+                    debug_assert!(current.as_ref().child.is_none());
+                    if let Some(next) = current.as_ref().next {
+                        stack.push((next, Some(Preceding::Previous(new)), variable_map));
+                        new.as_mut().next = None;
+                    }
+                }
+                _ => todo!()
+            }
+            // Else
+            _ => {
+                // Create new node.
+                let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
+                ptr::copy(current.as_ptr(), dst, 1);
+                let mut new = NonNull::new(dst).unwrap();
+
+                // Update new preceding.
+                match preceding {
+                    Some(Preceding::Parent(mut parent)) => {
+                        debug_assert!(parent.as_ref().child.is_none());
+                        parent.as_mut().child = Some(new);
+                    },
+                    Some(Preceding::Previous(mut previous)) => {
+                        debug_assert!(previous.as_ref().next.is_none());
+                        previous.as_mut().next = Some(new);
+                    },
+                    None => {
+                        first = Some(new);
+                    }
+                }
+
+                // Update existing variables.
+                for variable in new.as_mut().statement.arg.iter_mut().filter_map(Value::variable_mut) {
+                    let new_variable = variable_map.get_mut().get(variable).unwrap();
+                    *variable =  new_variable.clone();
+                }
+
+                // Update child/next.
+                if let Some(child) = current.as_ref().child {
+                    stack.push((child,Some(Preceding::Parent(new)), variable_map));
+                    new.as_mut().child = None;
+                }
+                if let Some(next) = current.as_ref().next {
+                    stack.push((next,Some(Preceding::Previous(new)), variable_map));
+                    new.as_mut().next = None;
+                }
+            },
+        }
+        
+    }
+    first.unwrap()
+}
+
+unsafe fn step_copy<I: Iterator<Item=Identifier>>(current: NonNull<NewNode>, preceding: Option<Preceding>, first: &mut Option<NonNull<NewNode>>, stack: &mut Vec<(NonNull<NewNode>,Option<Preceding>)>,variable_map: &mut Vec<HashMap<Variable,Variable>>, identifier_iterator: &mut I) {
+    // Create new node
+    let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
+    ptr::copy(current.as_ptr(), dst, 1);
+    let mut new = NonNull::new(dst).unwrap();
+
+    match new.as_ref().statement.op {
+        Op::Special(Special::Type) => match new.as_mut().statement.arg.as_slice() {
+            [Value::Variable(variable), ..] => {
+                
+            }
+            _ => todo!()
+            
+        }
+        _ => {
+            
+        }
+    }
+
+    // Update new links
+    new.as_mut().preceding = preceding;
+    match new.as_ref().preceding {
+        Some(Preceding::Parent(mut parent)) => {
+            parent.as_mut().child = new.as_ref().next;
+        }
+        Some(Preceding::Previous(mut previous)) => {
+            previous.as_mut().next = new.as_ref().next;
+        }
+        None => {
+            *first = Some(new);
+        }
+    }
+
+    // Push new nodes
+    if let Some(child) = current.as_ref().child {
+        stack.push((child, Some(Preceding::Parent(new))));
+    }
+    if let Some(next) = current.as_ref().next {
+        stack.push((next,Some(Preceding::Previous(new))));
+    }
+}
+
+/// Inlines functions so exploration doesn't need to jump around.
+pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
+    let mut first = Some(node);
+    let mut stack = vec![node];
+
+    // The map from function identifiers their first node.
+    let mut functions = HashMap::new();
+
+    // The map from old identifiers names to new identifiers.
+    let mut variable_map = HashMap::new();
+
+    // An iterator yielding unique identifiers.
+    let mut identifier_iterator = (0..).map(|index|{
+        const N: u8 = b'z' - b'a';
+        let ident = (0..index / N).map(|_|b'z').chain(std::iter::once((index % N) + b'a')).collect::<Vec<_>>();
+        ident
+    });
+
+    while let Some(current) = stack.pop() {
+        match current.as_ref().statement.op {
+            Op::Intrinsic(Intrinsic::Def) => match current.as_ref().statement.arg.as_slice() {
+                [Value::Variable(Variable { identifier ,index: None })] => {
+                    // We unwrap which disallows having an empty function.
+                    let pre_existing = functions.insert(identifier, current.as_ref().child.unwrap());
+                    assert!(pre_existing.is_none());
+                    
+                    match current.as_ref().preceding {
+                        Some(Preceding::Parent(mut parent)) => {
+                            parent.as_mut().child = current.as_ref().next;
+                        }
+                        Some(Preceding::Previous(mut previous)) => {
+                            previous.as_mut().next = current.as_ref().next;
+                        }
+                        None => {
+                            first = current.as_ref().next;
+                        }
+                    }
+
+                    if let Some(next) = current.as_ref().next {
+                        stack.push(next);
+                    }
+                }
+                _ => todo!()
+            }
+            Op::Intrinsic(Intrinsic::Assign) => match current.as_ref().statement.arg.as_slice() {
+                [Value::Variable(Variable { identifier: lhs ,index: None }), Value::Variable(Variable { identifier: rhs ,index: None }), tail @ ..] if let Some(def) = functions.get(rhs) => {
+                    
+                    let new = copy_and_update_idents(*def, &mut identifier_iterator, &mut variable_map);
+                    match current.as_ref().preceding {
+                        Some(Preceding::Parent(mut parent)) => {
+                            parent.as_mut().child = current.as_ref().next;
+                        }
+                        Some(Preceding::Previous(mut previous)) => {
+                            previous.as_mut().next = current.as_ref().next;
+                        }
+                        None => {
+                            first = current.as_ref().next;
+                        }
+                    }
+
+                    alloc::dealloc(current.as_ptr().cast(), alloc::Layout::new::<NewNode>());
+                }
+                _ => {
+                    if let Some(child) = current.as_ref().child {
+                        stack.push(child);
+                    }
+                    if let Some(next) = current.as_ref().next {
+                        stack.push(next);
+                    }  
+                }
+            }
+            _ => {
+                if let Some(child) = current.as_ref().child {
+                    stack.push(child);
+                }
+                if let Some(next) = current.as_ref().next {
+                    stack.push(next);
+                }
+            }
+        }
+
+        
+    }
+
+    // `first` can be none, but right now its easier to presume it isn't
+    first.unwrap()
+}
+
 pub unsafe fn explore_node(
     mut current: NonNull<NewStateNode>,
     stack: &mut Vec<NonNull<NewStateNode>>,

@@ -2620,6 +2620,13 @@ mod tests {
                 },
             ],
         );
+
+        // Exploration
+        let path = test_exploration(nodes,
+            &[],
+            &[],
+            &[]
+        );
     }
 
     #[cfg(feature = "false")]
