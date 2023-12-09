@@ -128,216 +128,201 @@ pub unsafe fn build_optimized_tree(
 
         // println!("op: {:?}", current.as_ref().statement.as_ref().statement.op);
 
+        let slice = current.as_ref().statement.as_ref().statement.arg.as_slice();
         match current.as_ref().statement.as_ref().statement.op {
-            Op::Intrinsic(Intrinsic::Assign) => {
-                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
-                    [Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    }), Value::Literal(Literal::Integer(_))] => {
-                        let variable_state =
-                            current.as_ref().state.get(identifier).unwrap().clone();
-                        let variable_type = Type::from(variable_state);
-                        let existing = types.insert(identifier, variable_type.clone());
+            Op::Intrinsic(Intrinsic::Assign) => match slice {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current.as_ref().state.get(identifier).unwrap().clone();
+                    let variable_type = Type::from(variable_state);
+                    let existing = types.insert(identifier, variable_type.clone());
 
-                        // If not already declared this declares the type of the variable.
-                        if existing.is_none() {
-                            current.as_mut().statement.as_mut().statement.op =
-                                Op::Special(Special::Type);
-                            current
-                                .as_mut()
-                                .statement
-                                .as_mut()
-                                .statement
-                                .arg
-                                .insert(1, Value::Type(variable_type));
-                        }
+                    // If not already declared this declares the type of the variable.
+                    if existing.is_none() {
+                        current.as_mut().statement.as_mut().statement.op =
+                            Op::Special(Special::Type);
+                        current
+                            .as_mut()
+                            .statement
+                            .as_mut()
+                            .statement
+                            .arg
+                            .insert(1, Value::Type(variable_type));
+                    } else {
+                        todo!()
                     }
-                    [Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    }), Value::Literal(Literal::String(_))] => {
-                        let variable_state =
-                            current.as_ref().state.get(identifier).unwrap().clone();
-                        let variable_type = Type::from(variable_state);
-                        let existing = types.insert(identifier, variable_type.clone());
+                }
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), Value::Literal(Literal::String(_))] => {
+                    let variable_state = current.as_ref().state.get(identifier).unwrap().clone();
+                    let variable_type = Type::from(variable_state);
+                    let existing = types.insert(identifier, variable_type.clone());
 
-                        // If not already declared this declares the type of the variable.
-                        if existing.is_none() {
-                            current.as_mut().statement.as_mut().statement.op =
-                                Op::Special(Special::Type);
-                            current
-                                .as_mut()
-                                .statement
-                                .as_mut()
-                                .statement
-                                .arg
-                                .insert(1, Value::Type(variable_type));
-                        }
+                    // If not already declared this declares the type of the variable.
+                    if existing.is_none() {
+                        current.as_mut().statement.as_mut().statement.op =
+                            Op::Special(Special::Type);
+                        current
+                            .as_mut()
+                            .statement
+                            .as_mut()
+                            .statement
+                            .arg
+                            .insert(1, Value::Type(variable_type));
+                    } else {
+                        todo!()
                     }
-                    _ => todo!(),
                 }
-            }
-            Op::Syscall(Syscall::Exit) => {
-                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
-                    [Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    })] => {
-                        let varible_state = current.as_ref().state.get(identifier).unwrap();
-                        match varible_state {
-                            TypeValue::Integer(TypeValueInteger::U8(range)) => {
-                                if let Some(exact) = range.value() {
-                                    current.as_mut().statement.as_mut().statement.arg =
-                                        vec![Value::Literal(Literal::Integer(i128::from(exact)))];
-                                } else {
-                                    read.insert(identifier.clone());
-                                }
+                _ => todo!(),
+            },
+            Op::Syscall(Syscall::Exit) => match slice {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                })] => {
+                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                    match variable_state {
+                        TypeValue::Integer(TypeValueInteger::U8(range)) => {
+                            if let Some(exact) = range.value() {
+                                current.as_mut().statement.as_mut().statement.arg =
+                                    vec![Value::Literal(Literal::Integer(i128::from(exact)))];
+                            } else {
+                                read.insert(identifier.clone());
                             }
-                            _ => todo!(),
                         }
+                        _ => todo!(),
                     }
-                    [Value::Literal(Literal::Integer(_))] => {}
-                    _ => todo!(),
                 }
-            }
+                [Value::Literal(Literal::Integer(_))] => {}
+                _ => todo!(),
+            },
             // On the linear path, these statements can simply be removed.
-            Op::Intrinsic(Intrinsic::AddAssign) => {
-                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
-                    [Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    }), Value::Literal(Literal::Integer(_))] => {
-                        let varible_state = current.as_ref().state.get(identifier).unwrap();
-                        match varible_state {
-                            TypeValue::Integer(TypeValueInteger::U8(range))
-                                if range.value().is_some() =>
-                            {
-                                remove_node(next_state_node_opt, current, &mut first_node)
-                            }
-                            _ => todo!(),
+            Op::Intrinsic(Intrinsic::AddAssign) => match slice {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                    match variable_state {
+                        TypeValue::Integer(TypeValueInteger::U8(range))
+                            if range.value().is_some() =>
+                        {
+                            remove_node(next_state_node_opt, current, &mut first_node)
                         }
+                        _ => todo!(),
                     }
-                    _ => todo!(),
                 }
-            }
+                _ => todo!(),
+            },
             // On the linear path, these statements can simply be removed.
-            Op::Intrinsic(Intrinsic::SubAssign) => {
-                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
-                    [Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    }), Value::Literal(Literal::Integer(_))] => {
-                        let varible_state = current.as_ref().state.get(identifier).unwrap();
-                        match varible_state {
-                            TypeValue::Integer(TypeValueInteger::U8(range))
-                                if range.value().is_some() =>
-                            {
-                                remove_node(next_state_node_opt, current, &mut first_node)
-                            }
-                            _ => todo!(),
+            Op::Intrinsic(Intrinsic::SubAssign) => match slice {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                    match variable_state {
+                        TypeValue::Integer(TypeValueInteger::U8(range))
+                            if range.value().is_some() =>
+                        {
+                            remove_node(next_state_node_opt, current, &mut first_node)
                         }
+                        _ => todo!(),
                     }
-                    _ => todo!(),
                 }
-            }
+                _ => todo!(),
+            },
             // On the linear path, these statements can simply be removed.
-            Op::Intrinsic(Intrinsic::MulAssign) => {
-                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
-                    [Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    }), Value::Literal(Literal::Integer(_))] => {
-                        let varible_state = current.as_ref().state.get(identifier).unwrap();
-                        match varible_state {
-                            TypeValue::Integer(TypeValueInteger::U8(range))
-                                if range.value().is_some() =>
-                            {
-                                remove_node(next_state_node_opt, current, &mut first_node)
-                            }
-                            _ => todo!(),
+            Op::Intrinsic(Intrinsic::MulAssign) => match slice {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                    match variable_state {
+                        TypeValue::Integer(TypeValueInteger::U8(range))
+                            if range.value().is_some() =>
+                        {
+                            remove_node(next_state_node_opt, current, &mut first_node)
                         }
+                        _ => todo!(),
                     }
-                    _ => todo!(),
                 }
-            }
+                _ => todo!(),
+            },
             // On the linear path, these statements can simply be removed.
-            Op::Intrinsic(Intrinsic::DivAssign) => {
-                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
-                    [Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    }), Value::Literal(Literal::Integer(_))] => {
-                        let varible_state = current.as_ref().state.get(identifier).unwrap();
-                        match varible_state {
-                            TypeValue::Integer(TypeValueInteger::U8(range))
-                                if range.value().is_some() =>
-                            {
-                                remove_node(next_state_node_opt, current, &mut first_node)
-                            }
-                            _ => todo!(),
+            Op::Intrinsic(Intrinsic::DivAssign) => match slice {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                    match variable_state {
+                        TypeValue::Integer(TypeValueInteger::U8(range))
+                            if range.value().is_some() =>
+                        {
+                            remove_node(next_state_node_opt, current, &mut first_node)
                         }
+                        _ => todo!(),
                     }
-                    _ => todo!(),
                 }
-            }
-            Op::Intrinsic(Intrinsic::AndAssign) => {
-                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
-                    [Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    }), Value::Literal(Literal::Integer(_))] => {
-                        let varible_state = current.as_ref().state.get(identifier).unwrap();
-                        match varible_state {
-                            TypeValue::Integer(TypeValueInteger::U8(range))
-                                if range.value().is_some() =>
-                            {
-                                remove_node(next_state_node_opt, current, &mut first_node)
-                            }
-                            _ => todo!(),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::AndAssign) => match slice {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                    match variable_state {
+                        TypeValue::Integer(TypeValueInteger::U8(range))
+                            if range.value().is_some() =>
+                        {
+                            remove_node(next_state_node_opt, current, &mut first_node)
                         }
+                        _ => todo!(),
                     }
-                    _ => todo!(),
                 }
-            }
-            Op::Intrinsic(Intrinsic::OrAssign) => {
-                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
-                    [Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    }), Value::Literal(Literal::Integer(_))] => {
-                        let varible_state = current.as_ref().state.get(identifier).unwrap();
-                        match varible_state {
-                            TypeValue::Integer(TypeValueInteger::U8(range))
-                                if range.value().is_some() =>
-                            {
-                                remove_node(next_state_node_opt, current, &mut first_node)
-                            }
-                            _ => todo!(),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::OrAssign) => match slice {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                    match variable_state {
+                        TypeValue::Integer(TypeValueInteger::U8(range))
+                            if range.value().is_some() =>
+                        {
+                            remove_node(next_state_node_opt, current, &mut first_node)
                         }
+                        _ => todo!(),
                     }
-                    _ => todo!(),
                 }
-            }
-            Op::Intrinsic(Intrinsic::XorAssign) => {
-                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
-                    [Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    }), Value::Literal(Literal::Integer(_))] => {
-                        let varible_state = current.as_ref().state.get(identifier).unwrap();
-                        match varible_state {
-                            TypeValue::Integer(TypeValueInteger::U8(range))
-                                if range.value().is_some() =>
-                            {
-                                remove_node(next_state_node_opt, current, &mut first_node)
-                            }
-                            _ => todo!(),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::XorAssign) => match slice {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                    match variable_state {
+                        TypeValue::Integer(TypeValueInteger::U8(range))
+                            if range.value().is_some() =>
+                        {
+                            remove_node(next_state_node_opt, current, &mut first_node)
                         }
+                        _ => todo!(),
                     }
-                    _ => todo!(),
                 }
-            }
+                _ => todo!(),
+            },
             // `current` is not used after `current = prev;` but it may be in the future, and I
             // don't want to obfuscate this complex logic further.
             Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => {
@@ -395,46 +380,75 @@ pub unsafe fn build_optimized_tree(
                     );
                 }
             }
-            Op::Syscall(Syscall::Read) => {
-                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
-                    [Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    }), Value::Literal(Literal::Integer(_))] => {
-                        let state =
-                            Type::from(current.as_ref().state.get(identifier).unwrap().clone());
+            Op::Syscall(Syscall::Read) => match slice {
+                [Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), Value::Literal(Literal::Integer(_))] => {
+                    let state = Type::from(current.as_ref().state.get(identifier).unwrap().clone());
 
-                        // This will may move `identifier` so we need to re-acquire it after.
-                        current
-                            .as_mut()
-                            .statement
-                            .as_mut()
-                            .statement
-                            .arg
-                            .insert(1, Value::Type(state));
-                        let Variable { identifier, .. } =
-                            current.as_ref().statement.as_ref().statement.arg[0]
-                                .variable()
-                                .unwrap();
+                    // This will may move `identifier` so we need to re-acquire it after.
+                    current
+                        .as_mut()
+                        .statement
+                        .as_mut()
+                        .statement
+                        .arg
+                        .insert(1, Value::Type(state));
+                    let Variable { identifier, .. } =
+                        current.as_ref().statement.as_ref().statement.arg[0]
+                            .variable()
+                            .unwrap();
 
-                        let ident_clone = identifier.clone();
-                        read.insert(ident_clone);
-                    }
-                    _ => todo!(),
+                    let ident_clone = identifier.clone();
+                    read.insert(ident_clone);
                 }
-            }
-            Op::Syscall(Syscall::Write) => {
-                match current.as_ref().statement.as_ref().statement.arg.as_slice() {
-                    [Value::Literal(Literal::Integer(_)), Value::Variable(Variable {
-                        identifier,
-                        index: None,
-                    })] => {
-                        debug_assert!(current.as_ref().state.contains_key(identifier));
-                        read.insert(identifier.clone());
-                    }
-                    _ => todo!(),
+                _ => todo!(),
+            },
+            Op::Syscall(Syscall::Write) => match slice {
+                [Value::Literal(Literal::Integer(_)), Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                })] => {
+                    debug_assert!(current.as_ref().state.contains_key(identifier));
+                    read.insert(identifier.clone());
                 }
-            }
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::Add) => match slice {
+                [variable @ Value::Variable(Variable {
+                    identifier,
+                    index: None,
+                }), Value::Variable(_), Value::Variable(_)] => {
+                    // let variable_state = (
+                    //     current.as_ref().state.get(out),
+                    //     current.as_ref().state.get(rhs).unwrap(),
+                    //     current.as_ref().state.get(lhs).unwrap()
+                    // );
+                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                    let variable_type = Type::from(variable_state.clone());
+                    match variable_state {
+                        TypeValue::Integer(TypeValueInteger::U8(a)) if let Some(x) = a.value() => {
+                            let existing = types.insert(identifier, variable_type.clone());
+
+                            // If not already declared this declares the type of the variable.
+                            if existing.is_none() {
+                                current.as_mut().statement.as_mut().statement.op =
+                                    Op::Special(Special::Type);
+                                current.as_mut().statement.as_mut().statement.arg = vec![
+                                    variable.clone(),
+                                    Value::Type(variable_type),
+                                    Value::Literal(Literal::Integer(x as _)),
+                                ];
+                            } else {
+                                todo!()
+                            }
+                        }
+                        _ => todo!(),
+                    }
+                }
+                _ => todo!(),
+            },
             _ => todo!(),
         }
     }
@@ -1417,8 +1431,9 @@ unsafe fn dealloc_tree(first: NonNull<NewStateNode>) {
 
 /// Given an incoming state (`state`) and a node, outputs the possible outgoing states.
 fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<TypeValueState> {
+    let slice = statement.arg.as_slice();
     match statement.op {
-        Op::Special(Special::Type) => match statement.arg.as_slice() {
+        Op::Special(Special::Type) => match slice {
             [Value::Variable(Variable {
                 identifier,
                 index: None,
@@ -1433,7 +1448,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             },
             _ => todo!(),
         },
-        Op::Syscall(Syscall::Exit) => match statement.arg.as_slice() {
+        Op::Syscall(Syscall::Exit) => match slice {
             // TODO Check the variable for `_integer` fits into i32.
             [Value::Literal(Literal::Integer(_integer))] => vec![state.clone()],
             // TODO Check the variable for `identifier` fits into i32.
@@ -1461,7 +1476,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             },
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::Assign) => match statement.arg.as_slice() {
+        Op::Intrinsic(Intrinsic::Assign) => match slice {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
                 match state.get(identifier) {
                     // Iterates over the set of integer types which could contain `x`, returning a new state for each possibility.
@@ -1530,7 +1545,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::SubAssign) => match statement.arg.as_slice() {
+        Op::Intrinsic(Intrinsic::SubAssign) => match slice {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
                 match state.get(identifier) {
                     Some(TypeValue::Integer(y)) => match y.checked_sub(*x) {
@@ -1550,10 +1565,10 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::AddAssign) => match statement.arg.as_slice() {
+        Op::Intrinsic(Intrinsic::AddAssign) => match slice {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
                 match state.get(identifier) {
-                    Some(TypeValue::Integer(y)) => match y.checked_add(*x) {
+                    Some(TypeValue::Integer(y)) => match y.checked_add_i128(*x) {
                         Ok(z) => {
                             let mut new_state = state.clone();
                             *new_state
@@ -1570,7 +1585,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::MulAssign) => match statement.arg.as_slice() {
+        Op::Intrinsic(Intrinsic::MulAssign) => match slice {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
                 match state.get(identifier) {
                     Some(TypeValue::Integer(y)) => match y.checked_mul(*x) {
@@ -1590,7 +1605,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::DivAssign) => match statement.arg.as_slice() {
+        Op::Intrinsic(Intrinsic::DivAssign) => match slice {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
                 match state.get(identifier) {
                     Some(TypeValue::Integer(y)) => match y.checked_div(*x) {
@@ -1610,7 +1625,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::AndAssign) => match statement.arg.as_slice() {
+        Op::Intrinsic(Intrinsic::AndAssign) => match slice {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
                 match state.get(identifier) {
                     Some(TypeValue::Integer(y)) => match y.checked_and(*x) {
@@ -1630,7 +1645,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::OrAssign) => match statement.arg.as_slice() {
+        Op::Intrinsic(Intrinsic::OrAssign) => match slice {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
                 match state.get(identifier) {
                     Some(TypeValue::Integer(y)) => match y.checked_or(*x) {
@@ -1650,7 +1665,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::XorAssign) => match statement.arg.as_slice() {
+        Op::Intrinsic(Intrinsic::XorAssign) => match slice {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
                 match state.get(identifier) {
                     Some(TypeValue::Integer(y)) => match y.checked_xor(*x) {
@@ -1670,7 +1685,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::If(_)) => match statement.arg.as_slice() {
+        Op::Intrinsic(Intrinsic::If(_)) => match slice {
             [Value::Literal(Literal::Integer(_)), Value::Variable(Variable { identifier, .. })]
             | [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(_))] => {
                 match state.get(identifier) {
@@ -1680,7 +1695,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Special(Special::Require(Cmp::Ge)) => match statement.arg.as_slice() {
+        Op::Special(Special::Require(Cmp::Ge)) => match slice {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
                 match state.get(identifier) {
                     Some(TypeValue::Integer(y)) => match y.greater_than_or_equal(*x) {
@@ -1701,7 +1716,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Special(Special::Require(Cmp::Le)) => match statement.arg.as_slice() {
+        Op::Special(Special::Require(Cmp::Le)) => match slice {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
                 match state.get(identifier) {
                     Some(TypeValue::Integer(y)) => match y.less_than_or_equal(*x) {
@@ -1722,7 +1737,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Syscall(Syscall::Read) => match statement.arg.as_slice() {
+        Op::Syscall(Syscall::Read) => match slice {
             [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(_))] => {
                 match state.get(identifier) {
                     // Iterates over the set of integer types which could contain `x`, returning a new state for each possibility.
@@ -1739,7 +1754,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Syscall(Syscall::Write) => match statement.arg.as_slice() {
+        Op::Syscall(Syscall::Write) => match slice {
             [Value::Literal(Literal::Integer(_)), Value::Variable(Variable { identifier, .. })] => {
                 match state.get(identifier) {
                     // All defined values have known sizes so can be written.
@@ -1750,7 +1765,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Syscall(Syscall::MemfdCreate) => match statement.arg.as_slice() {
+        Op::Syscall(Syscall::MemfdCreate) => match slice {
             [Value::Variable(Variable { identifier, .. })] => match state.get(identifier) {
                 None => [
                     TypeValueInteger::I32(MyRange::any()),
@@ -1767,15 +1782,49 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             },
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::Loop) => match statement.arg.as_slice() {
+        Op::Intrinsic(Intrinsic::Loop) => match slice {
             [] => vec![state.clone()],
             [Value::Literal(Literal::Integer(integer))] if u64::try_from(*integer).is_ok() => {
                 vec![state.clone()]
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::Break) => match statement.arg.as_slice() {
+        Op::Intrinsic(Intrinsic::Break) => match slice {
             [] => vec![state.clone()],
+            _ => todo!(),
+        },
+        Op::Intrinsic(Intrinsic::Add) => match slice {
+            [Value::Variable(Variable {
+                identifier: out, ..
+            }), Value::Variable(Variable {
+                identifier: lhs, ..
+            }), Value::Variable(Variable {
+                identifier: rhs, ..
+            })] => match (state.get(out), state.get(lhs), state.get(rhs)) {
+                (
+                    Some(TypeValue::Integer(a)),
+                    Some(TypeValue::Integer(b)),
+                    Some(TypeValue::Integer(c)),
+                ) => match a.checked_add(b).and_then(|ab| ab.checked_add(c)) {
+                    Ok(z) => {
+                        let mut new_state = state.clone();
+                        *new_state.get_mut(out).unwrap() = TypeValue::Integer(z);
+                        vec![new_state]
+                    }
+                    _ => todo!(),
+                },
+                (None, Some(TypeValue::Integer(b)), Some(TypeValue::Integer(c))) => {
+                    match b.checked_add(c) {
+                        Ok(z) => {
+                            let mut new_state = state.clone();
+                            new_state.insert(out.clone(), TypeValue::Integer(z));
+                            vec![new_state]
+                        }
+                        _ => Vec::new(),
+                    }
+                }
+                _ => todo!(),
+            },
             _ => todo!(),
         },
         _ => todo!(),
@@ -2412,40 +2461,31 @@ impl TypeValueInteger {
         }
     }
 
-    fn checked_add(&self, rhs: i128) -> Result<Self, ()> {
-        match self {
-            Self::U8(range) => {
-                let rhs = MyRange::from(u8::try_from(rhs).map_err(drop)?);
-                Ok(Self::U8(range.clone() + rhs))
-            }
-            Self::U16(range) => {
-                let rhs = MyRange::from(u16::try_from(rhs).map_err(drop)?);
-                Ok(Self::U16(range.clone() + rhs))
-            }
-            Self::U32(range) => {
-                let rhs = MyRange::from(u32::try_from(rhs).map_err(drop)?);
-                Ok(Self::U32(range.clone() + rhs))
-            }
-            Self::U64(range) => {
-                let rhs = MyRange::from(u64::try_from(rhs).map_err(drop)?);
-                Ok(Self::U64(range.clone() + rhs))
-            }
-            Self::I8(range) => {
-                let rhs = MyRange::from(i8::try_from(rhs).map_err(drop)?);
-                Ok(Self::I8(range.clone() + rhs))
-            }
-            Self::I16(range) => {
-                let rhs = MyRange::from(i16::try_from(rhs).map_err(drop)?);
-                Ok(Self::I16(range.clone() + rhs))
-            }
-            Self::I32(range) => {
-                let rhs = MyRange::from(i32::try_from(rhs).map_err(drop)?);
-                Ok(Self::I32(range.clone() + rhs))
-            }
-            Self::I64(range) => {
-                let rhs = MyRange::from(i64::try_from(rhs).map_err(drop)?);
-                Ok(Self::I64(range.clone() + rhs))
-            }
+    fn checked_add_i128(&self, rhs: i128) -> Result<Self, ()> {
+        match self.clone() {
+            Self::U8(a) if let Ok(b) = u8::try_from(rhs) => Ok(Self::U8(a + b)),
+            Self::U16(a) if let Ok(b) = u16::try_from(rhs) => Ok(Self::U16(a + b)),
+            Self::U32(a) if let Ok(b) = u32::try_from(rhs) => Ok(Self::U32(a + b)),
+            Self::U64(a) if let Ok(b) = u64::try_from(rhs) => Ok(Self::U64(a + b)),
+            Self::I8(a) if let Ok(b) = i8::try_from(rhs) => Ok(Self::I8(a + b)),
+            Self::I16(a) if let Ok(b) = i16::try_from(rhs) => Ok(Self::I16(a + b)),
+            Self::I32(a) if let Ok(b) = i32::try_from(rhs) => Ok(Self::I32(a + b)),
+            Self::I64(a) if let Ok(b) = i64::try_from(rhs) => Ok(Self::I64(a + b)),
+            _ => Err(()),
+        }
+    }
+
+    fn checked_add(&self, rhs: &Self) -> Result<Self, ()> {
+        match (self.clone(), rhs.clone()) {
+            (Self::U8(a), Self::U8(b)) => Ok(Self::U8(a + b)),
+            (Self::U16(a), Self::U16(b)) => Ok(Self::U16(a + b)),
+            (Self::U32(a), Self::U32(b)) => Ok(Self::U32(a + b)),
+            (Self::U64(a), Self::U64(b)) => Ok(Self::U64(a + b)),
+            (Self::I8(a), Self::I8(b)) => Ok(Self::I8(a + b)),
+            (Self::I16(a), Self::I16(b)) => Ok(Self::I16(a + b)),
+            (Self::I32(a), Self::I32(b)) => Ok(Self::I32(a + b)),
+            (Self::I64(a), Self::I64(b)) => Ok(Self::I64(a + b)),
+            _ => Err(()),
         }
     }
 
@@ -2784,7 +2824,7 @@ impl<
             + Zero
             + One
             + OverflowingAdd,
-    > std::ops::Add for MyRange<T>
+    > std::ops::Add<Self> for MyRange<T>
 {
     type Output = Self;
 
@@ -2795,6 +2835,36 @@ impl<
                     && let Some(rhs) = other.value() =>
             {
                 let (sum, _) = lhs.overflowing_add(&rhs);
+                Self {
+                    domain: sum..=sum,
+                    min: Some(sum),
+                    abs_min: Some(sum),
+                    max: Some(sum),
+                    transform: Vec::new(),
+                }
+            }
+            _ => todo!(),
+        }
+    }
+}
+
+impl<
+        T: Copy
+            + Ord
+            + std::ops::Sub<Output = T>
+            + std::ops::Add<Output = T>
+            + Bounded
+            + Zero
+            + One
+            + OverflowingAdd,
+    > std::ops::Add<T> for MyRange<T>
+{
+    type Output = Self;
+
+    fn add(self, other: T) -> Self {
+        match self.transform.is_empty() {
+            true if let Some(lhs) = self.value() => {
+                let (sum, _) = lhs.overflowing_add(&other);
                 Self {
                     domain: sum..=sum,
                     min: Some(sum),
