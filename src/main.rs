@@ -230,8 +230,8 @@ mod tests {
     ) -> NonNull<NewNode> {
         println!("test_optimization");
         unsafe {
-            let (new_nodes, read) = build_optimized_tree(nodes);
-
+            let (new_nodes_opt, read) = build_optimized_tree(nodes);
+            let new_nodes = new_nodes_opt.unwrap();
             // assert!(false);
 
             match_nodes(new_nodes, expected_build);

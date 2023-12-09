@@ -21,108 +21,114 @@ const DEFAULT_LOOP_LIMIT: usize = 100;
 const UNROLL_LIMIT: usize = 4096;
 
 unsafe fn remove_node(
-    next_state_node_opt: Option<NonNull<NewStateNode>>,
     current: NonNull<NewStateNode>,
-    first_node: &mut NonNull<NewNode>,
-) {
-    // We unwrap here since it would be an error for an add assign to be the last node.
-    let mut next_state_node = next_state_node_opt.unwrap();
+    first_node: &mut Option<NonNull<NewNode>>,
+) -> Option<NonNull<NewStateNode>> {
+    dbg!("hit this");
 
-    // Update syntax node
-    {
-        match current.as_ref().statement.as_ref().preceding {
-            Some(Preceding::Parent(mut parent)) => {
-                debug_assert_eq!(current.as_ref().statement.as_ref().child, None);
-                parent.as_mut().child = current.as_ref().statement.as_ref().next;
+    let rtn = match current.as_ref().next {
+        (Some(mut next_node), None) | (None, Some(mut next_node)) => {
+            // x.as_mut().statement.as_mut().preceding = current.as_ref().statement.as_ref().preceding;
+            // x.as_mut().prev.unwrap().as_mut().next = (current.as_ref().prev,None);
+            next_node.as_mut().prev = current.as_ref().prev;
+
+            match (
+                current.as_ref().statement.as_ref().preceding,
+                current.as_ref().prev,
+            ) {
+                (Some(Preceding::Parent(mut parent)), Some(mut prev_node)) => {
+                    debug_assert_eq!(prev_node.as_ref().statement, parent);
+                    prev_node.as_mut().next = (Some(next_node), None);
+                    parent.as_mut().child = Some(next_node.as_ref().statement);
+                }
+                (Some(Preceding::Previous(mut previous)), Some(mut prev_node)) => {
+                    debug_assert_eq!(prev_node.as_ref().statement, previous);
+                    prev_node.as_mut().next = (Some(next_node), None);
+                    previous.as_mut().next = Some(next_node.as_ref().statement);
+                }
+                (None, None) => {
+                    todo!();
+                    // debug_assert_eq!(Some(current.as_ref().statement), *first_node);
+                    // *first_node = Some(next_node.as_ref().statement);
+                }
+                _ => unreachable!(),
             }
-            Some(Preceding::Previous(mut previous)) => {
-                debug_assert_eq!(current.as_ref().statement.as_ref().child, None);
-                previous.as_mut().next = current.as_ref().statement.as_ref().next;
-            }
-            None => {
-                debug_assert_eq!(current.as_ref().statement, *first_node);
-                // We unwrap here since if there is no next node, this
-                // is both the 1st node and last node, thus removing it is an error.
-                *first_node = next_state_node.as_ref().statement;
-            }
+
+            Some(next_node)
         }
-        next_state_node.as_mut().statement.as_mut().preceding =
-            current.as_ref().statement.as_ref().preceding;
+        // This is checked before this function is called.
+        (Some(_), Some(_)) => unreachable!(),
+        (None, None) => {
+            match (
+                current.as_ref().statement.as_ref().preceding,
+                current.as_ref().prev,
+            ) {
+                (Some(Preceding::Parent(mut parent)), Some(mut prev_node)) => {
+                    debug_assert_eq!(prev_node.as_ref().statement, parent);
+                    prev_node.as_mut().next = (None, None);
+                    parent.as_mut().child = None;
+                }
+                (Some(Preceding::Previous(mut previous)), Some(mut prev_node)) => {
+                    debug_assert_eq!(prev_node.as_ref().statement, previous);
+                    prev_node.as_mut().next = (None, None);
+                    previous.as_mut().next = None;
+                }
+                (None, None) => todo!(),
+                _ => unreachable!(),
+            }
 
-        alloc::dealloc(
-            current.as_ref().statement.as_ptr().cast(),
-            alloc::Layout::new::<NewNode>(),
-        );
-    }
+            None
+        }
+    };
 
-    // Update state node
-    {
-        next_state_node.as_mut().prev = current.as_ref().prev;
-        current.as_ref().prev.unwrap().as_mut().next = (Some(next_state_node), None);
-        alloc::dealloc(
-            current.as_ptr().cast(),
-            alloc::Layout::new::<NewStateNode>(),
-        );
-    }
+    alloc::dealloc(
+        current.as_ref().statement.as_ptr().cast(),
+        alloc::Layout::new::<NewNode>(),
+    );
+    alloc::dealloc(
+        current.as_ptr().cast(),
+        alloc::Layout::new::<NewStateNode>(),
+    );
+
+    rtn
 }
 
 pub unsafe fn build_optimized_tree(
     graph: NonNull<NewStateNode>,
-) -> (NonNull<NewNode>, HashSet<Identifier>) {
-    // unsafe {
-    //     println!("------------checking optimization input------------");
-    //     let mut stack = vec![graph];
-    //     while let Some(current) = stack.pop() {
-    //         println!("current: {:?}",current);
-    //         println!("statement: {:?}",current.as_ref().statement);
-    //         match current.as_ref().statement.as_ref().statement.arg.as_slice() {
-    //             [Value::Variable(Variable { identifier, index: None }), Value::Literal(Literal::Integer(_))] => {
-    //                 println!("identifier.as_ptr(): {:?}",identifier.as_ptr());
-    //                 println!("identifier.capacity(): {:?}",identifier.capacity());
-    //                 println!("identifier.len(): {:?}",identifier.len());
-    //             }
-    //             _ => {}
-    //         }
-
-    //         if let Some(one) = current.as_ref().next.0 {
-    //             stack.push(one);
-    //         }
-    //         if let Some(two) = current.as_ref().next.1 {
-    //             stack.push(two);
-    //         }
-    //     }
-    //     println!("----------------------------------------------------");
-    // }
-
+) -> (Option<NonNull<NewNode>>, HashSet<Identifier>) {
     let mut types = HashMap::new();
     let mut read = HashSet::new();
 
     // The 1st step is iterating over nodes which don't diverge
     // (`next.0.is_none() || next.1.is_none()`), all these can be simply inlined.
-    let mut stack = vec![graph];
-    let mut first_node = graph.as_ref().statement;
-    while let Some(mut current) = stack.pop() {
+    let mut next_state_node = Some(graph);
+    let mut first_node = Some(graph.as_ref().statement);
+
+    while let Some(mut current) = next_state_node {
+        // Assert only 1 possible next;
+        debug_assert!(current
+            .as_ref()
+            .next
+            .0
+            .and(current.as_ref().next.1)
+            .is_none());
+
+        println!("------------checking optimization input------------");
+        let mut check_stack = vec![first_node.unwrap()];
+        while let Some(check_current) = check_stack.pop() {
+            println!("{:?}: {:?}", check_current, check_current.as_ref());
+
+            if let Some(child) = check_current.as_ref().child {
+                check_stack.push(child);
+            }
+            if let Some(next) = check_current.as_ref().next {
+                check_stack.push(next);
+            }
+        }
+        println!();
+
         // println!("current: {current:?}");
         // println!("statement: {:?}",current.as_ref().statement);
-
-        let next_state_node_opt = match current.as_ref().next {
-            (Some(x), None) | (None, Some(x)) => {
-                stack.push(x);
-                Some(x)
-            }
-            (Some(_), Some(_)) => {
-                // For now we stop when hitting a diverging path.
-                current.as_mut().next = (None, None); // This memory leaks the nodes.
-                current.as_mut().statement.as_mut().next = None; // This memory leaks the nodes.
-                current.as_mut().statement.as_mut().child = None; // This memory leaks the nodes.
-                break;
-            }
-            (None, None) => {
-                current.as_mut().statement.as_mut().next = None; // This memory leaks the nodes.
-                current.as_mut().statement.as_mut().child = None; // This memory leaks the nodes.
-                None
-            }
-        };
 
         // dbg!(&current.as_ref().statement.as_ref().statement.op);
 
@@ -153,6 +159,15 @@ pub unsafe fn build_optimized_tree(
                     } else {
                         todo!()
                     }
+
+                    // Set next node.
+                    debug_assert!(current
+                        .as_ref()
+                        .next
+                        .0
+                        .and(current.as_ref().next.1)
+                        .is_none());
+                    next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
                 [Value::Variable(Variable {
                     identifier,
@@ -176,6 +191,15 @@ pub unsafe fn build_optimized_tree(
                     } else {
                         todo!()
                     }
+
+                    // Set next node.
+                    debug_assert!(current
+                        .as_ref()
+                        .next
+                        .0
+                        .and(current.as_ref().next.1)
+                        .is_none());
+                    next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
                 _ => todo!(),
             },
@@ -193,6 +217,15 @@ pub unsafe fn build_optimized_tree(
                             } else {
                                 read.insert(identifier.clone());
                             }
+
+                            // Set next node.
+                            debug_assert!(current
+                                .as_ref()
+                                .next
+                                .0
+                                .and(current.as_ref().next.1)
+                                .is_none());
+                            next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                         }
                         _ => todo!(),
                     }
@@ -206,12 +239,14 @@ pub unsafe fn build_optimized_tree(
                     identifier,
                     index: None,
                 }), Value::Literal(Literal::Integer(_))] => {
+                    dbg!("hit this");
                     let variable_state = current.as_ref().state.get(identifier).unwrap();
                     match variable_state {
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
                         {
-                            remove_node(next_state_node_opt, current, &mut first_node)
+                            // Removes node and sets next node.
+                            next_state_node = remove_node(current, &mut first_node);
                         }
                         _ => todo!(),
                     }
@@ -229,7 +264,8 @@ pub unsafe fn build_optimized_tree(
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
                         {
-                            remove_node(next_state_node_opt, current, &mut first_node)
+                            // Removes node and sets next node.
+                            next_state_node = remove_node(current, &mut first_node);
                         }
                         _ => todo!(),
                     }
@@ -247,7 +283,8 @@ pub unsafe fn build_optimized_tree(
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
                         {
-                            remove_node(next_state_node_opt, current, &mut first_node)
+                            // Removes node and sets next node.
+                            next_state_node = remove_node(current, &mut first_node);
                         }
                         _ => todo!(),
                     }
@@ -265,7 +302,8 @@ pub unsafe fn build_optimized_tree(
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
                         {
-                            remove_node(next_state_node_opt, current, &mut first_node)
+                            // Removes node and sets next node.
+                            next_state_node = remove_node(current, &mut first_node);
                         }
                         _ => todo!(),
                     }
@@ -282,7 +320,8 @@ pub unsafe fn build_optimized_tree(
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
                         {
-                            remove_node(next_state_node_opt, current, &mut first_node)
+                            // Removes node and sets next node.
+                            next_state_node = remove_node(current, &mut first_node);
                         }
                         _ => todo!(),
                     }
@@ -299,7 +338,8 @@ pub unsafe fn build_optimized_tree(
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
                         {
-                            remove_node(next_state_node_opt, current, &mut first_node)
+                            // Removes node and sets next node.
+                            next_state_node = remove_node(current, &mut first_node);
                         }
                         _ => todo!(),
                     }
@@ -316,7 +356,8 @@ pub unsafe fn build_optimized_tree(
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
                         {
-                            remove_node(next_state_node_opt, current, &mut first_node)
+                            // Removes node and sets next node.
+                            next_state_node = remove_node(current, &mut first_node);
                         }
                         _ => todo!(),
                     }
@@ -326,8 +367,15 @@ pub unsafe fn build_optimized_tree(
             // `current` is not used after `current = prev;` but it may be in the future, and I
             // don't want to obfuscate this complex logic further.
             Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => {
-                // We unwrap here since it would be an error for an if to be the last node.
-                let mut next_state_node = next_state_node_opt.unwrap();
+                debug_assert!(current
+                    .as_ref()
+                    .next
+                    .0
+                    .and(current.as_ref().next.1)
+                    .is_none());
+                // We can unwrap here since it would be an error for an if to be the last node.
+                let mut if_next_state_node =
+                    current.as_ref().next.0.or(current.as_ref().next.1).unwrap();
 
                 // Update syntax node
                 {
@@ -338,8 +386,16 @@ pub unsafe fn build_optimized_tree(
                                 current.as_ref().statement.as_ref().next,
                             ) {
                                 (Some(x), None) | (None, Some(x)) => x,
-                                (Some(x), Some(_)) if x == next_state_node.as_ref().statement => x,
-                                (Some(_), Some(x)) if x == next_state_node.as_ref().statement => x,
+                                (Some(x), Some(_))
+                                    if x == if_next_state_node.as_ref().statement =>
+                                {
+                                    x
+                                }
+                                (Some(_), Some(x))
+                                    if x == if_next_state_node.as_ref().statement =>
+                                {
+                                    x
+                                }
                                 _ => unreachable!(),
                             };
                             parent.as_mut().child = Some(following);
@@ -350,18 +406,26 @@ pub unsafe fn build_optimized_tree(
                                 current.as_ref().statement.as_ref().next,
                             ) {
                                 (Some(x), None) | (None, Some(x)) => x,
-                                (Some(x), Some(_)) if x == next_state_node.as_ref().statement => x,
-                                (Some(_), Some(x)) if x == next_state_node.as_ref().statement => x,
+                                (Some(x), Some(_))
+                                    if x == if_next_state_node.as_ref().statement =>
+                                {
+                                    x
+                                }
+                                (Some(_), Some(x))
+                                    if x == if_next_state_node.as_ref().statement =>
+                                {
+                                    x
+                                }
                                 _ => unreachable!(),
                             };
                             previous.as_mut().next = Some(following);
                         }
                         None => {
-                            debug_assert_eq!(current.as_ref().statement, first_node);
-                            first_node = next_state_node.as_ref().statement;
+                            debug_assert_eq!(Some(current.as_ref().statement), first_node);
+                            first_node = Some(if_next_state_node.as_ref().statement);
                         }
                     }
-                    next_state_node.as_mut().statement.as_mut().preceding =
+                    if_next_state_node.as_mut().statement.as_mut().preceding =
                         current.as_ref().statement.as_ref().preceding;
 
                     alloc::dealloc(
@@ -372,13 +436,16 @@ pub unsafe fn build_optimized_tree(
 
                 // Update state node
                 {
-                    next_state_node.as_mut().prev = current.as_ref().prev;
-                    current.as_ref().prev.unwrap().as_mut().next = (Some(next_state_node), None);
+                    if_next_state_node.as_mut().prev = current.as_ref().prev;
+                    current.as_ref().prev.unwrap().as_mut().next = (Some(if_next_state_node), None);
                     alloc::dealloc(
                         current.as_ptr().cast(),
                         alloc::Layout::new::<NewStateNode>(),
                     );
                 }
+
+                // Set next node.
+                next_state_node = Some(if_next_state_node);
             }
             Op::Syscall(Syscall::Read) => match slice {
                 [Value::Variable(Variable {
@@ -402,6 +469,15 @@ pub unsafe fn build_optimized_tree(
 
                     let ident_clone = identifier.clone();
                     read.insert(ident_clone);
+
+                    // Set next node.
+                    debug_assert!(current
+                        .as_ref()
+                        .next
+                        .0
+                        .and(current.as_ref().next.1)
+                        .is_none());
+                    next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
                 _ => todo!(),
             },
@@ -412,6 +488,15 @@ pub unsafe fn build_optimized_tree(
                 })] => {
                     debug_assert!(current.as_ref().state.contains_key(identifier));
                     read.insert(identifier.clone());
+
+                    // Set next node.
+                    debug_assert!(current
+                        .as_ref()
+                        .next
+                        .0
+                        .and(current.as_ref().next.1)
+                        .is_none());
+                    next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
                 _ => todo!(),
             },
@@ -443,6 +528,15 @@ pub unsafe fn build_optimized_tree(
                             } else {
                                 todo!()
                             }
+
+                            // Set next node.
+                            debug_assert!(current
+                                .as_ref()
+                                .next
+                                .0
+                                .and(current.as_ref().next.1)
+                                .is_none());
+                            next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                         }
                         _ => todo!(),
                     }
@@ -517,7 +611,7 @@ pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
     // TODO This doesn't dealloc anything in `graph` which may be very very big. Do this deallocation.
     let (new_nodes, read) = build_optimized_tree(graph);
 
-    finish_optimized_tree(new_nodes, read)
+    finish_optimized_tree(new_nodes.unwrap(), read)
 }
 
 unsafe fn new_passback_end(mut node: NonNull<NewStateNode>, end: GraphNodeEnd) {
@@ -1413,6 +1507,7 @@ unsafe fn dealloc_syntax(first: NonNull<NewNode>) {
         );
     }
 }
+
 unsafe fn dealloc_tree(first: NonNull<NewStateNode>) {
     let mut stack = vec![first];
     while let Some(cursor) = stack.pop() {
