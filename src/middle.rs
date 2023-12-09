@@ -832,9 +832,13 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
     let mut stack = vec![(
         node,
         None,
+        None,
         Rc::new(RefCell::new(HashMap::<Variable, Variable>::new())),
     )];
-    while let Some((current, mut preceding, variable_map)) = stack.pop() {
+
+    while let Some((current, mut preceding, next_carry, variable_map)) = stack.pop() {
+        // dbg!(&current.as_ref().statement.op);
+
         match current.as_ref().statement.op {
             // Function definition
             Op::Intrinsic(Intrinsic::Def) => match current.as_ref().statement.arg.as_slice() {
@@ -848,12 +852,11 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     assert!(pre_existing.is_none());
 
                     if let Some(next) = current.as_ref().next {
-                        stack.push((next, preceding, variable_map));
+                        stack.push((next, preceding, next_carry, variable_map));
                     }
                 }
                 _ => todo!(),
             },
-
             Op::Intrinsic(Intrinsic::Assign) => match current.as_ref().statement.arg.as_slice() {
                 // Function call
                 [Value::Variable(lhs), Value::Variable(Variable {
@@ -862,6 +865,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                 }), tail @ ..]
                     if let Some(def) = functions.get(rhs) =>
                 {
+                    debug_assert!(next_carry.is_none());
                     let function = functions.get(rhs).unwrap();
 
                     let head_iter = std::iter::once({
@@ -953,7 +957,12 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         });
                     let new_variable_map =
                         Rc::new(RefCell::new(head_iter.chain(tail_iter).collect()));
-                    stack.push((*function, preceding, new_variable_map));
+                    stack.push((
+                        *function,
+                        preceding,
+                        current.as_ref().next.map(|n| (n, variable_map.clone())),
+                        new_variable_map,
+                    ));
                 }
                 [Value::Variable(_), ..] => {
                     // Create new node.
@@ -1003,7 +1012,15 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
 
                     debug_assert!(current.as_ref().child.is_none());
                     if let Some(next) = current.as_ref().next {
-                        stack.push((next, Some(Preceding::Previous(new)), variable_map));
+                        stack.push((
+                            next,
+                            Some(Preceding::Previous(new)),
+                            next_carry,
+                            variable_map,
+                        ));
+                        new.as_mut().next = None;
+                    } else if let Some((next, old_variable_map)) = next_carry {
+                        stack.push((next, Some(Preceding::Previous(new)), None, old_variable_map));
                         new.as_mut().next = None;
                     }
                 }
@@ -1059,7 +1076,15 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     // Update child/next.
                     debug_assert!(current.as_ref().child.is_none());
                     if let Some(next) = current.as_ref().next {
-                        stack.push((next, Some(Preceding::Previous(new)), variable_map));
+                        stack.push((
+                            next,
+                            Some(Preceding::Previous(new)),
+                            next_carry,
+                            variable_map,
+                        ));
+                        new.as_mut().next = None;
+                    } else if let Some((next, old_variable_map)) = next_carry {
+                        stack.push((next, Some(Preceding::Previous(new)), None, old_variable_map));
                         new.as_mut().next = None;
                     }
                 }
@@ -1101,11 +1126,24 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
 
                 // Update child/next.
                 if let Some(child) = current.as_ref().child {
-                    stack.push((child, Some(Preceding::Parent(new)), variable_map.clone()));
+                    stack.push((
+                        child,
+                        Some(Preceding::Parent(new)),
+                        None,
+                        variable_map.clone(),
+                    ));
                     new.as_mut().child = None;
                 }
                 if let Some(next) = current.as_ref().next {
-                    stack.push((next, Some(Preceding::Previous(new)), variable_map));
+                    stack.push((
+                        next,
+                        Some(Preceding::Previous(new)),
+                        next_carry,
+                        variable_map,
+                    ));
+                    new.as_mut().next = None;
+                } else if let Some((next, old_variable_map)) = next_carry {
+                    stack.push((next, Some(Preceding::Previous(new)), None, old_variable_map));
                     new.as_mut().next = None;
                 }
             }
