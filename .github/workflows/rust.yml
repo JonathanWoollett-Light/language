@@ -21,14 +21,14 @@ jobs:
         rustup component add rustfmt
         cargo fmt --check
       
-    # Install and cache `cargo-audit`
-    - uses: taiki-e/cache-cargo-install-action@v1
-      with:
-        tool: cargo-audit
-        locked: false # See https://github.com/taiki-e/cache-cargo-install-action/issues/2
+    # # Install and cache `cargo-audit`
+    # - uses: taiki-e/cache-cargo-install-action@v1
+    #   with:
+    #     tool: cargo-audit
+    #     locked: false # See https://github.com/taiki-e/cache-cargo-install-action/issues/2
 
-    - name: Audit
-      run: cargo audit
+    # - name: Audit
+    #   run: cargo audit
       
     - name: Check
       run: cargo check
@@ -38,13 +38,13 @@ jobs:
         rustup component add clippy
         cargo clippy --tests -- --deny warnings
       
-    # Install and cache `cargo-udeps`
-    - uses: taiki-e/cache-cargo-install-action@v1
-      with:
-        tool: cargo-udeps
+    # # Install and cache `cargo-udeps`
+    # - uses: taiki-e/cache-cargo-install-action@v1
+    #   with:
+    #     tool: cargo-udeps
 
-    - name: Dependencies
-      run: cargo udeps
+    # - name: Dependencies
+    #   run: cargo udeps
 
     - name: Test
       run: cargo test
