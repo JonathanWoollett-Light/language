@@ -43,15 +43,15 @@ jobs:
       run: cargo test
 
     # https://github.com/taiki-e/cargo-llvm-cov#continuous-integration
-    # - name: Install cargo-llvm-cov
-    #   uses: taiki-e/install-action@cargo-llvm-cov
-    # - name: Generate code coverage
-    #   run: cargo llvm-cov --lcov --output-path lcov.info
-    # - name: Upload coverage to Codecov
-    #   uses: codecov/codecov-action@v3
-    #   with:
-    #     files: lcov.info
-    #     fail_ci_if_error: true
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+    - name: Generate code coverage
+      run: cargo llvm-cov --lcov --output-path lcov.info
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: lcov.info
+        fail_ci_if_error: true
 
     # - name: Install Bencher
     #   uses: bencherdev/bencher@main
