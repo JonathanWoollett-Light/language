@@ -56,6 +56,7 @@ fn main() {
 mod tests {
     use super::*;
     use crate::ast::*;
+    use crate::middle::TypeKey;
     use std::collections::HashSet;
     use std::fs::remove_file;
     use std::fs::OpenOptions;
@@ -224,7 +225,7 @@ mod tests {
     fn test_optimization(
         nodes: NonNull<NewStateNode>,
         expected_build: &[Statement],
-        expected_read: HashSet<Identifier>,
+        expected_read: HashSet<Variable>,
         expected_finish: &[Statement],
     ) -> NonNull<NewNode> {
         println!("test_optimization");
@@ -317,6 +318,10 @@ mod tests {
         );
         assert_eq!(output.status.code(), Some(expected_exitcode));
         remove_file(path).unwrap();
+    }
+
+    fn ident(s: &str) -> TypeKey {
+        TypeKey::Variable(Variable { identifier: s.bytes().collect::<Vec<_>>(), index: None})
     }
 
     #[test]
@@ -581,9 +586,7 @@ mod tests {
         );
     }
 
-    fn ident(s: &str) -> Identifier {
-        s.bytes().collect::<Vec<_>>()
-    }
+    
 
     #[test]
     fn six() {
@@ -1938,7 +1941,7 @@ mod tests {
                     arg: vec![Value::Variable(Variable::new("a"))],
                 },
             ],
-            HashSet::from([Identifier::from("a")]),
+            HashSet::from([Variable::from("a")]),
             &[
                 Statement {
                     comptime: false,
@@ -2235,7 +2238,7 @@ mod tests {
                     arg: vec![Value::Literal(Literal::Integer(0))],
                 },
             ],
-            HashSet::from([Identifier::from("a")]),
+            HashSet::from([Variable::from("a")]),
             &[
                 Statement {
                     comptime: false,
@@ -3996,6 +3999,100 @@ mod tests {
             svc #0\n\
         ",
             3,
+        );
+    }
+
+    #[test]
+    fn fifteen() {
+        const SOURCE: &str = "mov x8 93\nmov x0 0\nsvc 0";
+
+        // Parsing
+        let nodes = test_parsing(
+            SOURCE,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X8),
+                        Value::Literal(Literal::Integer(93)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X0),
+                        Value::Literal(Literal::Integer(0)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Svc),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+            ],
+        );
+
+        // Function inlining
+        let inlined = test_inlining(
+            nodes,
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X8),
+                        Value::Literal(Literal::Integer(93)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X0),
+                        Value::Literal(Literal::Integer(0)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Svc),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+            ],
+        );
+
+        // Exploration
+        let path = test_exploration(
+            inlined,
+            &[TypeValueState::from([
+                (TypeKey::from(Register::X8), TypeValue::try_from(93i128).unwrap())
+            ])],
+            &[&[TypeValueState::from([
+                (TypeKey::from(Register::X8), TypeValue::try_from(93i128).unwrap())
+            ])],
+            &[TypeValueState::from([
+                (TypeKey::from(Register::X8), TypeValue::try_from(93i128).unwrap()),
+                (TypeKey::from(Register::X0), TypeValue::try_from(0i128).unwrap())
+            ])],
+            &[TypeValueState::from([
+                (TypeKey::from(Register::X8), TypeValue::try_from(93i128).unwrap()),
+                (TypeKey::from(Register::X0), TypeValue::try_from(0i128).unwrap())
+            ])]
+            ],
+            &[
+                TypeValueState::from([
+                    (TypeKey::from(Register::X8), TypeValue::try_from(93i128).unwrap()),
+                ]),
+                TypeValueState::from([
+                    (TypeKey::from(Register::X8), TypeValue::try_from(93i128).unwrap()),
+                    (TypeKey::from(Register::X0), TypeValue::try_from(0i128).unwrap())
+                ]),
+                TypeValueState::from([
+                    (TypeKey::from(Register::X8), TypeValue::try_from(93i128).unwrap()),
+                    (TypeKey::from(Register::X0), TypeValue::try_from(0i128).unwrap())
+                ])
+            ],
         );
     }
 

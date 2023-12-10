@@ -46,6 +46,7 @@ pub enum Value {
     Literal(Literal),
     Variable(Variable),
     Type(Type),
+    Register(Register),
 }
 impl Value {
     pub fn literal(&self) -> Option<&Literal> {
@@ -64,6 +65,158 @@ impl Value {
         match self {
             Self::Variable(variable) => Some(variable),
             _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+pub enum Register {
+    X0,
+    X1,
+    X2,
+    X3,
+    X4,
+    X5,
+    X6,
+    X7,
+    X8,
+    X9,
+    X10,
+    X11,
+    X12,
+    X13,
+    X14,
+    X15,
+    X16,
+    X17,
+    X18,
+    X19,
+    X20,
+    X21,
+    X22,
+    X23,
+    X24,
+    X25,
+    X26,
+    X27,
+    X28,
+    X29,
+    X30,
+    X31,
+    W0,
+    W1,
+    W2,
+    W3,
+    W4,
+    W5,
+    W6,
+    W7,
+    W8,
+    W9,
+    W10,
+    W11,
+    W12,
+    W13,
+    W14,
+    W15,
+    W16,
+    W17,
+    W18,
+    W19,
+    W20,
+    W21,
+    W22,
+    W23,
+    W24,
+    W25,
+    W26,
+    W27,
+    W28,
+    W29,
+    W30,
+    W31,
+}
+
+impl TryFrom<&[u8]> for Register {
+    type Error = ();
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        match bytes {
+            b"x0" => Ok(Self::X0),
+            b"x1" => Ok(Self::X1),
+            b"x2" => Ok(Self::X2),
+            b"x3" => Ok(Self::X3),
+            b"x4" => Ok(Self::X4),
+            b"x5" => Ok(Self::X5),
+            b"x6" => Ok(Self::X6),
+            b"x7" => Ok(Self::X7),
+            b"x8" => Ok(Self::X8),
+            b"x9" => Ok(Self::X9),
+            b"x10" => Ok(Self::X10),
+            b"x11" => Ok(Self::X11),
+            b"x12" => Ok(Self::X12),
+            b"x13" => Ok(Self::X13),
+            b"x14" => Ok(Self::X14),
+            b"x15" => Ok(Self::X15),
+            b"x16" => Ok(Self::X16),
+            b"x17" => Ok(Self::X17),
+            b"x18" => Ok(Self::X18),
+            b"x19" => Ok(Self::X19),
+            b"x20" => Ok(Self::X20),
+            b"x21" => Ok(Self::X21),
+            b"x22" => Ok(Self::X22),
+            b"x23" => Ok(Self::X23),
+            b"x24" => Ok(Self::X24),
+            b"x25" => Ok(Self::X25),
+            b"x26" => Ok(Self::X26),
+            b"x27" => Ok(Self::X27),
+            b"x28" => Ok(Self::X28),
+            b"x29" => Ok(Self::X29),
+            b"x30" => Ok(Self::X30),
+            b"w0" => Ok(Self::W0),
+            b"w1" => Ok(Self::W1),
+            b"w2" => Ok(Self::W2),
+            b"w3" => Ok(Self::W3),
+            b"w4" => Ok(Self::W4),
+            b"w5" => Ok(Self::W5),
+            b"w6" => Ok(Self::W6),
+            b"w7" => Ok(Self::W7),
+            b"w8" => Ok(Self::W8),
+            b"w9" => Ok(Self::W9),
+            b"w10" => Ok(Self::W10),
+            b"w11" => Ok(Self::W11),
+            b"w12" => Ok(Self::W12),
+            b"w13" => Ok(Self::W13),
+            b"w14" => Ok(Self::W14),
+            b"w15" => Ok(Self::W15),
+            b"w16" => Ok(Self::W16),
+            b"w17" => Ok(Self::W17),
+            b"w18" => Ok(Self::W18),
+            b"w19" => Ok(Self::W19),
+            b"w20" => Ok(Self::W20),
+            b"w21" => Ok(Self::W21),
+            b"w22" => Ok(Self::W22),
+            b"w23" => Ok(Self::W23),
+            b"w24" => Ok(Self::W24),
+            b"w25" => Ok(Self::W25),
+            b"w26" => Ok(Self::W26),
+            b"w27" => Ok(Self::W27),
+            b"w28" => Ok(Self::W28),
+            b"w29" => Ok(Self::W29),
+            b"w30" => Ok(Self::W30),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<&Variable> for Register {
+    type Error = ();
+    fn try_from(Variable { identifier, index }: &Variable) -> Result<Self, Self::Error> {
+        if *index == None
+            && let Ok(register) = Register::try_from(identifier.as_slice())
+        {
+            Ok(register)
+        } else {
+            Err(())
         }
     }
 }
@@ -107,6 +260,15 @@ impl Default for Literal {
 pub struct Variable {
     pub identifier: Identifier,
     pub index: Option<Box<Index>>,
+}
+
+impl From<&str> for Variable {
+    fn from(bytes: &str) -> Self {
+        Self {
+            identifier: Identifier::from(bytes.as_bytes()),
+            index: None
+        }
+    }
 }
 
 pub type Identifier = Vec<u8>;
@@ -378,10 +540,22 @@ pub enum Op {
     Intrinsic(Intrinsic),
     Syscall(Syscall),
     Special(Special),
+    Assembly(Assembly),
 }
 
 impl Default for Op {
     fn default() -> Self {
         Self::Intrinsic(Default::default())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Assembly {
+    Svc,
+    Mov,
+}
+impl Default for Assembly {
+    fn default() -> Self {
+        Self::Svc
     }
 }

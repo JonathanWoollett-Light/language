@@ -104,9 +104,9 @@ unsafe fn remove_node(
 
 pub unsafe fn build_optimized_tree(
     graph: NonNull<NewStateNode>,
-) -> (Option<NonNull<NewNode>>, HashSet<Identifier>) {
-    let mut types = HashMap::new();
-    let mut read = HashSet::new();
+) -> (Option<NonNull<NewNode>>, HashSet<Variable>) {
+    let mut types = HashMap::<Variable, Type>::new();
+    let mut read = HashSet::<Variable>::new();
 
     // The 1st step is iterating over nodes which don't diverge
     // (`next.0.is_none() || next.1.is_none()`), all these can be simply inlined.
@@ -161,13 +161,15 @@ pub unsafe fn build_optimized_tree(
         let slice = current.as_ref().statement.as_ref().statement.arg.as_slice();
         match current.as_ref().statement.as_ref().statement.op {
             Op::Intrinsic(Intrinsic::Assign) => match slice {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current.as_ref().state.get(identifier).unwrap().clone();
+                [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current
+                        .as_ref()
+                        .state
+                        .get(&TypeKey::from(variable))
+                        .unwrap()
+                        .clone();
                     let variable_type = Type::from(variable_state);
-                    let existing = types.insert(identifier, variable_type.clone());
+                    let existing = types.insert(variable.clone(), variable_type.clone());
 
                     // If not already declared this declares the type of the variable.
                     if existing.is_none() {
@@ -193,13 +195,15 @@ pub unsafe fn build_optimized_tree(
                         .is_none());
                     next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), Value::Literal(Literal::String(_))] => {
-                    let variable_state = current.as_ref().state.get(identifier).unwrap().clone();
+                [Value::Variable(variable), Value::Literal(Literal::String(_))] => {
+                    let variable_state = current
+                        .as_ref()
+                        .state
+                        .get(&TypeKey::from(variable))
+                        .unwrap()
+                        .clone();
                     let variable_type = Type::from(variable_state);
-                    let existing = types.insert(identifier, variable_type.clone());
+                    let existing = types.insert(variable.clone(), variable_type.clone());
 
                     // If not already declared this declares the type of the variable.
                     if existing.is_none() {
@@ -228,18 +232,19 @@ pub unsafe fn build_optimized_tree(
                 _ => todo!(),
             },
             Op::Syscall(Syscall::Exit) => match slice {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                })] => {
-                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                [Value::Variable(variable)] => {
+                    let variable_state = current
+                        .as_ref()
+                        .state
+                        .get(&TypeKey::from(variable))
+                        .unwrap();
                     match variable_state {
                         TypeValue::Integer(TypeValueInteger::U8(range)) => {
                             if let Some(exact) = range.value() {
                                 current.as_mut().statement.as_mut().statement.arg =
                                     vec![Value::Literal(Literal::Integer(i128::from(exact)))];
                             } else {
-                                read.insert(identifier.clone());
+                                read.insert(variable.clone());
                             }
 
                             // Set next node.
@@ -296,11 +301,12 @@ pub unsafe fn build_optimized_tree(
             },
             // On the linear path, these statements can simply be removed.
             Op::Intrinsic(Intrinsic::AddAssign) => match slice {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current
+                        .as_ref()
+                        .state
+                        .get(&TypeKey::from(variable))
+                        .unwrap();
                     match variable_state {
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
@@ -315,11 +321,12 @@ pub unsafe fn build_optimized_tree(
             },
             // On the linear path, these statements can simply be removed.
             Op::Intrinsic(Intrinsic::SubAssign) => match slice {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current
+                        .as_ref()
+                        .state
+                        .get(&TypeKey::from(variable))
+                        .unwrap();
                     match variable_state {
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
@@ -334,11 +341,12 @@ pub unsafe fn build_optimized_tree(
             },
             // On the linear path, these statements can simply be removed.
             Op::Intrinsic(Intrinsic::MulAssign) => match slice {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current
+                        .as_ref()
+                        .state
+                        .get(&TypeKey::from(variable))
+                        .unwrap();
                     match variable_state {
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
@@ -353,11 +361,12 @@ pub unsafe fn build_optimized_tree(
             },
             // On the linear path, these statements can simply be removed.
             Op::Intrinsic(Intrinsic::DivAssign) => match slice {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current
+                        .as_ref()
+                        .state
+                        .get(&TypeKey::from(variable))
+                        .unwrap();
                     match variable_state {
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
@@ -371,11 +380,12 @@ pub unsafe fn build_optimized_tree(
                 _ => todo!(),
             },
             Op::Intrinsic(Intrinsic::AndAssign) => match slice {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current
+                        .as_ref()
+                        .state
+                        .get(&TypeKey::from(variable))
+                        .unwrap();
                     match variable_state {
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
@@ -389,11 +399,12 @@ pub unsafe fn build_optimized_tree(
                 _ => todo!(),
             },
             Op::Intrinsic(Intrinsic::OrAssign) => match slice {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current
+                        .as_ref()
+                        .state
+                        .get(&TypeKey::from(variable))
+                        .unwrap();
                     match variable_state {
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
@@ -407,11 +418,12 @@ pub unsafe fn build_optimized_tree(
                 _ => todo!(),
             },
             Op::Intrinsic(Intrinsic::XorAssign) => match slice {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
+                    let variable_state = current
+                        .as_ref()
+                        .state
+                        .get(&TypeKey::from(variable))
+                        .unwrap();
                     match variable_state {
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
@@ -508,11 +520,15 @@ pub unsafe fn build_optimized_tree(
                 next_state_node = Some(if_next_state_node);
             }
             Op::Syscall(Syscall::Read) => match slice {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), Value::Literal(Literal::Integer(_))] => {
-                    let state = Type::from(current.as_ref().state.get(identifier).unwrap().clone());
+                [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
+                    let state = Type::from(
+                        current
+                            .as_ref()
+                            .state
+                            .get(&TypeKey::from(variable))
+                            .unwrap()
+                            .clone(),
+                    );
 
                     // This will may move `identifier` so we need to re-acquire it after.
                     current
@@ -522,13 +538,11 @@ pub unsafe fn build_optimized_tree(
                         .statement
                         .arg
                         .insert(1, Value::Type(state));
-                    let Variable { identifier, .. } =
-                        current.as_ref().statement.as_ref().statement.arg[0]
-                            .variable()
-                            .unwrap();
+                    let variable = current.as_ref().statement.as_ref().statement.arg[0]
+                        .variable()
+                        .unwrap();
 
-                    let ident_clone = identifier.clone();
-                    read.insert(ident_clone);
+                    read.insert(variable.clone());
 
                     // Set next node.
                     debug_assert!(current
@@ -542,12 +556,12 @@ pub unsafe fn build_optimized_tree(
                 _ => todo!(),
             },
             Op::Syscall(Syscall::Write) => match slice {
-                [Value::Literal(Literal::Integer(_)), Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                })] => {
-                    debug_assert!(current.as_ref().state.contains_key(identifier));
-                    read.insert(identifier.clone());
+                [Value::Literal(Literal::Integer(_)), Value::Variable(variable)] => {
+                    debug_assert!(current
+                        .as_ref()
+                        .state
+                        .contains_key(&TypeKey::from(variable)));
+                    read.insert(variable.clone());
 
                     // Set next node.
                     debug_assert!(current
@@ -561,27 +575,28 @@ pub unsafe fn build_optimized_tree(
                 _ => todo!(),
             },
             Op::Intrinsic(Intrinsic::Add) => match slice {
-                [variable @ Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), Value::Variable(_), Value::Variable(_)] => {
+                [value @ Value::Variable(variable), Value::Variable(_), Value::Variable(_)] => {
                     // let variable_state = (
                     //     current.as_ref().state.get(out),
                     //     current.as_ref().state.get(rhs).unwrap(),
                     //     current.as_ref().state.get(lhs).unwrap()
                     // );
-                    let variable_state = current.as_ref().state.get(identifier).unwrap();
+                    let variable_state = current
+                        .as_ref()
+                        .state
+                        .get(&TypeKey::from(variable))
+                        .unwrap();
                     let variable_type = Type::from(variable_state.clone());
                     match variable_state {
                         TypeValue::Integer(TypeValueInteger::U8(a)) if let Some(x) = a.value() => {
-                            let existing = types.insert(identifier, variable_type.clone());
+                            let existing = types.insert(variable.clone(), variable_type.clone());
 
                             // If not already declared this declares the type of the variable.
                             if existing.is_none() {
                                 current.as_mut().statement.as_mut().statement.op =
                                     Op::Special(Special::Type);
                                 current.as_mut().statement.as_mut().statement.arg = vec![
-                                    variable.clone(),
+                                    value.clone(),
                                     Value::Type(variable_type),
                                     Value::Literal(Literal::Integer(x as _)),
                                 ];
@@ -612,7 +627,7 @@ pub unsafe fn build_optimized_tree(
 
 pub unsafe fn finish_optimized_tree(
     new_nodes: NonNull<NewNode>,
-    read: HashSet<Identifier>,
+    read: HashSet<Variable>,
 ) -> NonNull<NewNode> {
     // After iterating through the full AST we now know which variables are used so can remove
     // unused variables
@@ -621,11 +636,8 @@ pub unsafe fn finish_optimized_tree(
     while let Some(current) = stack.pop() {
         match current.as_ref().statement.op {
             Op::Special(Special::Type) => match current.as_ref().statement.arg.as_slice() {
-                [Value::Variable(Variable {
-                    identifier,
-                    index: None,
-                }), Value::Type(_), Value::Literal(_)] => {
-                    if !read.contains(identifier) {
+                [Value::Variable(variable), Value::Type(_), Value::Literal(_)] => {
+                    if !read.contains(variable) {
                         match current.as_ref().preceding {
                             Some(Preceding::Parent(mut parent)) => {
                                 parent.as_mut().child = current.as_ref().next;
@@ -1121,6 +1133,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                                 variable_map.borrow().get(old_variable).unwrap().clone(),
                             ),
                             Value::Type(_) => todo!(),
+                            Value::Register(_) => todo!(),
                         });
                     let new_variable_map =
                         Rc::new(RefCell::new(head_iter.chain(tail_iter).collect()));
@@ -1402,11 +1415,11 @@ pub unsafe fn explore_node(
 
     match statement.op {
         Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => match statement.arg.as_slice() {
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
+            [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
                 let _scope = current_ref.scope;
                 let y = current_ref
                     .state
-                    .get(identifier)
+                    .get(&TypeKey::from(variable))
                     .unwrap()
                     .integer()
                     .unwrap();
@@ -1424,11 +1437,11 @@ pub unsafe fn explore_node(
             _ => todo!(),
         },
         Op::Intrinsic(Intrinsic::If(Cmp::Lt)) => match statement.arg.as_slice() {
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
+            [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
                 let _scope = current_ref.scope;
                 let y = current_ref
                     .state
-                    .get(identifier)
+                    .get(&TypeKey::from(variable))
                     .unwrap()
                     .integer()
                     .unwrap();
@@ -1549,6 +1562,15 @@ pub unsafe fn explore_node(
         },
         // See 2
         Op::Syscall(Syscall::Exit) => {}
+        Op::Assembly(Assembly::Svc) if let Some(x0) = current_ref.state.get(&TypeKey::from(Register::X8)) => {
+            // TODO If we do not know if it is 93 or not it should diverge into the 2 cases (the one where it is, the one where isn't).
+            match x0 {
+                TypeValue::Integer(TypeValueInteger::I64(x)) if let Some(y) = x.value() && y == 93 => {
+                    
+                },
+                _ => todo!()
+            }
+        }
         // See 1 & 2
         _ => {
             let scope = current_ref.scope;
@@ -1652,28 +1674,24 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
     let slice = statement.arg.as_slice();
     match statement.op {
         Op::Special(Special::Type) => match slice {
-            [Value::Variable(Variable {
-                identifier,
-                index: None,
-            }), Value::Type(x)] => match state.get(identifier) {
-                // You can't redefine a static.
-                Some(_) => Vec::new(),
-                None => {
-                    let mut new_state = state.clone();
-                    new_state.insert(identifier.clone(), TypeValue::from(x.clone()));
-                    vec![new_state]
+            [Value::Variable(variable), Value::Type(x)] => {
+                match state.get(&TypeKey::from(variable)) {
+                    // You can't redefine a static.
+                    Some(_) => Vec::new(),
+                    None => {
+                        let mut new_state = state.clone();
+                        new_state.insert(TypeKey::from(variable), TypeValue::from(x.clone()));
+                        vec![new_state]
+                    }
                 }
-            },
+            }
             _ => todo!(),
         },
         Op::Syscall(Syscall::Exit) => match slice {
             // TODO Check the variable for `_integer` fits into i32.
             [Value::Literal(Literal::Integer(_integer))] => vec![state.clone()],
             // TODO Check the variable for `identifier` fits into i32.
-            [Value::Variable(Variable {
-                identifier,
-                index: None,
-            })] => match state.get(identifier) {
+            [Value::Variable(variable)] => match state.get(&TypeKey::from(variable)) {
                 Some(TypeValue::Integer(integer)) => match integer {
                     TypeValueInteger::I8(_) => vec![state.clone()],
                     TypeValueInteger::U8(_) => vec![state.clone()],
@@ -1695,22 +1713,25 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Intrinsic(Intrinsic::Assign) => match slice {
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
-                match state.get(identifier) {
+            [Value::Variable(rhs), Value::Literal(Literal::Integer(x))] => {
+                let key = TypeKey::from(rhs);
+                match state.get(&key) {
                     // Iterates over the set of integer types which could contain `x`, returning a new state for each possibility.
                     None => TypeValueInteger::possible(*x)
                         .into_iter()
                         .map(|p| {
                             let mut new_state = state.clone();
-                            new_state.insert(identifier.clone(), TypeValue::Integer(p));
+                            new_state.insert(key.clone(), TypeValue::Integer(p));
                             new_state
                         })
                         .collect(),
                     _ => todo!(),
                 }
             }
-            [Value::Variable(Variable { identifier, .. }), outer @ Value::Literal(Literal::Integer(first)), tail @ ..] => {
-                match state.get(identifier) {
+            [Value::Variable(variable), outer @ Value::Literal(Literal::Integer(first)), tail @ ..] =>
+            {
+                let key = TypeKey::from(variable);
+                match state.get(&key) {
                     None => {
                         let possible = tail.iter().fold(Type::possible(*first), |acc, x| {
                             let next = Type::possible(*x.literal().unwrap().integer().unwrap());
@@ -1730,7 +1751,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                                     .collect::<Vec<_>>();
 
                                 new_state.insert(
-                                    identifier.clone(),
+                                    key.clone(),
                                     TypeValue::Array(TypeValueArray { item, values }),
                                 );
                                 new_state
@@ -1740,8 +1761,9 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                     _ => todo!(),
                 }
             }
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::String(s))] => {
-                match state.get(identifier) {
+            [Value::Variable(variable), Value::Literal(Literal::String(s))] => {
+                let key = TypeKey::from(variable);
+                match state.get(&key) {
                     None => {
                         let mut new_state = state.clone();
                         let values = std::iter::repeat(Type::U8)
@@ -1750,7 +1772,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                             .collect::<Vec<_>>();
 
                         new_state.insert(
-                            identifier.clone(),
+                            key.clone(),
                             TypeValue::Array(TypeValueArray {
                                 item: Type::U8,
                                 values,
@@ -1764,16 +1786,13 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Intrinsic(Intrinsic::SubAssign) => match slice {
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
-                match state.get(identifier) {
+            [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
+                let key = TypeKey::from(variable);
+                match state.get(&key) {
                     Some(TypeValue::Integer(y)) => match y.checked_sub(*x) {
                         Ok(z) => {
                             let mut new_state = state.clone();
-                            *new_state
-                                .get_mut(identifier)
-                                .unwrap()
-                                .integer_mut()
-                                .unwrap() = z;
+                            *new_state.get_mut(&key).unwrap().integer_mut().unwrap() = z;
                             vec![new_state]
                         }
                         _ => todo!(),
@@ -1784,16 +1803,13 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Intrinsic(Intrinsic::AddAssign) => match slice {
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
-                match state.get(identifier) {
+            [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
+                let key = TypeKey::from(variable);
+                match state.get(&key) {
                     Some(TypeValue::Integer(y)) => match y.checked_add_i128(*x) {
                         Ok(z) => {
                             let mut new_state = state.clone();
-                            *new_state
-                                .get_mut(identifier)
-                                .unwrap()
-                                .integer_mut()
-                                .unwrap() = z;
+                            *new_state.get_mut(&key).unwrap().integer_mut().unwrap() = z;
                             vec![new_state]
                         }
                         _ => todo!(),
@@ -1804,16 +1820,13 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Intrinsic(Intrinsic::MulAssign) => match slice {
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
-                match state.get(identifier) {
+            [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
+                let key = TypeKey::from(variable);
+                match state.get(&key) {
                     Some(TypeValue::Integer(y)) => match y.checked_mul(*x) {
                         Ok(z) => {
                             let mut new_state = state.clone();
-                            *new_state
-                                .get_mut(identifier)
-                                .unwrap()
-                                .integer_mut()
-                                .unwrap() = z;
+                            *new_state.get_mut(&key).unwrap().integer_mut().unwrap() = z;
                             vec![new_state]
                         }
                         _ => todo!(),
@@ -1824,16 +1837,13 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Intrinsic(Intrinsic::DivAssign) => match slice {
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
-                match state.get(identifier) {
+            [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
+                let key = TypeKey::from(variable);
+                match state.get(&key) {
                     Some(TypeValue::Integer(y)) => match y.checked_div(*x) {
                         Ok(z) => {
                             let mut new_state = state.clone();
-                            *new_state
-                                .get_mut(identifier)
-                                .unwrap()
-                                .integer_mut()
-                                .unwrap() = z;
+                            *new_state.get_mut(&key).unwrap().integer_mut().unwrap() = z;
                             vec![new_state]
                         }
                         _ => todo!(),
@@ -1844,16 +1854,13 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Intrinsic(Intrinsic::AndAssign) => match slice {
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
-                match state.get(identifier) {
+            [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
+                let key = TypeKey::from(variable);
+                match state.get(&key) {
                     Some(TypeValue::Integer(y)) => match y.checked_and(*x) {
                         Ok(z) => {
                             let mut new_state = state.clone();
-                            *new_state
-                                .get_mut(identifier)
-                                .unwrap()
-                                .integer_mut()
-                                .unwrap() = z;
+                            *new_state.get_mut(&key).unwrap().integer_mut().unwrap() = z;
                             vec![new_state]
                         }
                         _ => todo!(),
@@ -1864,16 +1871,13 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Intrinsic(Intrinsic::OrAssign) => match slice {
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
-                match state.get(identifier) {
+            [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
+                let key = TypeKey::from(variable);
+                match state.get(&key) {
                     Some(TypeValue::Integer(y)) => match y.checked_or(*x) {
                         Ok(z) => {
                             let mut new_state = state.clone();
-                            *new_state
-                                .get_mut(identifier)
-                                .unwrap()
-                                .integer_mut()
-                                .unwrap() = z;
+                            *new_state.get_mut(&key).unwrap().integer_mut().unwrap() = z;
                             vec![new_state]
                         }
                         _ => todo!(),
@@ -1884,16 +1888,13 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Intrinsic(Intrinsic::XorAssign) => match slice {
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
-                match state.get(identifier) {
+            [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
+                let key = TypeKey::from(variable);
+                match state.get(&key) {
                     Some(TypeValue::Integer(y)) => match y.checked_xor(*x) {
                         Ok(z) => {
                             let mut new_state = state.clone();
-                            *new_state
-                                .get_mut(identifier)
-                                .unwrap()
-                                .integer_mut()
-                                .unwrap() = z;
+                            *new_state.get_mut(&key).unwrap().integer_mut().unwrap() = z;
                             vec![new_state]
                         }
                         _ => todo!(),
@@ -1904,9 +1905,9 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Intrinsic(Intrinsic::If(_)) => match slice {
-            [Value::Literal(Literal::Integer(_)), Value::Variable(Variable { identifier, .. })]
-            | [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(_))] => {
-                match state.get(identifier) {
+            [Value::Literal(Literal::Integer(_)), Value::Variable(variable)]
+            | [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
+                match state.get(&TypeKey::from(variable)) {
                     Some(TypeValue::Integer(_)) => vec![state.clone()],
                     _ => todo!(),
                 }
@@ -1914,16 +1915,13 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Special(Special::Require(Cmp::Ge)) => match slice {
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
-                match state.get(identifier) {
+            [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
+                let key = TypeKey::from(variable);
+                match state.get(&key) {
                     Some(TypeValue::Integer(y)) => match y.greater_than_or_equal(*x) {
                         true => {
                             let mut new_state = state.clone();
-                            let integer = new_state
-                                .get_mut(identifier)
-                                .unwrap()
-                                .integer_mut()
-                                .unwrap();
+                            let integer = new_state.get_mut(&key).unwrap().integer_mut().unwrap();
                             integer.set_min(*x).unwrap();
                             vec![new_state]
                         }
@@ -1935,16 +1933,13 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Special(Special::Require(Cmp::Le)) => match slice {
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(x))] => {
-                match state.get(identifier) {
+            [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
+                let key = TypeKey::from(variable);
+                match state.get(&key) {
                     Some(TypeValue::Integer(y)) => match y.less_than_or_equal(*x) {
                         true => {
                             let mut new_state = state.clone();
-                            let integer = new_state
-                                .get_mut(identifier)
-                                .unwrap()
-                                .integer_mut()
-                                .unwrap();
+                            let integer = new_state.get_mut(&key).unwrap().integer_mut().unwrap();
                             integer.set_max(*x).unwrap();
                             vec![new_state]
                         }
@@ -1956,14 +1951,15 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Syscall(Syscall::Read) => match slice {
-            [Value::Variable(Variable { identifier, .. }), Value::Literal(Literal::Integer(_))] => {
-                match state.get(identifier) {
+            [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
+                let key = TypeKey::from(variable);
+                match state.get(&key) {
                     // Iterates over the set of integer types which could contain `x`, returning a new state for each possibility.
                     None => TypeValueInteger::any()
                         .into_iter()
                         .map(|p| {
                             let mut new_state = state.clone();
-                            new_state.insert(identifier.clone(), TypeValue::Integer(p));
+                            new_state.insert(key.clone(), TypeValue::Integer(p));
                             new_state
                         })
                         .collect(),
@@ -1973,31 +1969,14 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Syscall(Syscall::Write) => match slice {
-            [Value::Literal(Literal::Integer(_)), Value::Variable(Variable { identifier, .. })] => {
-                match state.get(identifier) {
+            [Value::Literal(Literal::Integer(_)), Value::Variable(variable)] => {
+                match state.get(&TypeKey::from(variable)) {
                     // All defined values have known sizes so can be written.
                     Some(_) => vec![state.clone()],
                     // You cannot write an undefined value.
                     None => Vec::new(),
                 }
             }
-            _ => todo!(),
-        },
-        Op::Syscall(Syscall::MemfdCreate) => match slice {
-            [Value::Variable(Variable { identifier, .. })] => match state.get(identifier) {
-                None => [
-                    TypeValueInteger::I32(MyRange::any()),
-                    TypeValueInteger::I64(MyRange::any()),
-                ]
-                .into_iter()
-                .map(|p| {
-                    let mut new_state = state.clone();
-                    new_state.insert(identifier.clone(), TypeValue::Integer(p));
-                    new_state
-                })
-                .collect(),
-                _ => todo!(),
-            },
             _ => todo!(),
         },
         Op::Intrinsic(Intrinsic::Loop) => match slice {
@@ -2012,13 +1991,11 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Intrinsic(Intrinsic::Add) => match slice {
-            [Value::Variable(Variable {
-                identifier: out, ..
-            }), Value::Variable(Variable {
-                identifier: lhs, ..
-            }), Value::Variable(Variable {
-                identifier: rhs, ..
-            })] => match (state.get(out), state.get(lhs), state.get(rhs)) {
+            [Value::Variable(out), Value::Variable(lhs), Value::Variable(rhs)] => match (
+                state.get(&TypeKey::from(out)),
+                state.get(&TypeKey::from(lhs)),
+                state.get(&TypeKey::from(rhs)),
+            ) {
                 (
                     Some(TypeValue::Integer(a)),
                     Some(TypeValue::Integer(b)),
@@ -2026,7 +2003,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                 ) => match a.checked_add(b).and_then(|ab| ab.checked_add(c)) {
                     Ok(z) => {
                         let mut new_state = state.clone();
-                        *new_state.get_mut(out).unwrap() = TypeValue::Integer(z);
+                        *new_state.get_mut(&TypeKey::from(out)).unwrap() = TypeValue::Integer(z);
                         vec![new_state]
                     }
                     _ => todo!(),
@@ -2035,7 +2012,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                     match b.checked_add(c) {
                         Ok(z) => {
                             let mut new_state = state.clone();
-                            new_state.insert(out.clone(), TypeValue::Integer(z));
+                            new_state.insert(TypeKey::from(out), TypeValue::Integer(z));
                             vec![new_state]
                         }
                         _ => Vec::new(),
@@ -2045,48 +2022,88 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             },
             _ => todo!(),
         },
-        _ => todo!(),
+        Op::Assembly(Assembly::Mov) => match slice {
+            [Value::Register(register), Value::Literal(Literal::Integer(integer))] => {
+                let mut new_state = state.clone();
+                new_state.insert(
+                    TypeKey::Register(register.clone()),
+                    TypeValue::try_from(*integer).unwrap(),
+                );
+                vec![new_state]
+            }
+            _ => todo!(),
+        },
+        Op::Assembly(Assembly::Svc) => vec![state.clone()],
+        _ => todo!()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeValueState(HashMap<Identifier, TypeValue>);
+pub struct TypeValueState(HashMap<TypeKey, TypeValue>);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TypeKey {
+    Register(Register),
+    Variable(Variable),
+}
+
+impl From<Variable> for TypeKey {
+    fn from(variable: Variable) -> TypeKey {
+        TypeKey::Variable(variable)
+    }
+}
+impl From<Register> for TypeKey {
+    fn from(variable: Register) -> TypeKey {
+        TypeKey::Register(variable)
+    }
+}
+impl From<&Variable> for TypeKey {
+    fn from(variable: &Variable) -> TypeKey {
+        TypeKey::Variable(variable.clone())
+    }
+}
+impl From<&Register> for TypeKey {
+    fn from(variable: &Register) -> TypeKey {
+        TypeKey::Register(variable.clone())
+    }
+}
 
 #[allow(dead_code)]
 impl TypeValueState {
     pub fn new() -> Self {
         Self(HashMap::new())
     }
-    fn iter(&self) -> std::collections::hash_map::Iter<'_, Identifier, TypeValue> {
+    fn iter(&self) -> std::collections::hash_map::Iter<'_, TypeKey, TypeValue> {
         self.0.iter()
     }
-    fn into_iter(self) -> std::collections::hash_map::IntoIter<Identifier, TypeValue> {
+    fn into_iter(self) -> std::collections::hash_map::IntoIter<TypeKey, TypeValue> {
         self.0.into_iter()
     }
     fn len(&self) -> usize {
         self.0.len()
     }
-    fn get(&self, key: &Identifier) -> Option<&TypeValue> {
+    fn get(&self, key: &TypeKey) -> Option<&TypeValue> {
         self.0.get(key)
     }
-    fn get_mut(&mut self, key: &Identifier) -> Option<&mut TypeValue> {
+    fn get_mut(&mut self, key: &TypeKey) -> Option<&mut TypeValue> {
         self.0.get_mut(key)
     }
-    fn insert(&mut self, key: Identifier, value: TypeValue) -> Option<TypeValue> {
+    fn insert(&mut self, key: TypeKey, value: TypeValue) -> Option<TypeValue> {
         self.0.insert(key, value)
     }
-    fn contains_key(&self, key: &Identifier) -> bool {
+    fn contains_key(&self, key: &TypeKey) -> bool {
         self.0.contains_key(key)
     }
 }
-impl<const N: usize> From<[(Identifier, TypeValue); N]> for TypeValueState {
-    fn from(arr: [(Identifier, TypeValue); N]) -> Self {
+
+impl<const N: usize> From<[(TypeKey, TypeValue); N]> for TypeValueState {
+    fn from(arr: [(TypeKey, TypeValue); N]) -> Self {
         Self(HashMap::from(arr))
     }
 }
 
 #[derive(Debug, Clone)]
-struct TypeState(HashMap<Identifier, Type>);
+struct TypeState(HashMap<TypeKey, Type>);
 
 impl From<TypeValueState> for TypeState {
     fn from(x: TypeValueState) -> Self {
@@ -2099,22 +2116,22 @@ impl TypeState {
     fn new() -> Self {
         Self(HashMap::new())
     }
-    fn iter(&self) -> std::collections::hash_map::Iter<'_, Identifier, Type> {
+    fn iter(&self) -> std::collections::hash_map::Iter<'_, TypeKey, Type> {
         self.0.iter()
     }
-    fn into_iter(self) -> std::collections::hash_map::IntoIter<Identifier, Type> {
+    fn into_iter(self) -> std::collections::hash_map::IntoIter<TypeKey, Type> {
         self.0.into_iter()
     }
     fn len(&self) -> usize {
         self.0.len()
     }
-    fn get(&self, key: &Identifier) -> Option<&Type> {
+    fn get(&self, key: &TypeKey) -> Option<&Type> {
         self.0.get(key)
     }
-    fn get_mut(&mut self, key: &Identifier) -> Option<&mut Type> {
+    fn get_mut(&mut self, key: &TypeKey) -> Option<&mut Type> {
         self.0.get_mut(key)
     }
-    fn insert(&mut self, key: Identifier, value: Type) -> Option<Type> {
+    fn insert(&mut self, key: TypeKey, value: Type) -> Option<Type> {
         self.0.insert(key, value)
     }
     fn cost(&self) -> u64 {
@@ -2158,6 +2175,13 @@ impl From<TypeValue> for Type {
 pub enum TypeValue {
     Integer(TypeValueInteger),
     Array(TypeValueArray),
+}
+
+impl TryFrom<i128> for TypeValue {
+    type Error = ();
+    fn try_from(x: i128) -> Result<Self, Self::Error> {
+        Ok(Self::Integer(TypeValueInteger::try_from(x)?))
+    }
 }
 
 #[allow(unreachable_patterns)]
@@ -2237,6 +2261,33 @@ pub enum TypeValueInteger {
     I16(MyRange<i16>),
     I32(MyRange<i32>),
     I64(MyRange<i64>),
+}
+
+impl TryFrom<i128> for TypeValueInteger {
+    type Error = ();
+    fn try_from(x: i128) -> Result<Self, Self::Error> {
+        Ok(Self::I64(MyRange::from(i64::try_from(x).map_err(drop)?)))
+
+        // if let Ok(x) = u8::try_from(x) {
+        //     Ok(Self::U8(MyRange::from(x)))
+        // } else if let Ok(x) = u16::try_from(x) {
+        //     Ok(Self::U16(MyRange::from(x)))
+        // } else if let Ok(x) = u32::try_from(x) {
+        //     Ok(Self::U32(MyRange::from(x)))
+        // } else if let Ok(x) = u64::try_from(x) {
+        //     Ok(Self::U64(MyRange::from(x)))
+        // } else if let Ok(x) = i8::try_from(x) {
+        //     Ok(Self::I8(MyRange::from(x)))
+        // } else if let Ok(x) = i16::try_from(x) {
+        //     Ok(Self::I16(MyRange::from(x)))
+        // } else if let Ok(x) = i32::try_from(x) {
+        //     Ok(Self::I32(MyRange::from(x)))
+        // } else if let Ok(x) = i64::try_from(x) {
+        //     Ok(Self::I64(MyRange::from(x)))
+        // } else {
+        //     Err(())
+        // }
+    }
 }
 
 impl From<TypeValueInteger> for Type {

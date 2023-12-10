@@ -7,8 +7,6 @@ use std::iter::once;
 use std::iter::Peekable;
 use std::ptr::{self, NonNull};
 
-const RUNTIME_IDENTIFIER: &[u8] = b"comptime";
-
 #[cfg(test)]
 use tracing::instrument;
 
@@ -65,7 +63,7 @@ pub fn get_variable<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Variable {
         }
 
         match bytes.peek().map(|r| r.as_ref().unwrap()) {
-            Some(b'a'..=b'z' | b'_') => {
+            Some(b'a'..=b'z' | b'_' | b'0'..=b'9') => {
                 let b = bytes.next().unwrap().unwrap();
                 identifier.push(b);
             }
@@ -211,7 +209,14 @@ pub fn get_value<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Value {
             Value::Literal(Literal::Integer(0))
         }
         Some(b'1'..=b'9') => Value::Literal(Literal::Integer(non_zero_integer(bytes))),
-        Some(b'a'..=b'z' | b'_') => Value::Variable(get_variable(bytes)),
+        Some(b'a'..=b'z' | b'_') => {
+            let variable = get_variable(bytes);
+            if let Ok(register) = Register::try_from(&variable) {
+                Value::Register(register)
+            } else {
+                Value::Variable(variable)
+            }
+        }
         Some(b'"') => {
             bytes.next().unwrap().unwrap();
             #[cfg(debug_assertions)]
@@ -398,16 +403,16 @@ pub fn get_cmp<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Cmp {
 
 #[cfg_attr(test, instrument(level = "TRACE", skip(bytes)))]
 pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
-    let mut variable = get_variable(bytes);
+    let variable = get_variable(bytes);
 
     // Check if statement should only be evaluated at runtime.
-    let mut comptime = false;
-    if variable.identifier == RUNTIME_IDENTIFIER {
-        assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+    let comptime = false;
+    // if variable.identifier == "comptime" {
+    //     assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
 
-        variable = get_variable(bytes);
-        comptime = true;
-    }
+    //     variable = get_variable(bytes);
+    //     comptime = true;
+    // }
 
     match (variable.identifier.as_slice(), &variable.index) {
         // Loop
@@ -449,6 +454,22 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                 comptime,
                 op: Op::Intrinsic(Intrinsic::Def),
                 arg: vec![Value::Variable(ident)],
+            }
+        }
+        (b"svc", None) => {
+            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+            Statement {
+                comptime,
+                op: Op::Assembly(Assembly::Svc),
+                arg: get_values(bytes),
+            }
+        }
+        (b"mov", None) => {
+            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+            Statement {
+                comptime,
+                op: Op::Assembly(Assembly::Mov),
+                arg: get_values(bytes),
             }
         }
         _ => {
