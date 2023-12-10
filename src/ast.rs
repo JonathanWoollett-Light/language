@@ -6,13 +6,6 @@ pub enum Preceding {
     Parent(NonNull<NewNode>),
     Previous(NonNull<NewNode>),
 }
-impl Preceding {
-    pub fn unwrap(self) -> NonNull<NewNode> {
-        match self {
-            Self::Parent(p) | Self::Previous(p) => p,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct NewNode {

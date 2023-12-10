@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::ast::*;
 use num_traits::bounds::Bounded;
 use num_traits::identities::One;
@@ -22,16 +24,19 @@ const UNROLL_LIMIT: usize = 4096;
 
 unsafe fn remove_node(
     current: NonNull<NewStateNode>,
-    first_node: &mut Option<NonNull<NewNode>>,
+    first_state_node: &mut Option<NonNull<NewStateNode>>,
 ) -> Option<NonNull<NewStateNode>> {
-    dbg!("hit this");
-
     let rtn = match current.as_ref().next {
         (Some(mut next_node), None) | (None, Some(mut next_node)) => {
             // x.as_mut().statement.as_mut().preceding = current.as_ref().statement.as_ref().preceding;
             // x.as_mut().prev.unwrap().as_mut().next = (current.as_ref().prev,None);
-            next_node.as_mut().prev = current.as_ref().prev;
 
+            // Update previous value of next state node and syntax node.
+            next_node.as_mut().prev = current.as_ref().prev;
+            next_node.as_mut().statement.as_mut().preceding =
+                current.as_ref().statement.as_ref().preceding;
+
+            // Update next value of previous state node and syntax node.
             match (
                 current.as_ref().statement.as_ref().preceding,
                 current.as_ref().prev,
@@ -47,9 +52,9 @@ unsafe fn remove_node(
                     previous.as_mut().next = Some(next_node.as_ref().statement);
                 }
                 (None, None) => {
+                    debug_assert_eq!(Some(current), *first_state_node);
+                    *first_state_node = Some(next_node);
                     todo!();
-                    // debug_assert_eq!(Some(current.as_ref().statement), *first_node);
-                    // *first_node = Some(next_node.as_ref().statement);
                 }
                 _ => unreachable!(),
             }
@@ -73,7 +78,11 @@ unsafe fn remove_node(
                     prev_node.as_mut().next = (None, None);
                     previous.as_mut().next = None;
                 }
-                (None, None) => todo!(),
+                (None, None) => {
+                    debug_assert_eq!(Some(current), *first_state_node);
+                    *first_state_node = None;
+                    todo!();
+                }
                 _ => unreachable!(),
             }
 
@@ -102,9 +111,17 @@ pub unsafe fn build_optimized_tree(
     // The 1st step is iterating over nodes which don't diverge
     // (`next.0.is_none() || next.1.is_none()`), all these can be simply inlined.
     let mut next_state_node = Some(graph);
-    let mut first_node = Some(graph.as_ref().statement);
+    let mut first_state_node = Some(graph);
 
+    #[cfg(debug_assertions)]
+    let mut checker = 0;
     while let Some(mut current) = next_state_node {
+        #[cfg(debug_assertions)]
+        {
+            assert!(checker < 100);
+            checker += 1;
+        }
+
         // Assert only 1 possible next;
         debug_assert!(current
             .as_ref()
@@ -113,19 +130,26 @@ pub unsafe fn build_optimized_tree(
             .and(current.as_ref().next.1)
             .is_none());
 
-        println!("------------checking optimization input------------");
-        let mut check_stack = vec![first_node.unwrap()];
-        while let Some(check_current) = check_stack.pop() {
-            println!("{:?}: {:?}", check_current, check_current.as_ref());
+        // println!("------------checking optimization input------------");
+        // let mut check_stack = vec![first_state_node.unwrap()];
+        // let mut check_counter = 0;
+        // while let Some(check_current) = check_stack.pop() {
+        //     println!();
+        //     println!("{:?}: {:?} {:?} {:?}", check_current, check_current.as_ref().prev, check_current.as_ref().statement, check_current.as_ref().next);
+        //     println!("{:?}: {:?} {:?} {:?} {:?}", check_current.as_ref().statement, check_current.as_ref().statement.as_ref().statement.op, check_current.as_ref().statement.as_ref().preceding, check_current.as_ref().statement.as_ref().child, check_current.as_ref().statement.as_ref().next);
 
-            if let Some(child) = check_current.as_ref().child {
-                check_stack.push(child);
-            }
-            if let Some(next) = check_current.as_ref().next {
-                check_stack.push(next);
-            }
-        }
-        println!();
+        //     if let Some(one) = check_current.as_ref().next.0 {
+        //         check_stack.push(one);
+        //     }
+        //     if let Some(two) = check_current.as_ref().next.1 {
+        //         check_stack.push(two);
+        //     }
+        //     check_counter += 1;
+        //     if check_counter > 2 {
+        //         break;
+        //     }
+        // }
+        // println!("-----------------------------------------------");
 
         // println!("current: {current:?}");
         // println!("statement: {:?}",current.as_ref().statement);
@@ -219,18 +243,55 @@ pub unsafe fn build_optimized_tree(
                             }
 
                             // Set next node.
-                            debug_assert!(current
-                                .as_ref()
-                                .next
-                                .0
-                                .and(current.as_ref().next.1)
-                                .is_none());
-                            next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
+                            {
+                                debug_assert!(current
+                                    .as_ref()
+                                    .next
+                                    .0
+                                    .and(current.as_ref().next.1)
+                                    .is_none());
+                                // Exits mark the end of execution, their shouldn't be a following node.
+                                debug_assert_eq!(current.as_ref().next, (None, None));
+
+                                // Update syntax node
+                                debug_assert_eq!(current.as_mut().statement.as_mut().child, None);
+                                if let Some(next_syntax_node) =
+                                    current.as_ref().statement.as_ref().next
+                                {
+                                    dealloc_syntax(next_syntax_node);
+                                    current.as_mut().statement.as_mut().next = None;
+                                }
+
+                                // Set next node
+                                next_state_node = None;
+                            }
                         }
                         _ => todo!(),
                     }
                 }
-                [Value::Literal(Literal::Integer(_))] => {}
+                [Value::Literal(Literal::Integer(_))] => {
+                    // Set next node.
+                    {
+                        debug_assert!(current
+                            .as_ref()
+                            .next
+                            .0
+                            .and(current.as_ref().next.1)
+                            .is_none());
+                        // Exits mark the end of execution, their shouldn't be a following node.
+                        debug_assert_eq!(current.as_ref().next, (None, None));
+
+                        // Update syntax node
+                        debug_assert_eq!(current.as_mut().statement.as_mut().child, None);
+                        if let Some(next_syntax_node) = current.as_ref().statement.as_ref().next {
+                            dealloc_syntax(next_syntax_node);
+                            current.as_mut().statement.as_mut().next = None;
+                        }
+
+                        // Set next node
+                        next_state_node = None;
+                    }
+                }
                 _ => todo!(),
             },
             // On the linear path, these statements can simply be removed.
@@ -239,14 +300,13 @@ pub unsafe fn build_optimized_tree(
                     identifier,
                     index: None,
                 }), Value::Literal(Literal::Integer(_))] => {
-                    dbg!("hit this");
                     let variable_state = current.as_ref().state.get(identifier).unwrap();
                     match variable_state {
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
                         {
                             // Removes node and sets next node.
-                            next_state_node = remove_node(current, &mut first_node);
+                            next_state_node = remove_node(current, &mut first_state_node);
                         }
                         _ => todo!(),
                     }
@@ -265,7 +325,7 @@ pub unsafe fn build_optimized_tree(
                             if range.value().is_some() =>
                         {
                             // Removes node and sets next node.
-                            next_state_node = remove_node(current, &mut first_node);
+                            next_state_node = remove_node(current, &mut first_state_node);
                         }
                         _ => todo!(),
                     }
@@ -284,7 +344,7 @@ pub unsafe fn build_optimized_tree(
                             if range.value().is_some() =>
                         {
                             // Removes node and sets next node.
-                            next_state_node = remove_node(current, &mut first_node);
+                            next_state_node = remove_node(current, &mut first_state_node);
                         }
                         _ => todo!(),
                     }
@@ -303,7 +363,7 @@ pub unsafe fn build_optimized_tree(
                             if range.value().is_some() =>
                         {
                             // Removes node and sets next node.
-                            next_state_node = remove_node(current, &mut first_node);
+                            next_state_node = remove_node(current, &mut first_state_node);
                         }
                         _ => todo!(),
                     }
@@ -321,7 +381,7 @@ pub unsafe fn build_optimized_tree(
                             if range.value().is_some() =>
                         {
                             // Removes node and sets next node.
-                            next_state_node = remove_node(current, &mut first_node);
+                            next_state_node = remove_node(current, &mut first_state_node);
                         }
                         _ => todo!(),
                     }
@@ -339,7 +399,7 @@ pub unsafe fn build_optimized_tree(
                             if range.value().is_some() =>
                         {
                             // Removes node and sets next node.
-                            next_state_node = remove_node(current, &mut first_node);
+                            next_state_node = remove_node(current, &mut first_state_node);
                         }
                         _ => todo!(),
                     }
@@ -357,7 +417,7 @@ pub unsafe fn build_optimized_tree(
                             if range.value().is_some() =>
                         {
                             // Removes node and sets next node.
-                            next_state_node = remove_node(current, &mut first_node);
+                            next_state_node = remove_node(current, &mut first_state_node);
                         }
                         _ => todo!(),
                     }
@@ -421,8 +481,8 @@ pub unsafe fn build_optimized_tree(
                             previous.as_mut().next = Some(following);
                         }
                         None => {
-                            debug_assert_eq!(Some(current.as_ref().statement), first_node);
-                            first_node = Some(if_next_state_node.as_ref().statement);
+                            debug_assert_eq!(Some(current), first_state_node);
+                            first_state_node = Some(if_next_state_node);
                         }
                     }
                     if_next_state_node.as_mut().statement.as_mut().preceding =
@@ -547,7 +607,7 @@ pub unsafe fn build_optimized_tree(
         }
     }
 
-    (first_node, read)
+    (first_state_node.map(|s| s.as_ref().statement), read)
 }
 
 pub unsafe fn finish_optimized_tree(
@@ -928,13 +988,12 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
     let mut functions = HashMap::new();
 
     // An iterator yielding unique identifiers.
+    const N: u8 = b'z' - b'a';
     let mut identifier_iterator = (0..).map(|index| {
-        const N: u8 = b'z' - b'a';
-        let ident = (0..index / N)
+        (0..index / N)
             .map(|_| b'z')
             .chain(std::iter::once((index % N) + b'a'))
-            .collect::<Vec<_>>();
-        ident
+            .collect::<Vec<_>>()
     });
 
     let mut stack = vec![(
@@ -1198,6 +1257,69 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                 }
                 _ => todo!(),
             },
+            Op::Syscall(Syscall::Read) => match current.as_ref().statement.arg.as_slice() {
+                [Value::Variable(_), ..] => {
+                    // Create new node.
+                    let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
+                    ptr::copy(current.as_ptr(), dst, 1);
+                    let mut new = NonNull::new(dst).unwrap();
+
+                    let [Value::Variable(variable), tail @ ..] =
+                        new.as_mut().statement.arg.as_mut_slice()
+                    else {
+                        unreachable!()
+                    };
+
+                    // Update new preceding.
+                    match preceding {
+                        Some(Preceding::Parent(mut parent)) => {
+                            debug_assert!(parent.as_ref().child.is_none());
+                            parent.as_mut().child = Some(new);
+                        }
+                        Some(Preceding::Previous(mut previous)) => {
+                            debug_assert!(previous.as_ref().next.is_none());
+                            previous.as_mut().next = Some(new);
+                        }
+                        None => {
+                            first = Some(new);
+                        }
+                    }
+
+                    // Update new variable
+                    let new_identifier = identifier_iterator.next().unwrap();
+                    let new_variable = Variable {
+                        identifier: new_identifier,
+                        index: None,
+                    };
+                    let res = variable_map
+                        .borrow_mut()
+                        .insert(variable.clone(), new_variable.clone());
+                    assert!(res.is_none()); // Assert isn't pre-existing
+                    *variable = new_variable;
+
+                    // Update existing variables
+                    for tail_variable in tail.iter_mut().filter_map(Value::variable_mut) {
+                        let new_tail_variable =
+                            variable_map.borrow().get(tail_variable).unwrap().clone();
+                        *tail_variable = new_tail_variable;
+                    }
+
+                    debug_assert!(current.as_ref().child.is_none());
+                    if let Some(next) = current.as_ref().next {
+                        stack.push((
+                            next,
+                            Some(Preceding::Previous(new)),
+                            next_carry,
+                            variable_map,
+                        ));
+                        new.as_mut().next = None;
+                    } else if let Some((next, old_variable_map)) = next_carry {
+                        stack.push((next, Some(Preceding::Previous(new)), None, old_variable_map));
+                        new.as_mut().next = None;
+                    }
+                }
+                _ => todo!(),
+            },
             // Else
             _ => {
                 // Create new node.
@@ -1206,6 +1328,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                 let mut new = NonNull::new(dst).unwrap();
 
                 // Update new preceding.
+                new.as_mut().preceding = preceding;
                 match preceding {
                     Some(Preceding::Parent(mut parent)) => {
                         debug_assert!(parent.as_ref().child.is_none());
