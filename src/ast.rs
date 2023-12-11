@@ -208,6 +208,78 @@ impl TryFrom<&[u8]> for Register {
     }
 }
 
+impl std::fmt::Display for Register {
+    // This trait requires `fmt` with this exact signature.
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::X0 => write!(f, "x0"),
+            Self::X1 => write!(f, "x1"),
+            Self::X2 => write!(f, "x2"),
+            Self::X3 => write!(f, "x3"),
+            Self::X4 => write!(f, "x4"),
+            Self::X5 => write!(f, "x5"),
+            Self::X6 => write!(f, "x6"),
+            Self::X7 => write!(f, "x7"),
+            Self::X8 => write!(f, "x8"),
+            Self::X9 => write!(f, "x9"),
+            Self::X10 => write!(f, "x10"),
+            Self::X11 => write!(f, "x11"),
+            Self::X12 => write!(f, "x12"),
+            Self::X13 => write!(f, "x13"),
+            Self::X14 => write!(f, "x14"),
+            Self::X15 => write!(f, "x15"),
+            Self::X16 => write!(f, "x16"),
+            Self::X17 => write!(f, "x17"),
+            Self::X18 => write!(f, "x18"),
+            Self::X19 => write!(f, "x19"),
+            Self::X20 => write!(f, "x20"),
+            Self::X21 => write!(f, "x21"),
+            Self::X22 => write!(f, "x22"),
+            Self::X23 => write!(f, "x23"),
+            Self::X24 => write!(f, "x24"),
+            Self::X25 => write!(f, "x25"),
+            Self::X26 => write!(f, "x26"),
+            Self::X27 => write!(f, "x27"),
+            Self::X28 => write!(f, "x28"),
+            Self::X29 => write!(f, "x29"),
+            Self::X30 => write!(f, "x30"),
+            Self::X31 => write!(f, "x31"),
+            Self::W0 => write!(f, "w0"),
+            Self::W1 => write!(f, "w1"),
+            Self::W2 => write!(f, "w2"),
+            Self::W3 => write!(f, "w3"),
+            Self::W4 => write!(f, "w4"),
+            Self::W5 => write!(f, "w5"),
+            Self::W6 => write!(f, "w6"),
+            Self::W7 => write!(f, "w7"),
+            Self::W8 => write!(f, "w8"),
+            Self::W9 => write!(f, "w9"),
+            Self::W10 => write!(f, "w10"),
+            Self::W11 => write!(f, "w11"),
+            Self::W12 => write!(f, "w12"),
+            Self::W13 => write!(f, "w13"),
+            Self::W14 => write!(f, "w14"),
+            Self::W15 => write!(f, "w15"),
+            Self::W16 => write!(f, "w16"),
+            Self::W17 => write!(f, "w17"),
+            Self::W18 => write!(f, "w18"),
+            Self::W19 => write!(f, "w19"),
+            Self::W20 => write!(f, "w20"),
+            Self::W21 => write!(f, "w21"),
+            Self::W22 => write!(f, "w22"),
+            Self::W23 => write!(f, "w23"),
+            Self::W24 => write!(f, "w24"),
+            Self::W25 => write!(f, "w25"),
+            Self::W26 => write!(f, "w26"),
+            Self::W27 => write!(f, "w27"),
+            Self::W28 => write!(f, "w28"),
+            Self::W29 => write!(f, "w29"),
+            Self::W30 => write!(f, "w30"),
+            Self::W31 => write!(f, "w31"),
+        }
+    }
+}
+
 impl TryFrom<&Variable> for Register {
     type Error = ();
     fn try_from(Variable { identifier, index }: &Variable) -> Result<Self, Self::Error> {
@@ -266,7 +338,7 @@ impl From<&str> for Variable {
     fn from(bytes: &str) -> Self {
         Self {
             identifier: Identifier::from(bytes.as_bytes()),
-            index: None
+            index: None,
         }
     }
 }
@@ -330,6 +402,7 @@ pub enum Intrinsic {
     Loop,
     Break,
     Def,
+    Call,
 }
 
 impl Intrinsic {
@@ -391,6 +464,7 @@ pub enum Special {
     Assume(Cmp),
     Require(Cmp),
     Type, // Type,
+    Unreachable,
 }
 
 impl Default for Special {

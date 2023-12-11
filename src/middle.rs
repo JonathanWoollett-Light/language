@@ -618,6 +618,54 @@ pub unsafe fn build_optimized_tree(
                 }
                 _ => todo!(),
             },
+            Op::Assembly(Assembly::Mov) => match slice {
+                [Value::Register(_), Value::Literal(Literal::Integer(_))] => {
+                    // Set next node.
+                    debug_assert!(current
+                        .as_ref()
+                        .next
+                        .0
+                        .or(current.as_ref().next.1)
+                        .is_some());
+                    next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
+                }
+                _ => todo!(),
+            },
+            Op::Assembly(Assembly::Svc) => match slice {
+                [Value::Literal(Literal::Integer(_))] => {
+                    // Set next node.
+                    debug_assert!(current
+                        .as_ref()
+                        .next
+                        .0
+                        .or(current.as_ref().next.1)
+                        .is_some());
+                    next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
+                }
+                _ => todo!(),
+            },
+            Op::Special(Special::Unreachable) => {
+                assert!(slice.is_empty());
+                // As execution ends, we return no valid states.
+                debug_assert!(current
+                    .as_ref()
+                    .next
+                    .0
+                    .and(current.as_ref().next.1)
+                    .is_none());
+                // Exits mark the end of execution, their shouldn't be a following node.
+                debug_assert_eq!(current.as_ref().next, (None, None));
+
+                // Update syntax node
+                debug_assert_eq!(current.as_mut().statement.as_mut().child, None);
+                if let Some(next_syntax_node) = current.as_ref().statement.as_ref().next {
+                    dealloc_syntax(next_syntax_node);
+                    current.as_mut().statement.as_mut().next = None;
+                }
+
+                // Set next node
+                next_state_node = None;
+            }
             _ => todo!(),
         }
     }
@@ -1206,6 +1254,92 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                 }
                 _ => todo!(),
             },
+            Op::Intrinsic(Intrinsic::Call) => match current.as_ref().statement.arg.as_slice() {
+                [Value::Variable(Variable {
+                    identifier: rhs,
+                    index: None,
+                }), tail @ ..] => {
+                    debug_assert!(next_carry.is_none());
+                    let function = functions.get(rhs).unwrap();
+
+                    let iter = tail
+                        .iter()
+                        .enumerate()
+                        .map(|(i, old_value)| match old_value {
+                            Value::Literal(literal) => {
+                                let new_variable = Variable {
+                                    identifier: identifier_iterator.next().unwrap(),
+                                    index: None,
+                                };
+
+                                // Create new node.
+                                let dst =
+                                    alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
+                                std::ptr::write(
+                                    dst,
+                                    NewNode {
+                                        statement: Statement {
+                                            comptime: false,
+                                            op: Op::Intrinsic(Intrinsic::Assign),
+                                            arg: vec![
+                                                Value::Variable(new_variable.clone()),
+                                                Value::Literal(literal.clone()),
+                                            ],
+                                        },
+                                        preceding,
+                                        child: None,
+                                        next: None,
+                                    },
+                                );
+                                let new = NonNull::new(dst).unwrap();
+
+                                // Update preceding
+                                match preceding {
+                                    Some(Preceding::Previous(mut previous)) => {
+                                        debug_assert!(previous.as_ref().next.is_none());
+                                        previous.as_mut().next = Some(new);
+                                    }
+                                    Some(Preceding::Parent(mut parent)) => {
+                                        debug_assert!(parent.as_ref().child.is_none());
+                                        parent.as_mut().child = Some(new);
+                                    }
+                                    None => {
+                                        first = Some(new);
+                                    }
+                                }
+
+                                preceding = Some(Preceding::Previous(new));
+
+                                (
+                                    Variable {
+                                        identifier: Vec::from(b"in"),
+                                        index: Some(Box::new(Index::Offset(Offset::Integer(
+                                            i as u64,
+                                        )))),
+                                    },
+                                    new_variable,
+                                )
+                            }
+                            Value::Variable(old_variable) => (
+                                Variable {
+                                    identifier: Vec::from(b"in"),
+                                    index: Some(Box::new(Index::Offset(Offset::Integer(i as u64)))),
+                                },
+                                variable_map.borrow().get(old_variable).unwrap().clone(),
+                            ),
+                            Value::Type(_) => todo!(),
+                            Value::Register(_) => todo!(),
+                        });
+                    let new_variable_map = Rc::new(RefCell::new(iter.collect()));
+                    stack.push((
+                        *function,
+                        preceding,
+                        current.as_ref().next.map(|n| (n, variable_map.clone())),
+                        new_variable_map,
+                    ));
+                }
+                _ => todo!(),
+            },
             Op::Special(Special::Type) => match current.as_ref().statement.arg.as_slice() {
                 [Value::Variable(_), ..] => {
                     // Create new node.
@@ -1562,14 +1696,9 @@ pub unsafe fn explore_node(
         },
         // See 2
         Op::Syscall(Syscall::Exit) => {}
-        Op::Assembly(Assembly::Svc) if let Some(x0) = current_ref.state.get(&TypeKey::from(Register::X8)) => {
-            // TODO If we do not know if it is 93 or not it should diverge into the 2 cases (the one where it is, the one where isn't).
-            match x0 {
-                TypeValue::Integer(TypeValueInteger::I64(x)) if let Some(y) = x.value() && y == 93 => {
-                    
-                },
-                _ => todo!()
-            }
+        Op::Special(Special::Unreachable) => {
+            assert!(statement.arg.is_empty());
+            // As execution ends, we return no valid states.
         }
         // See 1 & 2
         _ => {
@@ -1688,9 +1817,9 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             _ => todo!(),
         },
         Op::Syscall(Syscall::Exit) => match slice {
-            // TODO Check the variable for `_integer` fits into i32.
-            [Value::Literal(Literal::Integer(_integer))] => vec![state.clone()],
-            // TODO Check the variable for `identifier` fits into i32.
+            // TODO Check the integer fits into i32.
+            [Value::Literal(Literal::Integer(_))] => vec![state.clone()],
+            // TODO Check the variable fits into i32.
             [Value::Variable(variable)] => match state.get(&TypeKey::from(variable)) {
                 Some(TypeValue::Integer(integer)) => match integer {
                     TypeValueInteger::I8(_) => vec![state.clone()],
@@ -2031,10 +2160,28 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                 );
                 vec![new_state]
             }
+            [Value::Register(register), Value::Variable(variable)] => {
+                match state.get(&TypeKey::from(variable)) {
+                    Some(TypeValue::Integer(integer)) => {
+                        if integer.min() >= i64::MIN as i128 && integer.max() <= i64::MAX as i128 {
+                            let mut new_state = state.clone();
+                            new_state.insert(
+                                TypeKey::Register(register.clone()),
+                                TypeValue::Integer(integer.clone()),
+                            );
+                            vec![new_state]
+                        } else {
+                            Vec::new()
+                        }
+                    }
+                    _ => todo!(),
+                }
+            }
             _ => todo!(),
         },
         Op::Assembly(Assembly::Svc) => vec![state.clone()],
-        _ => todo!()
+        Op::Special(Special::Unreachable) => vec![state.clone()],
+        _ => todo!(),
     }
 }
 
@@ -2183,6 +2330,46 @@ impl TryFrom<i128> for TypeValue {
         Ok(Self::Integer(TypeValueInteger::try_from(x)?))
     }
 }
+impl From<i8> for TypeValue {
+    fn from(x: i8) -> Self {
+        Self::Integer(TypeValueInteger::from(x))
+    }
+}
+impl From<i16> for TypeValue {
+    fn from(x: i16) -> Self {
+        Self::Integer(TypeValueInteger::from(x))
+    }
+}
+impl From<i32> for TypeValue {
+    fn from(x: i32) -> Self {
+        Self::Integer(TypeValueInteger::from(x))
+    }
+}
+impl From<i64> for TypeValue {
+    fn from(x: i64) -> Self {
+        Self::Integer(TypeValueInteger::from(x))
+    }
+}
+impl From<u8> for TypeValue {
+    fn from(x: u8) -> Self {
+        Self::Integer(TypeValueInteger::from(x))
+    }
+}
+impl From<u16> for TypeValue {
+    fn from(x: u16) -> Self {
+        Self::Integer(TypeValueInteger::from(x))
+    }
+}
+impl From<u32> for TypeValue {
+    fn from(x: u32) -> Self {
+        Self::Integer(TypeValueInteger::from(x))
+    }
+}
+impl From<u64> for TypeValue {
+    fn from(x: u64) -> Self {
+        Self::Integer(TypeValueInteger::from(x))
+    }
+}
 
 #[allow(unreachable_patterns)]
 impl TypeValue {
@@ -2287,6 +2474,47 @@ impl TryFrom<i128> for TypeValueInteger {
         // } else {
         //     Err(())
         // }
+    }
+}
+
+impl From<i8> for TypeValueInteger {
+    fn from(x: i8) -> Self {
+        Self::I8(MyRange::from(x))
+    }
+}
+impl From<i16> for TypeValueInteger {
+    fn from(x: i16) -> Self {
+        Self::I16(MyRange::from(x))
+    }
+}
+impl From<i32> for TypeValueInteger {
+    fn from(x: i32) -> Self {
+        Self::I32(MyRange::from(x))
+    }
+}
+impl From<i64> for TypeValueInteger {
+    fn from(x: i64) -> Self {
+        Self::I64(MyRange::from(x))
+    }
+}
+impl From<u8> for TypeValueInteger {
+    fn from(x: u8) -> Self {
+        Self::U8(MyRange::from(x))
+    }
+}
+impl From<u16> for TypeValueInteger {
+    fn from(x: u16) -> Self {
+        Self::U16(MyRange::from(x))
+    }
+}
+impl From<u32> for TypeValueInteger {
+    fn from(x: u32) -> Self {
+        Self::U32(MyRange::from(x))
+    }
+}
+impl From<u64> for TypeValueInteger {
+    fn from(x: u64) -> Self {
+        Self::U64(MyRange::from(x))
     }
 }
 

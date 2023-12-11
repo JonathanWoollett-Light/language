@@ -580,6 +580,21 @@ pub fn instruction_from_node(
                     _ => todo!(),
                 }
             }
+            Op::Assembly(Assembly::Mov) => match arg {
+                [Value::Register(register), Value::Literal(Literal::Integer(integer))] => {
+                    writeln!(&mut assembly, "mov {register}, #{integer}").unwrap();
+                }
+                _ => todo!(),
+            },
+            Op::Assembly(Assembly::Svc) => match arg {
+                [Value::Literal(Literal::Integer(integer))] => {
+                    writeln!(&mut assembly, "svc #{integer}").unwrap();
+                }
+                _ => todo!(),
+            },
+            Op::Special(Special::Unreachable) => {
+                assert!(arg.is_empty());
+            }
             _ => todo!(),
         }
 

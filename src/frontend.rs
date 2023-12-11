@@ -447,6 +447,11 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             let arg = vec![lhs, rhs];
             Statement { comptime, op, arg }
         }
+        (b"unreachable", None) => Statement {
+            comptime,
+            op: Op::Special(Special::Unreachable),
+            arg: Vec::new(),
+        },
         (b"def", None) => {
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             let ident = get_variable(bytes);
@@ -482,17 +487,18 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             );
             // println!("lhs: {lhs:?}");
 
-            if let Ok(syscall) = Syscall::try_from(lhs.variable().unwrap().identifier.as_slice()) {
-                return Statement {
-                    comptime,
-                    op: Op::Syscall(syscall),
-                    arg: get_values(bytes),
-                };
-            }
+            // if let Ok(syscall) = Syscall::try_from(lhs.variable().unwrap().identifier.as_slice()) {
+            //     return Statement {
+            //         comptime,
+            //         op: Op::Syscall(syscall),
+            //         arg: get_values(bytes),
+            //     };
+            // }
 
-            match bytes.next().map(Result::unwrap) {
+            match bytes.peek().map(|r| r.as_ref().unwrap()) {
                 // Add, Sub, Mul, Div, Rem
-                Some(p) if let Some(arithmetic) = Intrinsic::arithmetic_assign(p) => {
+                Some(p) if let Some(arithmetic) = Intrinsic::arithmetic_assign(*p) => {
+                    bytes.next().map(Result::unwrap);
                     assert_eq!(Some(b'='), bytes.next().map(Result::unwrap));
                     assert_eq!(Some(b' '), bytes.next().map(Result::unwrap));
                     let arg = get_value(bytes);
@@ -503,80 +509,91 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                         arg,
                     }
                 }
-                Some(b':') => match bytes.next().map(Result::unwrap) {
-                    Some(b' ') => {
-                        let variable_type = get_type(bytes);
-                        Statement {
-                            comptime,
-                            op: Op::Special(Special::Type),
-                            arg: vec![lhs, Value::Type(variable_type)],
-                        }
-                    }
-                    Some(b'=') => {
-                        assert_eq!(Some(b' '), bytes.next().map(Result::unwrap));
-                        let first = get_value(bytes);
-
-                        let get_statement = |lhs: Value,
-                                             first: Value,
-                                             bytes: &mut Peekable<Bytes<R>>|
-                         -> Statement {
-                            let tail = get_values(bytes);
-                            match (&first, &tail) {
-                                (
-                                    Value::Variable(Variable {
-                                        identifier,
-                                        index: None,
-                                    }),
-                                    _,
-                                ) if let Ok(syscall) = Syscall::try_from(identifier.as_slice()) => {
-                                    Statement {
-                                        comptime,
-                                        op: Op::Syscall(syscall),
-                                        arg: once(lhs).chain(tail.iter().cloned()).collect(),
-                                    }
-                                }
-                                _ => Statement {
-                                    comptime,
-                                    op: Op::Intrinsic(Intrinsic::Assign),
-                                    arg: once(lhs)
-                                        .chain(once(first.clone()))
-                                        .chain(tail.iter().cloned())
-                                        .collect(),
-                                },
+                Some(b':') => {
+                    bytes.next().map(Result::unwrap);
+                    match bytes.next().map(Result::unwrap) {
+                        Some(b' ') => {
+                            let variable_type = get_type(bytes);
+                            Statement {
+                                comptime,
+                                op: Op::Special(Special::Type),
+                                arg: vec![lhs, Value::Type(variable_type)],
                             }
-                        };
+                        }
+                        Some(b'=') => {
+                            assert_eq!(Some(b' '), bytes.next().map(Result::unwrap));
+                            let first = get_value(bytes);
 
-                        match bytes.peek().map(|r| r.as_ref().unwrap()) {
-                            Some(b' ') => {
-                                bytes.next().unwrap().unwrap(); // Skip space.
-                                match bytes.peek().map(|r| r.as_ref().unwrap()) {
-                                    Some(p) if let Some(arithmetic) = Intrinsic::arithmetic(*p) => {
-                                        bytes.next().unwrap().unwrap(); // Skip arithmetic operator.
-                                        assert_eq!(Some(b' '), bytes.next().map(Result::unwrap));
-
-                                        let second = get_value(bytes);
-                                        let arg = vec![lhs, first, second];
+                            let get_statement = |lhs: Value,
+                                                 first: Value,
+                                                 bytes: &mut Peekable<Bytes<R>>|
+                             -> Statement {
+                                let tail = get_values(bytes);
+                                match (&first, &tail) {
+                                    (
+                                        Value::Variable(Variable {
+                                            identifier,
+                                            index: None,
+                                        }),
+                                        _,
+                                    ) if let Ok(syscall) =
+                                        Syscall::try_from(identifier.as_slice()) =>
+                                    {
                                         Statement {
                                             comptime,
-                                            op: Op::Intrinsic(arithmetic),
-                                            arg,
+                                            op: Op::Syscall(syscall),
+                                            arg: once(lhs).chain(tail.iter().cloned()).collect(),
                                         }
                                     }
-                                    _ => get_statement(lhs, first, bytes),
+                                    _ => Statement {
+                                        comptime,
+                                        op: Op::Intrinsic(Intrinsic::Assign),
+                                        arg: once(lhs)
+                                            .chain(once(first.clone()))
+                                            .chain(tail.iter().cloned())
+                                            .collect(),
+                                    },
                                 }
+                            };
+
+                            match bytes.peek().map(|r| r.as_ref().unwrap()) {
+                                Some(b' ') => {
+                                    bytes.next().unwrap().unwrap(); // Skip space.
+                                    match bytes.peek().map(|r| r.as_ref().unwrap()) {
+                                        Some(p)
+                                            if let Some(arithmetic) = Intrinsic::arithmetic(*p) =>
+                                        {
+                                            bytes.next().unwrap().unwrap(); // Skip arithmetic operator.
+                                            assert_eq!(
+                                                Some(b' '),
+                                                bytes.next().map(Result::unwrap)
+                                            );
+
+                                            let second = get_value(bytes);
+                                            let arg = vec![lhs, first, second];
+                                            Statement {
+                                                comptime,
+                                                op: Op::Intrinsic(arithmetic),
+                                                arg,
+                                            }
+                                        }
+                                        _ => get_statement(lhs, first, bytes),
+                                    }
+                                }
+                                _ => get_statement(lhs, first, bytes),
                             }
-                            _ => get_statement(lhs, first, bytes),
                         }
+                        _ => panic!(
+                            "{:?}",
+                            std::str::from_utf8(&bytes.map(Result::unwrap).collect::<Vec<_>>())
+                        ),
                     }
-                    _ => panic!(
-                        "{:?}",
-                        std::str::from_utf8(&bytes.map(Result::unwrap).collect::<Vec<_>>())
-                    ),
+                }
+                _ => Statement {
+                    comptime,
+                    op: Op::Intrinsic(Intrinsic::Call),
+                    arg: std::iter::once(lhs).chain(get_values(bytes)).collect(),
                 },
-                _ => panic!(
-                    "{:?}",
-                    std::str::from_utf8(&bytes.map(Result::unwrap).collect::<Vec<_>>())
-                ),
             }
         }
     }
