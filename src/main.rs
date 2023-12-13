@@ -166,6 +166,7 @@ mod tests {
                 "    {mark}   {:?}\n        {expected_item:?}",
                 Some(&node.state)
             );
+            println!();
         }
         println!();
         assert!(any_check);
@@ -249,7 +250,7 @@ mod tests {
             match_nodes(new_nodes, expected_build);
             assert_eq!(read, expected_read);
 
-            let finish = finish_optimized_tree(new_nodes, read);
+            let finish = finish_optimized_tree(new_nodes, read).unwrap();
 
             match_nodes(finish, expected_finish);
 
@@ -649,48 +650,21 @@ mod tests {
         let path = test_exploration(
             inlined,
             &[
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i64))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i32))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i16))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u64))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u32))]),
                 TypeValueState::from([(
                     ident("a"),
                     TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
                 )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u8))]),
             ],
             Some(&[
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u8))])],
                 &[TypeValueState::from([(
                     ident("a"),
                     TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
@@ -699,64 +673,22 @@ mod tests {
                     ident("a"),
                     TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
                 )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i64))])],
             ]),
             &[
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u8))]),
             ],
         );
 
@@ -849,48 +781,21 @@ mod tests {
         let path = test_exploration(
             inlined,
             &[
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i64))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i32))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i16))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u64))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u32))]),
                 TypeValueState::from([(
                     ident("a"),
                     TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
                 )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u8))]),
             ],
             Some(&[
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u8))])],
                 &[TypeValueState::from([(
                     ident("a"),
                     TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
@@ -899,64 +804,22 @@ mod tests {
                     ident("a"),
                     TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
                 )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i64))])],
             ]),
             &[
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u8))]),
             ],
         );
 
@@ -1065,150 +928,51 @@ mod tests {
         let path = test_exploration(
             inlined,
             &[
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i64))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i32))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i16))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u64))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u32))]),
                 TypeValueState::from([(
                     ident("a"),
                     TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
                 )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u8))]),
             ],
             Some(&[
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                )])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2u8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2u8))])],
                 &[TypeValueState::from([(
                     ident("a"),
                     TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
                 )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                )])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2u32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2u32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2u64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2u64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i64))])],
             ]),
             &[
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(2u8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(2u8))]),
             ],
         );
 
@@ -1327,52 +1091,22 @@ mod tests {
         let path = test_exploration(
             inlined,
             &[
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i64))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i32))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i16))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u64))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u32))]),
                 TypeValueState::from([(
                     ident("a"),
                     TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
                 )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u8))]),
             ],
             Some(&[
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u8))])],
                 &[TypeValueState::from([(
                     ident("a"),
                     TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
@@ -1385,92 +1119,29 @@ mod tests {
                     ident("a"),
                     TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
                 )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1i64))])],
             ]),
             &[
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u8))]),
             ],
         );
 
@@ -1589,150 +1260,45 @@ mod tests {
         let path = test_exploration(
             inlined,
             &[
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(2i64))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(2i32))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(2i16))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(2i8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(2u64))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(2u32))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u16))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(2u8))]),
             ],
             Some(&[
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                )])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2u8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2u8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2u8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(1u16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2u32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2u32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2u32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2u64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2u64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2u64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i8))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i16))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i32))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i64))])],
+                &[TypeValueState::from([(ident("a"), TypeValue::from(2i64))])],
             ]),
             &[
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(2u8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(2u8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(2u8))]),
             ],
         );
 
@@ -2319,12 +1885,46 @@ mod tests {
     #[test]
     fn thirteen() {
         const SOURCE: &str =
-            "x := 1\nx += 2\nx *= 3\nx /= 4\nx -= 5\nx &= 6\nx |= 7\nx ^= 8\nexit x";
+            "def exit\n    mov x8 93\n    mov x0 in[0]\n    svc 0\n    unreachable\nx := 1\nx += 2\nx *= 3\nx /= 4\nx -= 5\nx &= 6\nx |= 7\nx ^= 8\nexit x";
 
         // Parsing
         let nodes = test_parsing(
             SOURCE,
             &[
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::Def),
+                    arg: vec![Value::Variable(Variable::from("exit"))],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X8),
+                        Value::Literal(Literal::Integer(93)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X0),
+                        Value::Variable(Variable {
+                            identifier: Vec::from(b"in"),
+                            index: Some(Box::new(Index::Offset(Offset::Integer(0)))),
+                        }),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Svc),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Unreachable),
+                    arg: vec![],
+                },
                 Statement {
                     comptime: false,
                     op: Op::Intrinsic(Intrinsic::Assign),
@@ -2391,8 +1991,11 @@ mod tests {
                 },
                 Statement {
                     comptime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Variable(Variable::new("x"))],
+                    op: Op::Intrinsic(Intrinsic::Call),
+                    arg: vec![
+                        Value::Variable(Variable::new("exit")),
+                        Value::Variable(Variable::new("x")),
+                    ],
                 },
             ],
         );
@@ -2467,8 +2070,29 @@ mod tests {
                 },
                 Statement {
                     comptime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Variable(Variable::new("a"))],
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X8),
+                        Value::Literal(Literal::Integer(93)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X0),
+                        Value::Variable(Variable::from("a")),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Svc),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Unreachable),
+                    arg: vec![],
                 },
             ],
         );
@@ -2477,370 +2101,46 @@ mod tests {
         let path = test_exploration(
             inlined,
             &[
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i64))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i32))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i16))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1i8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u64))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u32))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u16))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u8))]),
             ],
-            Some(&[
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(3))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(9))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(253))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(4))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(7))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(15))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(15))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(3))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(9))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(65533))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(4))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(7))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(15))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(15))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(3))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(9))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(4294967293))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(4))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(7))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(15))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(15))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(3))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(9))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(18446744073709551613))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(4))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(7))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(15))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(15))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(3))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(9))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(-3))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(4))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(7))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(15))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(15))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(3))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(9))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(-3))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(4))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(7))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(15))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(15))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(3))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(9))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(-3))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(4))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(7))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(15))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(15))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(3))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(9))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(-3))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(4))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(7))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(15))),
-                )])],
-                &[TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(15))),
-                )])],
-            ]),
+            None,
             &[
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(3))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(9))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(253))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(4))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(7))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(15))),
-                )]),
-                TypeValueState::from([(
-                    ident("a"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(15))),
-                )]),
+                TypeValueState::from([(ident("a"), TypeValue::from(1u8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(3u8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(9u8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(2u8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(253u8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(4u8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(7u8))]),
+                TypeValueState::from([(ident("a"), TypeValue::from(15u8))]),
+                TypeValueState::from([
+                    (ident("a"), TypeValue::from(15u8)),
+                    (TypeKey::Register(Register::X8), TypeValue::from(93u64)),
+                ]),
+                TypeValueState::from([
+                    (ident("a"), TypeValue::from(15u8)),
+                    (TypeKey::Register(Register::X0), TypeValue::from(15u64)),
+                    (TypeKey::Register(Register::X8), TypeValue::from(93u64)),
+                ]),
+                TypeValueState::from([
+                    (ident("a"), TypeValue::from(15u8)),
+                    (TypeKey::Register(Register::X0), TypeValue::from(15u64)),
+                    (TypeKey::Register(Register::X8), TypeValue::from(93u64)),
+                ]),
+                TypeValueState::from([
+                    (ident("a"), TypeValue::from(15u8)),
+                    (TypeKey::Register(Register::X0), TypeValue::from(15u64)),
+                    (TypeKey::Register(Register::X8), TypeValue::from(93u64)),
+                ]),
             ],
         );
-
-        const EXIT: i32 = 15;
 
         // Optimization
         let optimized = test_optimization(
@@ -2857,42 +2157,118 @@ mod tests {
                 },
                 Statement {
                     comptime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(EXIT as _))],
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X8),
+                        Value::Literal(Literal::Integer(93)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X0),
+                        Value::Literal(Literal::Integer(15)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Svc),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Unreachable),
+                    arg: vec![],
                 },
             ],
             HashSet::from([]),
-            &[Statement {
-                comptime: false,
-                op: Op::Syscall(Syscall::Exit),
-                arg: vec![Value::Literal(Literal::Integer(EXIT as _))],
-            }],
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X8),
+                        Value::Literal(Literal::Integer(93)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X0),
+                        Value::Literal(Literal::Integer(15)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Svc),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Unreachable),
+                    arg: vec![],
+                },
+            ],
         );
 
         // Assembly
         test_assembling(
             optimized,
-            &format!(
-                "\
+            "\
             .global _start\n\
             _start:\n\
             mov x8, #93\n\
-            mov x0, #{EXIT}\n\
+            mov x0, #15\n\
             svc #0\n\
-        "
-            ),
-            EXIT,
+            ",
+            15,
         );
     }
 
     #[test]
     fn fourteen() {
-        const SOURCE: &str = "def add\n    out := in[0] + in[1]\nx := add 1 2\nexit x";
+        const SOURCE: &str = "def exit\n    mov x8 93\n    mov x0 in[0]\n    svc 0\n    unreachable\ndef add\n    out := in[0] + in[1]\nx := add 1 2\nexit x";
 
         // Parsing
         let nodes = test_parsing(
             SOURCE,
             &[
+                Statement {
+                    comptime: false,
+                    op: Op::Intrinsic(Intrinsic::Def),
+                    arg: vec![Value::Variable(Variable::from("exit"))],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X8),
+                        Value::Literal(Literal::Integer(93)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X0),
+                        Value::Variable(Variable {
+                            identifier: Vec::from(b"in"),
+                            index: Some(Box::new(Index::Offset(Offset::Integer(0)))),
+                        }),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Svc),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Unreachable),
+                    arg: vec![],
+                },
                 Statement {
                     comptime: false,
                     op: Op::Intrinsic(Intrinsic::Def),
@@ -2925,8 +2301,11 @@ mod tests {
                 },
                 Statement {
                     comptime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Variable(Variable::new("x"))],
+                    op: Op::Intrinsic(Intrinsic::Call),
+                    arg: vec![
+                        Value::Variable(Variable::new("exit")),
+                        Value::Variable(Variable::new("x")),
+                    ],
                 },
             ],
         );
@@ -2962,8 +2341,29 @@ mod tests {
                 },
                 Statement {
                     comptime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Variable(Variable::new("a"))],
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X8),
+                        Value::Literal(Literal::Integer(93)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X0),
+                        Value::Variable(Variable::from("a")),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Svc),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Unreachable),
+                    arg: vec![],
                 },
             ],
         );
@@ -2972,986 +2372,56 @@ mod tests {
         let path = test_exploration(
             inlined,
             &[
-                TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )]),
-                TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )]),
+                TypeValueState::from([(ident("b"), TypeValue::from(1i64))]),
+                TypeValueState::from([(ident("b"), TypeValue::from(1i32))]),
+                TypeValueState::from([(ident("b"), TypeValue::from(1i16))]),
+                TypeValueState::from([(ident("b"), TypeValue::from(1i8))]),
+                TypeValueState::from([(ident("b"), TypeValue::from(1u64))]),
+                TypeValueState::from([(ident("b"), TypeValue::from(1u32))]),
                 TypeValueState::from([(
                     ident("b"),
                     TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
                 )]),
-                TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
+                TypeValueState::from([(ident("b"), TypeValue::from(1u8))]),
             ],
-            Some(&[
-                &[TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(3))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(3))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                    ),
-                ])],
-                // ---------------------------------------------------------------------------------
-                &[TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(3))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(3))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                    ),
-                ])],
-                // ---------------------------------------------------------------------------------
-                &[TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(3))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(3))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                    ),
-                ])],
-                // ---------------------------------------------------------------------------------
-                &[TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(3))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(3))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                    ),
-                ])],
-                // ---------------------------------------------------------------------------------
-                &[TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(3))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(3))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                    ),
-                ])],
-                // ---------------------------------------------------------------------------------
-                &[TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(3))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(3))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                    ),
-                ])],
-                // ---------------------------------------------------------------------------------
-                &[TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(3))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(3))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                    ),
-                ])],
-                // ---------------------------------------------------------------------------------
-                &[TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                )])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I8(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I16(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I32(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(3))),
-                    ),
-                ])],
-                &[TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(3))),
-                    ),
-                ])],
-            ]),
+            None,
             &[
-                TypeValueState::from([(
-                    ident("b"),
-                    TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                )]),
+                TypeValueState::from([(ident("b"), TypeValue::from(1u8))]),
                 TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                    ),
+                    (ident("b"), TypeValue::from(1u8)),
+                    (ident("c"), TypeValue::from(2u8)),
                 ]),
                 TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(3))),
-                    ),
+                    (ident("b"), TypeValue::from(1u8)),
+                    (ident("c"), TypeValue::from(2u8)),
+                    (ident("a"), TypeValue::from(3u8)),
                 ]),
                 TypeValueState::from([
-                    (
-                        ident("b"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(1))),
-                    ),
-                    (
-                        ident("c"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(2))),
-                    ),
-                    (
-                        ident("a"),
-                        TypeValue::Integer(TypeValueInteger::U8(MyRange::from(3))),
-                    ),
+                    (ident("b"), TypeValue::from(1u8)),
+                    (ident("c"), TypeValue::from(2u8)),
+                    (ident("a"), TypeValue::from(3u8)),
+                    (TypeKey::Register(Register::X8), TypeValue::from(93u64)),
+                ]),
+                TypeValueState::from([
+                    (ident("b"), TypeValue::from(1u8)),
+                    (ident("c"), TypeValue::from(2u8)),
+                    (ident("a"), TypeValue::from(3u8)),
+                    (TypeKey::Register(Register::X8), TypeValue::from(93u64)),
+                    (TypeKey::Register(Register::X0), TypeValue::from(3u64)),
+                ]),
+                TypeValueState::from([
+                    (ident("b"), TypeValue::from(1u8)),
+                    (ident("c"), TypeValue::from(2u8)),
+                    (ident("a"), TypeValue::from(3u8)),
+                    (TypeKey::Register(Register::X8), TypeValue::from(93u64)),
+                    (TypeKey::Register(Register::X0), TypeValue::from(3u64)),
+                ]),
+                TypeValueState::from([
+                    (ident("b"), TypeValue::from(1u8)),
+                    (ident("c"), TypeValue::from(2u8)),
+                    (ident("a"), TypeValue::from(3u8)),
+                    (TypeKey::Register(Register::X8), TypeValue::from(93u64)),
+                    (TypeKey::Register(Register::X0), TypeValue::from(3u64)),
                 ]),
             ],
         );
@@ -3989,16 +2459,60 @@ mod tests {
                 },
                 Statement {
                     comptime: false,
-                    op: Op::Syscall(Syscall::Exit),
-                    arg: vec![Value::Literal(Literal::Integer(3))],
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X8),
+                        Value::Literal(Literal::Integer(93)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X0),
+                        Value::Literal(Literal::Integer(3)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Svc),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Unreachable),
+                    arg: vec![],
                 },
             ],
             HashSet::from([]),
-            &[Statement {
-                comptime: false,
-                op: Op::Syscall(Syscall::Exit),
-                arg: vec![Value::Literal(Literal::Integer(3))],
-            }],
+            &[
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X8),
+                        Value::Literal(Literal::Integer(93)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Mov),
+                    arg: vec![
+                        Value::Register(Register::X0),
+                        Value::Literal(Literal::Integer(3)),
+                    ],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Assembly(Assembly::Svc),
+                    arg: vec![Value::Literal(Literal::Integer(0))],
+                },
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Unreachable),
+                    arg: vec![],
+                },
+            ],
         );
 
         // Assembly
@@ -4090,77 +2604,59 @@ mod tests {
             inlined,
             &[TypeValueState::from([(
                 TypeKey::from(Register::X8),
-                TypeValue::try_from(93i128).unwrap(),
+                TypeValue::from(93u64),
             )])],
             Some(&[
                 &[TypeValueState::from([(
                     TypeKey::from(Register::X8),
-                    TypeValue::try_from(93i128).unwrap(),
+                    TypeValue::try_from(93u64).unwrap(),
                 )])],
                 &[TypeValueState::from([
-                    (
-                        TypeKey::from(Register::X8),
-                        TypeValue::try_from(93i128).unwrap(),
-                    ),
-                    (
-                        TypeKey::from(Register::X0),
-                        TypeValue::try_from(0i128).unwrap(),
-                    ),
+                    (TypeKey::from(Register::X8), TypeValue::from(93u64)),
+                    (TypeKey::from(Register::X0), TypeValue::from(0u64)),
                 ])],
                 &[TypeValueState::from([
-                    (
-                        TypeKey::from(Register::X8),
-                        TypeValue::try_from(93i128).unwrap(),
-                    ),
-                    (
-                        TypeKey::from(Register::X0),
-                        TypeValue::try_from(0i128).unwrap(),
-                    ),
+                    (TypeKey::from(Register::X8), TypeValue::from(93u64)),
+                    (TypeKey::from(Register::X0), TypeValue::from(0u64)),
                 ])],
                 &[TypeValueState::from([
-                    (
-                        TypeKey::from(Register::X8),
-                        TypeValue::try_from(93i128).unwrap(),
-                    ),
-                    (
-                        TypeKey::from(Register::X0),
-                        TypeValue::try_from(0i128).unwrap(),
-                    ),
+                    (TypeKey::from(Register::X8), TypeValue::from(93u64)),
+                    (TypeKey::from(Register::X0), TypeValue::from(0u64)),
                 ])],
             ]),
             &[
                 TypeValueState::from([(
                     TypeKey::from(Register::X8),
-                    TypeValue::try_from(93i128).unwrap(),
+                    TypeValue::try_from(93u64).unwrap(),
                 )]),
                 TypeValueState::from([
                     (
                         TypeKey::from(Register::X8),
-                        TypeValue::try_from(93i128).unwrap(),
+                        TypeValue::try_from(93u64).unwrap(),
                     ),
                     (
                         TypeKey::from(Register::X0),
-                        TypeValue::try_from(0i128).unwrap(),
+                        TypeValue::try_from(0u64).unwrap(),
                     ),
                 ]),
                 TypeValueState::from([
                     (
                         TypeKey::from(Register::X8),
-                        TypeValue::try_from(93i128).unwrap(),
+                        TypeValue::try_from(93u64).unwrap(),
                     ),
                     (
                         TypeKey::from(Register::X0),
-                        TypeValue::try_from(0i128).unwrap(),
+                        TypeValue::try_from(0u64).unwrap(),
                     ),
                 ]),
                 TypeValueState::from([
                     (
                         TypeKey::from(Register::X8),
-                        TypeValue::try_from(93i128).unwrap(),
+                        TypeValue::try_from(93u64).unwrap(),
                     ),
                     (
                         TypeKey::from(Register::X0),
-                        TypeValue::try_from(0i128).unwrap(),
+                        TypeValue::try_from(0u64).unwrap(),
                     ),
                 ]),
             ],
@@ -4352,38 +2848,45 @@ mod tests {
             ],
             None,
             &[
-                TypeValueState::from([(
-                    TypeKey::from(Register::X8),
-                    TypeValue::try_from(93i64).unwrap(),
-                )]),
+                TypeValueState::from([(TypeKey::from(Variable::from("a")), TypeValue::from(0u8))]),
                 TypeValueState::from([
+                    (TypeKey::from(Variable::from("a")), TypeValue::from(0u8)),
                     (
                         TypeKey::from(Register::X8),
-                        TypeValue::try_from(93i64).unwrap(),
-                    ),
-                    (
-                        TypeKey::from(Register::X0),
-                        TypeValue::try_from(0i64).unwrap(),
+                        TypeValue::try_from(93u64).unwrap(),
                     ),
                 ]),
                 TypeValueState::from([
+                    (TypeKey::from(Variable::from("a")), TypeValue::from(0u8)),
                     (
                         TypeKey::from(Register::X8),
-                        TypeValue::try_from(93i64).unwrap(),
+                        TypeValue::try_from(93u64).unwrap(),
                     ),
                     (
                         TypeKey::from(Register::X0),
-                        TypeValue::try_from(0i64).unwrap(),
+                        TypeValue::try_from(0u64).unwrap(),
                     ),
                 ]),
                 TypeValueState::from([
+                    (TypeKey::from(Variable::from("a")), TypeValue::from(0u8)),
                     (
                         TypeKey::from(Register::X8),
-                        TypeValue::try_from(93i64).unwrap(),
+                        TypeValue::try_from(93u64).unwrap(),
                     ),
                     (
                         TypeKey::from(Register::X0),
-                        TypeValue::try_from(0i64).unwrap(),
+                        TypeValue::try_from(0u64).unwrap(),
+                    ),
+                ]),
+                TypeValueState::from([
+                    (TypeKey::from(Variable::from("a")), TypeValue::from(0u8)),
+                    (
+                        TypeKey::from(Register::X8),
+                        TypeValue::try_from(93u64).unwrap(),
+                    ),
+                    (
+                        TypeKey::from(Register::X0),
+                        TypeValue::try_from(0u64).unwrap(),
                     ),
                 ]),
             ],
@@ -4393,6 +2896,15 @@ mod tests {
         let optimized = test_optimization(
             path,
             &[
+                Statement {
+                    comptime: false,
+                    op: Op::Special(Special::Type),
+                    arg: vec![
+                        Value::Variable(Variable::from("a")),
+                        Value::Type(Type::U8),
+                        Value::Literal(Literal::Integer(0)),
+                    ],
+                },
                 Statement {
                     comptime: false,
                     op: Op::Assembly(Assembly::Mov),

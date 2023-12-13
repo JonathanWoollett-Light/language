@@ -629,6 +629,62 @@ pub unsafe fn build_optimized_tree(
                         .is_some());
                     next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
+                [Value::Register(_), Value::Variable(variable)] => {
+                    match current.as_ref().state.get(&TypeKey::from(variable)) {
+                        Some(TypeValue::Integer(TypeValueInteger::U64(range)))
+                            if let Some(integer) = range.value() =>
+                        {
+                            current.as_mut().statement.as_mut().statement.arg[1] =
+                                Value::Literal(Literal::Integer(integer as i128));
+                        }
+                        Some(TypeValue::Integer(TypeValueInteger::U32(range)))
+                            if let Some(integer) = range.value() =>
+                        {
+                            current.as_mut().statement.as_mut().statement.arg[1] =
+                                Value::Literal(Literal::Integer(integer as i128));
+                        }
+                        Some(TypeValue::Integer(TypeValueInteger::U16(range)))
+                            if let Some(integer) = range.value() =>
+                        {
+                            current.as_mut().statement.as_mut().statement.arg[1] =
+                                Value::Literal(Literal::Integer(integer as i128));
+                        }
+                        Some(TypeValue::Integer(TypeValueInteger::U8(range)))
+                            if let Some(integer) = range.value() =>
+                        {
+                            current.as_mut().statement.as_mut().statement.arg[1] =
+                                Value::Literal(Literal::Integer(integer as i128));
+                        }
+                        Some(TypeValue::Integer(TypeValueInteger::I64(range)))
+                            if let Some(integer) = range.value() =>
+                        {
+                            current.as_mut().statement.as_mut().statement.arg[1] =
+                                Value::Literal(Literal::Integer(integer as i128));
+                        }
+                        Some(TypeValue::Integer(TypeValueInteger::I32(range)))
+                            if let Some(integer) = range.value() =>
+                        {
+                            current.as_mut().statement.as_mut().statement.arg[1] =
+                                Value::Literal(Literal::Integer(integer as i128));
+                        }
+                        Some(TypeValue::Integer(TypeValueInteger::I16(range)))
+                            if let Some(integer) = range.value() =>
+                        {
+                            current.as_mut().statement.as_mut().statement.arg[1] =
+                                Value::Literal(Literal::Integer(integer as i128));
+                        }
+                        _ => todo!(),
+                    }
+
+                    // Set next node.
+                    debug_assert!(current
+                        .as_ref()
+                        .next
+                        .0
+                        .or(current.as_ref().next.1)
+                        .is_some());
+                    next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
+                }
                 _ => todo!(),
             },
             Op::Assembly(Assembly::Svc) => match slice {
@@ -676,28 +732,35 @@ pub unsafe fn build_optimized_tree(
 pub unsafe fn finish_optimized_tree(
     new_nodes: NonNull<NewNode>,
     read: HashSet<Variable>,
-) -> NonNull<NewNode> {
+) -> Option<NonNull<NewNode>> {
     // After iterating through the full AST we now know which variables are used so can remove
     // unused variables
-    let mut first = new_nodes;
+    let mut first = Some(new_nodes);
     let mut stack = vec![new_nodes];
     while let Some(current) = stack.pop() {
         match current.as_ref().statement.op {
             Op::Special(Special::Type) => match current.as_ref().statement.arg.as_slice() {
                 [Value::Variable(variable), Value::Type(_), Value::Literal(_)] => {
+                    dbg!("hit here");
                     if !read.contains(variable) {
+                        dbg!("hit here");
+                        println!("bruh: {:?}", current.as_ref().preceding);
+
                         match current.as_ref().preceding {
                             Some(Preceding::Parent(mut parent)) => {
                                 parent.as_mut().child = current.as_ref().next;
                             }
                             Some(Preceding::Previous(mut previous)) => {
+                                dbg!("hit this?");
+                                println!("bruh: {:?}", previous.as_ref());
                                 previous.as_mut().next = current.as_ref().next;
                             }
                             None => {
-                                debug_assert_eq!(first, current);
+                                dbg!("hit here");
+                                debug_assert_eq!(first, Some(current));
                                 // dbg!(&current.as_ref().child.unwrap().as_ref().statement);
                                 // dbg!(&current.as_ref().statement);
-                                first = current.as_ref().next.unwrap();
+                                first = current.as_ref().next;
                             }
                         }
                         if let Some(mut next) = current.as_ref().next {
@@ -731,7 +794,7 @@ pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
     // TODO This doesn't dealloc anything in `graph` which may be very very big. Do this deallocation.
     let (new_nodes, read) = build_optimized_tree(graph);
 
-    finish_optimized_tree(new_nodes.unwrap(), read)
+    finish_optimized_tree(new_nodes.unwrap(), read).unwrap()
 }
 
 unsafe fn new_passback_end(mut node: NonNull<NewStateNode>, end: GraphNodeEnd) {
@@ -1713,9 +1776,10 @@ pub unsafe fn explore_node(
 
 pub unsafe fn close_path(current: NonNull<NewStateNode>) {
     if current.as_ref().unexplored.0.is_empty() && current.as_ref().unexplored.1.is_empty() {
-        if current.as_ref().statement.as_ref().statement.op == Op::Syscall(Syscall::Exit) {
+        if current.as_ref().statement.as_ref().statement.op == Op::Special(Special::Unreachable) {
             new_passback_end(current, GraphNodeEnd::Valid);
         } else {
+            println!("hit invalid");
             new_passback_end(current, GraphNodeEnd::Invalid);
         }
     } else if let Some(0) = current.as_ref().loop_limit.last() {
@@ -2154,28 +2218,63 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
         Op::Assembly(Assembly::Mov) => match slice {
             [Value::Register(register), Value::Literal(Literal::Integer(integer))] => {
                 let mut new_state = state.clone();
-                new_state.insert(
-                    TypeKey::Register(register.clone()),
-                    TypeValue::try_from(*integer).unwrap(),
-                );
+                let value = if let Ok(unsigned) = u64::try_from(*integer) {
+                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(unsigned)))
+                } else if let Ok(signed) = i64::try_from(*integer) {
+                    TypeValue::Integer(TypeValueInteger::I64(MyRange::from(signed)))
+                } else {
+                    todo!()
+                };
+                new_state.insert(TypeKey::Register(register.clone()), value);
                 vec![new_state]
             }
             [Value::Register(register), Value::Variable(variable)] => {
-                match state.get(&TypeKey::from(variable)) {
-                    Some(TypeValue::Integer(integer)) => {
-                        if integer.min() >= i64::MIN as i128 && integer.max() <= i64::MAX as i128 {
-                            let mut new_state = state.clone();
-                            new_state.insert(
-                                TypeKey::Register(register.clone()),
-                                TypeValue::Integer(integer.clone()),
-                            );
-                            vec![new_state]
-                        } else {
-                            Vec::new()
-                        }
+                let mut new_state = state.clone();
+                let value = match state.get(&TypeKey::from(variable)) {
+                    Some(TypeValue::Integer(TypeValueInteger::I8(range)))
+                        if let Some(integer) = range.value() =>
+                    {
+                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(i64::from(integer))))
+                    }
+                    Some(TypeValue::Integer(TypeValueInteger::I16(range)))
+                        if let Some(integer) = range.value() =>
+                    {
+                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(i64::from(integer))))
+                    }
+                    Some(TypeValue::Integer(TypeValueInteger::I32(range)))
+                        if let Some(integer) = range.value() =>
+                    {
+                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(i64::from(integer))))
+                    }
+                    Some(TypeValue::Integer(TypeValueInteger::I64(range)))
+                        if let Some(integer) = range.value() =>
+                    {
+                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(i64::from(integer))))
+                    }
+                    Some(TypeValue::Integer(TypeValueInteger::U8(range)))
+                        if let Some(integer) = range.value() =>
+                    {
+                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(u64::from(integer))))
+                    }
+                    Some(TypeValue::Integer(TypeValueInteger::U16(range)))
+                        if let Some(integer) = range.value() =>
+                    {
+                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(u64::from(integer))))
+                    }
+                    Some(TypeValue::Integer(TypeValueInteger::U32(range)))
+                        if let Some(integer) = range.value() =>
+                    {
+                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(u64::from(integer))))
+                    }
+                    Some(TypeValue::Integer(TypeValueInteger::U64(range)))
+                        if let Some(integer) = range.value() =>
+                    {
+                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(u64::from(integer))))
                     }
                     _ => todo!(),
-                }
+                };
+                new_state.insert(TypeKey::Register(register.clone()), value);
+                vec![new_state]
             }
             _ => todo!(),
         },
