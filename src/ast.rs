@@ -33,9 +33,32 @@ pub struct Statement {
 }
 
 impl std::fmt::Display for Statement {
-    // This trait requires `fmt` with this exact signature.
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "todo")
+        match self.op {
+            Op::Intrinsic(Intrinsic::Assign) => match self.arg.as_slice() {
+                [Value::Variable(variable), tail @ ..] => {
+                    write!(
+                        f,
+                        "{variable} := {}",
+                        tail.iter()
+                            .map(|v| v.to_string())
+                            .intersperse(String::from(" "))
+                            .collect::<String>()
+                    )
+                }
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::Call) => write!(
+                f,
+                "{}",
+                self.arg
+                    .iter()
+                    .map(|v| v.to_string())
+                    .intersperse(String::from(" "))
+                    .collect::<String>()
+            ),
+            _ => todo!(),
+        }
     }
 }
 
@@ -65,6 +88,17 @@ impl Value {
         match self {
             Self::Variable(variable) => Some(variable),
             _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Literal(literal) => write!(f, "{literal}"),
+            Self::Variable(variable) => write!(f, "{variable}"),
+            Self::Type(value_type) => write!(f, "{value_type}"),
+            Self::Register(register) => write!(f, "{register}"),
         }
     }
 }
@@ -172,6 +206,7 @@ impl TryFrom<&[u8]> for Register {
             b"x28" => Ok(Self::X28),
             b"x29" => Ok(Self::X29),
             b"x30" => Ok(Self::X30),
+            b"x31" => Ok(Self::X31),
             b"w0" => Ok(Self::W0),
             b"w1" => Ok(Self::W1),
             b"w2" => Ok(Self::W2),
@@ -203,6 +238,7 @@ impl TryFrom<&[u8]> for Register {
             b"w28" => Ok(Self::W28),
             b"w29" => Ok(Self::W29),
             b"w30" => Ok(Self::W30),
+            b"w31" => Ok(Self::W31),
             _ => Err(()),
         }
     }
@@ -282,8 +318,15 @@ impl std::fmt::Display for Register {
 
 impl TryFrom<&Variable> for Register {
     type Error = ();
-    fn try_from(Variable { identifier, index }: &Variable) -> Result<Self, Self::Error> {
-        if *index == None
+    fn try_from(
+        Variable {
+            addressing,
+            identifier,
+            index,
+        }: &Variable,
+    ) -> Result<Self, Self::Error> {
+        if *addressing == Addressing::Direct
+            && *index == None
             && let Ok(register) = Register::try_from(identifier.as_slice())
         {
             Ok(register)
@@ -320,6 +363,15 @@ impl Literal {
     }
 }
 
+impl std::fmt::Display for Literal {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::String(string) => write!(f, "\"{string}\""),
+            Self::Integer(integer) => write!(f, "{integer}"),
+        }
+    }
+}
+
 pub type Integer = i128;
 
 impl Default for Literal {
@@ -330,13 +382,40 @@ impl Default for Literal {
 
 #[derive(Eq, PartialEq, Default, Clone, Hash)]
 pub struct Variable {
+    pub addressing: Addressing,
     pub identifier: Identifier,
     pub index: Option<Box<Index>>,
+}
+
+#[derive(Eq, PartialEq, Default, Clone, Hash)]
+pub enum Addressing {
+    /// &x
+    Reference,
+    /// x
+    #[default]
+    Direct,
+    /// *x
+    Dereference,
+}
+
+impl std::fmt::Display for Variable {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}",
+            std::str::from_utf8(&self.identifier).unwrap(),
+            self.index
+                .as_ref()
+                .map(|v| format!("[{v}]"))
+                .unwrap_or(String::new())
+        )
+    }
 }
 
 impl From<&str> for Variable {
     fn from(bytes: &str) -> Self {
         Self {
+            addressing: Addressing::Direct,
             identifier: Identifier::from(bytes.as_bytes()),
             index: None,
         }
@@ -360,10 +439,30 @@ pub enum Index {
     Offset(Offset),
 }
 
+impl std::fmt::Display for Index {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Slice(slice) => write!(f, "{slice}"),
+            Self::Offset(offset) => write!(f, "{offset}"),
+        }
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub struct Slice {
     pub start: Option<Offset>,
     pub stop: Option<Offset>,
+}
+
+impl std::fmt::Display for Slice {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match (&self.start, &self.stop) {
+            (Some(start), Some(stop)) => write!(f, "{start}..{stop}"),
+            (None, Some(stop)) => write!(f, "..{stop}"),
+            (Some(start), None) => write!(f, "{start}.."),
+            (None, None) => write!(f, ".."),
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
@@ -375,6 +474,15 @@ pub enum Offset {
 impl Default for Offset {
     fn default() -> Self {
         Self::Integer(Default::default())
+    }
+}
+
+impl std::fmt::Display for Offset {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Integer(integer) => write!(f, "{integer}"),
+            Self::Variable(variable) => write!(f, "{variable}"),
+        }
     }
 }
 
@@ -465,6 +573,7 @@ pub enum Special {
     Require(Cmp),
     Type, // Type,
     Unreachable,
+    SizeOf,
 }
 
 impl Default for Special {
@@ -487,6 +596,7 @@ pub enum Type {
     #[allow(dead_code)]
     Array(Box<Array>),
 }
+
 impl Type {
     pub fn bytes(&self) -> usize {
         match self {
@@ -583,6 +693,22 @@ impl Type {
             U16_EDGE..U16_MAX => vec![Self::I16, Self::U16],
             U16_MAX => vec![Self::U16],
             _ => panic!(),
+        }
+    }
+}
+
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::U8 => write!(f, "u8"),
+            Self::U16 => write!(f, "u16"),
+            Self::U32 => write!(f, "u32"),
+            Self::U64 => write!(f, "u64"),
+            Self::I8 => write!(f, "i8"),
+            Self::I16 => write!(f, "i16"),
+            Self::I32 => write!(f, "i32"),
+            Self::I64 => write!(f, "i64"),
+            _ => todo!(),
         }
     }
 }

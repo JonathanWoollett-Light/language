@@ -10,7 +10,11 @@
 extern crate test;
 
 use clap::Parser;
+use data_encoding::HEXUPPER;
+use ring::digest::{Context, Digest, SHA256};
+use std::fs::OpenOptions;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 
 mod ast;
 mod frontend;
@@ -26,17 +30,102 @@ const LOOP_LIMIT: usize = 200;
 #[derive(Parser, Debug)]
 struct Args {
     #[arg(long)]
-    source: String,
+    source: Option<String>,
+    #[arg(long)]
+    path: Option<PathBuf>,
+    #[arg(long)]
+    new: Option<PathBuf>,
+}
+
+fn sha256_digest<R: Read>(mut reader: R) -> std::io::Result<Digest> {
+    let mut context = Context::new(&SHA256);
+    let mut buffer = [0; 1024];
+
+    loop {
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        context.update(&buffer[..count]);
+    }
+
+    Ok(context.finish())
+}
+
+fn write_file(dir: &PathBuf, file: &str, bytes: &[u8]) {
+    // Write data
+    let mut data = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(dir.join(file))
+        .unwrap();
+    data.write_all(bytes).unwrap();
+    // Write data hash
+    let hash = HEXUPPER.encode(sha256_digest(bytes).unwrap().as_ref());
+    let mut hash_file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(dir.join(format!("{file}.sha")))
+        .unwrap();
+    hash_file.write_all(hash.as_bytes()).unwrap();
 }
 
 #[allow(unreachable_code)]
 fn main() {
+    let args = Args::parse();
+
+    if let Some(new) = args.new {
+        if !new.exists() {
+            std::fs::create_dir(&new).unwrap();
+        }
+        let mut source = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(new.join("source"))
+            .unwrap();
+        source.write_all(b"\
+            include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\n\
+            x := \"Hello, World!\\n\"\n\
+            write 1 x\n\
+            exit 0\n\
+        ").unwrap();
+        return;
+    }
+
+    let (source, path_opt) = if let Some(source) = args.source {
+        (source, None)
+    } else {
+        let project_path = args.path.unwrap_or_else(|| PathBuf::from("./"));
+        let source_path = project_path.join("source");
+        (
+            std::fs::read_to_string(source_path).unwrap(),
+            Some(project_path),
+        )
+    };
+
     unsafe {
-        let args = Args::parse();
-        let reader = std::io::BufReader::new(args.source.as_bytes());
+        // Includes dependencies
+        let mut bytes = source.into_bytes();
+        get_includes(&mut bytes);
+        if let Some(path) = &path_opt {
+            write_file(path, "included", &bytes);
+        }
+
+        // Parses AST
+        let reader = std::io::BufReader::new(bytes.as_slice());
         let mut iter = reader.bytes().peekable();
         let nodes = get_nodes(&mut iter).unwrap();
+
+        // Inlines functions
         let inlined = inline_functions(nodes);
+        if let Some(path) = &path_opt {
+            let inlined_string = display_ast(inlined);
+            write_file(path, "inlined", inlined_string.as_bytes());
+        }
+
+        // Explores states
         let roots = roots(inlined);
         let mut explorer = Explorer::new(&roots);
         let path = loop {
@@ -46,9 +135,45 @@ fn main() {
             }
         };
 
-        let optimized_nodes = optimize(path);
-        let assembly = assembly_from_node(optimized_nodes);
+        // Optimize source
+        let optimized = optimize(path);
+        if let Some(path) = &path_opt {
+            let optimized_string = display_ast(optimized);
+            write_file(path, "optimized", optimized_string.as_bytes());
+        }
+
+        // Construct assembly
+        let assembly = assembly_from_node(optimized);
+        if let Some(path) = path_opt {
+            write_file(&path, "assembly", assembly.as_bytes());
+        }
+
         std::io::stdout().write_all(assembly.as_bytes()).unwrap();
+    }
+}
+
+fn display_ast(node: std::ptr::NonNull<crate::ast::NewNode>) -> String {
+    unsafe {
+        use std::fmt::Write;
+        let mut stack = vec![(node, 0)];
+        let mut string = String::new();
+        while let Some((current, indent)) = stack.pop() {
+            writeln!(
+                &mut string,
+                "{}{}",
+                "    ".repeat(indent),
+                current.as_ref().statement
+            )
+            .unwrap();
+
+            if let Some(next) = current.as_ref().next {
+                stack.push((next, indent));
+            }
+            if let Some(child) = current.as_ref().child {
+                stack.push((child, indent + 1));
+            }
+        }
+        string
     }
 }
 
@@ -76,6 +201,7 @@ mod tests {
     impl Variable {
         pub fn new(s: &str) -> Self {
             Self {
+                addressing: Addressing::Direct,
                 identifier: Vec::from(s.as_bytes()),
                 index: None,
             }
@@ -335,6 +461,7 @@ mod tests {
 
     fn ident(s: &str) -> TypeKey {
         TypeKey::Variable(Variable {
+            addressing: Addressing::Direct,
             identifier: s.bytes().collect::<Vec<_>>(),
             index: None,
         })
@@ -1910,6 +2037,7 @@ mod tests {
                     arg: vec![
                         Value::Register(Register::X0),
                         Value::Variable(Variable {
+                            addressing: Addressing::Direct,
                             identifier: Vec::from(b"in"),
                             index: Some(Box::new(Index::Offset(Offset::Integer(0)))),
                         }),
@@ -2254,6 +2382,7 @@ mod tests {
                     arg: vec![
                         Value::Register(Register::X0),
                         Value::Variable(Variable {
+                            addressing: Addressing::Direct,
                             identifier: Vec::from(b"in"),
                             index: Some(Box::new(Index::Offset(Offset::Integer(0)))),
                         }),
@@ -2280,10 +2409,12 @@ mod tests {
                     arg: vec![
                         Value::Variable(Variable::new("out")),
                         Value::Variable(Variable {
+                            addressing: Addressing::Direct,
                             identifier: Vec::from(b"in"),
                             index: Some(Box::new(Index::Offset(Offset::Integer(0)))),
                         }),
                         Value::Variable(Variable {
+                            addressing: Addressing::Direct,
                             identifier: Vec::from(b"in"),
                             index: Some(Box::new(Index::Offset(Offset::Integer(1)))),
                         }),
@@ -2766,6 +2897,7 @@ mod tests {
                     arg: vec![
                         Value::Register(Register::X0),
                         Value::Variable(Variable {
+                            addressing: Addressing::Direct,
                             identifier: Vec::from(b"in"),
                             index: Some(Box::new(Index::Offset(Offset::Integer(0)))),
                         }),

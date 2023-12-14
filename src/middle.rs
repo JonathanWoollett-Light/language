@@ -722,6 +722,15 @@ pub unsafe fn build_optimized_tree(
                 // Set next node
                 next_state_node = None;
             }
+            Op::Special(Special::SizeOf) => match slice {
+                [Value::Variable(_), Value::Variable(sized)] => {
+                    let sized_state = current.as_ref().state.get(&TypeKey::from(sized)).unwrap();
+                    let sized_type = Type::from(sized_state.clone());
+                    current.as_mut().statement.as_mut().statement.arg[1] =
+                        Value::Literal(Literal::Integer(sized_type.bytes() as i128));
+                }
+                _ => todo!(),
+            },
             _ => todo!(),
         }
     }
@@ -1133,9 +1142,11 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
             // Function definition
             Op::Intrinsic(Intrinsic::Def) => match current.as_ref().statement.arg.as_slice() {
                 [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
                     identifier,
                     index: None,
                 })] => {
+                    dbg!("hit this one");
                     // Insert function definition.
                     let pre_existing =
                         functions.insert(identifier, current.as_ref().child.unwrap());
@@ -1150,6 +1161,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
             Op::Intrinsic(Intrinsic::Assign) => match current.as_ref().statement.arg.as_slice() {
                 // Function call
                 [Value::Variable(lhs), Value::Variable(Variable {
+                    addressing: Addressing::Direct,
                     identifier: rhs,
                     index: None,
                 }), tail @ ..]
@@ -1162,6 +1174,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         let existing = variable_map.borrow().get(lhs).cloned();
                         let new_lhs = existing.unwrap_or_else(|| {
                             let new_lhs = Variable {
+                                addressing: Addressing::Direct,
                                 identifier: identifier_iterator.next().unwrap(),
                                 index: None,
                             };
@@ -1172,6 +1185,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         });
                         (
                             Variable {
+                                addressing: Addressing::Direct,
                                 identifier: Vec::from(b"out"),
                                 index: None,
                             },
@@ -1184,6 +1198,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         .map(|(i, old_value)| match old_value {
                             Value::Literal(literal) => {
                                 let new_variable = Variable {
+                                    addressing: Addressing::Direct,
                                     identifier: identifier_iterator.next().unwrap(),
                                     index: None,
                                 };
@@ -1228,6 +1243,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
 
                                 (
                                     Variable {
+                                        addressing: Addressing::Direct,
                                         identifier: Vec::from(b"in"),
                                         index: Some(Box::new(Index::Offset(Offset::Integer(
                                             i as u64,
@@ -1238,6 +1254,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                             }
                             Value::Variable(old_variable) => (
                                 Variable {
+                                    addressing: Addressing::Direct,
                                     identifier: Vec::from(b"in"),
                                     index: Some(Box::new(Index::Offset(Offset::Integer(i as u64)))),
                                 },
@@ -1285,6 +1302,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     // Update new variable
                     let new_identifier = identifier_iterator.next().unwrap();
                     let new_variable = Variable {
+                        addressing: Addressing::Direct,
                         identifier: new_identifier,
                         index: None,
                     };
@@ -1319,6 +1337,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
             },
             Op::Intrinsic(Intrinsic::Call) => match current.as_ref().statement.arg.as_slice() {
                 [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
                     identifier: rhs,
                     index: None,
                 }), tail @ ..] => {
@@ -1331,6 +1350,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         .map(|(i, old_value)| match old_value {
                             Value::Literal(literal) => {
                                 let new_variable = Variable {
+                                    addressing: Addressing::Direct,
                                     identifier: identifier_iterator.next().unwrap(),
                                     index: None,
                                 };
@@ -1375,6 +1395,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
 
                                 (
                                     Variable {
+                                        addressing: Addressing::Direct,
                                         identifier: Vec::from(b"in"),
                                         index: Some(Box::new(Index::Offset(Offset::Integer(
                                             i as u64,
@@ -1385,6 +1406,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                             }
                             Value::Variable(old_variable) => (
                                 Variable {
+                                    addressing: Addressing::Direct,
                                     identifier: Vec::from(b"in"),
                                     index: Some(Box::new(Index::Offset(Offset::Integer(i as u64)))),
                                 },
@@ -1434,6 +1456,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     // Update new variable
                     let new_identifier = identifier_iterator.next().unwrap();
                     let new_variable = Variable {
+                        addressing: Addressing::Direct,
                         identifier: new_identifier,
                         index: None,
                     };
@@ -1498,6 +1521,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     // Update new variable
                     let new_identifier = identifier_iterator.next().unwrap();
                     let new_variable = Variable {
+                        addressing: Addressing::Direct,
                         identifier: new_identifier,
                         index: None,
                     };
@@ -2280,6 +2304,25 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
         },
         Op::Assembly(Assembly::Svc) => vec![state.clone()],
         Op::Special(Special::Unreachable) => vec![state.clone()],
+        Op::Special(Special::SizeOf) => match slice {
+            [Value::Variable(rhs), Value::Variable(lhs)] => {
+                let key = TypeKey::from(rhs);
+                let size = Type::from(state.get(&TypeKey::from(lhs)).unwrap().clone()).bytes();
+                match state.get(&key) {
+                    // Iterates over the set of integer types which could contain `x`, returning a new state for each possibility.
+                    None => TypeValueInteger::possible(size as i128)
+                        .into_iter()
+                        .map(|p| {
+                            let mut new_state = state.clone();
+                            new_state.insert(key.clone(), TypeValue::Integer(p));
+                            new_state
+                        })
+                        .collect(),
+                    _ => todo!(),
+                }
+            }
+            _ => todo!(),
+        },
         _ => todo!(),
     }
 }

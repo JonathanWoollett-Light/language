@@ -1,0 +1,4 @@
+include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang
+x := "Hello, World!\n"
+write 1 x
+exit 0

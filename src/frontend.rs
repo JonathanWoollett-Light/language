@@ -53,6 +53,28 @@ pub fn get_type<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Type {
 pub fn get_variable<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Variable {
     // Get identifier
     let mut identifier = Vec::new();
+
+    let addressing = match bytes.peek().map(|r| r.as_ref().unwrap()) {
+        Some(b'&') => {
+            bytes.next().unwrap().unwrap();
+            Addressing::Reference
+        }
+        Some(b'*') => {
+            bytes.next().unwrap().unwrap();
+            Addressing::Dereference
+        }
+        Some(b'a'..=b'z' | b'_' | b'0'..=b'9') => {
+            let b = bytes.next().unwrap().unwrap();
+            identifier.push(b);
+            Addressing::Direct
+        }
+        _ => panic!(
+            "{:?} {:?}",
+            std::str::from_utf8(&identifier),
+            std::str::from_utf8(&bytes.map(Result::unwrap).collect::<Vec<_>>())
+        ),
+    };
+
     #[cfg(debug_assertions)]
     let mut i = 0;
     loop {
@@ -70,6 +92,7 @@ pub fn get_variable<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Variable {
             // End of line
             Some(b' ') | Some(b'\n') | None => {
                 break Variable {
+                    addressing,
                     identifier,
                     index: None,
                 }
@@ -77,6 +100,7 @@ pub fn get_variable<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Variable {
             // Slice start
             Some(b'.') => {
                 break Variable {
+                    addressing,
                     identifier,
                     index: None,
                 }
@@ -84,6 +108,7 @@ pub fn get_variable<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Variable {
             // Slice end
             Some(b']') => {
                 break Variable {
+                    addressing,
                     identifier,
                     index: None,
                 }
@@ -99,6 +124,7 @@ pub fn get_variable<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Variable {
                         let stop = get_offset(bytes);
                         assert_eq!(bytes.next().map(Result::unwrap), Some(b']'));
                         break Variable {
+                            addressing,
                             identifier,
                             index: Some(Box::new(Index::Slice(Slice { start, stop }))),
                         };
@@ -106,6 +132,7 @@ pub fn get_variable<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Variable {
                     // Offset
                     Some(b']') => {
                         break Variable {
+                            addressing,
                             identifier,
                             index: Some(Box::new(Index::Offset(start.unwrap()))),
                         }
@@ -532,6 +559,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                                 match (&first, &tail) {
                                     (
                                         Value::Variable(Variable {
+                                            addressing: Addressing::Direct,
                                             identifier,
                                             index: None,
                                         }),
@@ -545,6 +573,18 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                                             arg: once(lhs).chain(tail.iter().cloned()).collect(),
                                         }
                                     }
+                                    (
+                                        Value::Variable(Variable {
+                                            addressing: Addressing::Direct,
+                                            identifier,
+                                            index: None,
+                                        }),
+                                        _,
+                                    ) if identifier == b"sizeof" => Statement {
+                                        comptime,
+                                        op: Op::Special(Special::SizeOf),
+                                        arg: once(lhs).chain(tail.iter().cloned()).collect(),
+                                    },
                                     _ => Statement {
                                         comptime,
                                         op: Op::Intrinsic(Intrinsic::Assign),
@@ -595,6 +635,30 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                     arg: std::iter::once(lhs).chain(get_values(bytes)).collect(),
                 },
             }
+        }
+    }
+}
+
+pub fn get_includes(source: &mut Vec<u8>) {
+    let mut i = 0;
+    const INCLUDE: &[u8] = b"include";
+    while i < source.len() - INCLUDE.len() {
+        let j = i + INCLUDE.len();
+        if &source[i..j] == INCLUDE {
+            let mut k = j;
+            loop {
+                k += 1;
+                match source.get(k) {
+                    Some(b'\n') => break,
+                    Some(_) => continue,
+                    None => panic!(),
+                }
+            }
+            let url = std::str::from_utf8(&source[j..k]).unwrap();
+            let text = reqwest::blocking::get(url).unwrap().text().unwrap();
+            source.splice(i..k, text.bytes());
+        } else {
+            i += 1;
         }
     }
 }

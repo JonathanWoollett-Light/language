@@ -89,3 +89,6 @@ fn helloworld() {
     assert_eq!(output.status.code(), Some(EXPECTED_EXIT_CODE));
     remove_file(path).unwrap();
 }
+
+#[test]
+fn new_project() {}

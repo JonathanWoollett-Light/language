@@ -202,6 +202,7 @@ pub fn instruction_from_node(
                 )
                 .unwrap(),
                 [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
                     identifier,
                     index: None,
                 })] => match type_data.get(identifier).unwrap() {
@@ -223,6 +224,7 @@ pub fn instruction_from_node(
             },
             Op::Intrinsic(Intrinsic::Assign) => match arg {
                 [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
                     identifier,
                     index: None,
                 }), Value::Literal(Literal::Integer(y))] => {
@@ -252,6 +254,7 @@ pub fn instruction_from_node(
                 }
 
                 [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
                     identifier,
                     index: None,
                 }), Value::Literal(Literal::String(string))] => {
@@ -306,6 +309,7 @@ pub fn instruction_from_node(
                     }
                 }
                 [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
                     identifier,
                     index: None,
                 }), rest @ ..] => match type_data.get(identifier).unwrap() {
@@ -362,6 +366,7 @@ pub fn instruction_from_node(
             },
             Op::Intrinsic(Intrinsic::AddAssign) => match arg {
                 [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
                     identifier,
                     index: None,
                 }), Value::Literal(Literal::Integer(y))] => {
@@ -395,6 +400,7 @@ pub fn instruction_from_node(
             },
             Op::Intrinsic(Intrinsic::SubAssign) => match arg {
                 [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
                     identifier,
                     index: None,
                 }), Value::Literal(Literal::Integer(y))] => {
@@ -428,6 +434,7 @@ pub fn instruction_from_node(
             },
             Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => match arg {
                 [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
                     identifier,
                     index: None,
                 }), Value::Literal(Literal::Integer(y))] => {
@@ -455,6 +462,7 @@ pub fn instruction_from_node(
             },
             Op::Syscall(Syscall::Read) => match arg {
                 [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
                     identifier,
                     index: None,
                 }), Value::Literal(Literal::Integer(fd))] => {
@@ -474,6 +482,7 @@ pub fn instruction_from_node(
                     .unwrap();
                 }
                 [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
                     identifier,
                     index: None,
                 }), Value::Type(variable_type), Value::Literal(Literal::Integer(fd))] => {
@@ -505,6 +514,7 @@ pub fn instruction_from_node(
             },
             Op::Syscall(Syscall::Write) => match arg {
                 [Value::Literal(Literal::Integer(fd)), Value::Variable(Variable {
+                    addressing: Addressing::Direct,
                     identifier,
                     index: None,
                 })] => {
@@ -528,6 +538,7 @@ pub fn instruction_from_node(
             Op::Syscall(Syscall::MemfdCreate) => {
                 match arg {
                     [Value::Variable(Variable {
+                        addressing: Addressing::Direct,
                         identifier,
                         index: None,
                     })] => match type_data.get(identifier) {
