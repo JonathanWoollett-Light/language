@@ -236,7 +236,7 @@ pub fn get_value<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Value {
             Value::Literal(Literal::Integer(0))
         }
         Some(b'1'..=b'9') => Value::Literal(Literal::Integer(non_zero_integer(bytes))),
-        Some(b'a'..=b'z' | b'_') => {
+        Some(b'&' | b'*' | b'a'..=b'z' | b'_') => {
             let variable = get_variable(bytes);
             if let Ok(register) = Register::try_from(&variable) {
                 Value::Register(register)

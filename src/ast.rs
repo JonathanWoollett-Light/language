@@ -34,7 +34,7 @@ pub struct Statement {
 
 impl std::fmt::Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self.op {
+        match &self.op {
             Op::Intrinsic(Intrinsic::Assign) => match self.arg.as_slice() {
                 [Value::Variable(variable), tail @ ..] => {
                     write!(
@@ -57,7 +57,20 @@ impl std::fmt::Display for Statement {
                     .intersperse(String::from(" "))
                     .collect::<String>()
             ),
-            _ => todo!(),
+            Op::Special(Special::SizeOf) => match self.arg.as_slice() {
+                [lhs,rhs] => write!(f, "{lhs} := sizeof {rhs}"),
+                _ => todo!(),
+            },
+            Op::Assembly(Assembly::Mov) => match self.arg.as_slice() {
+                [lhs, rhs] => write!(f, "mov {lhs} {rhs}"),
+                _ => todo!()
+            }
+            Op::Assembly(Assembly::Svc) => match self.arg.as_slice() {
+                [value] => write!(f, "svc {value}"),
+                _ => todo!()
+            }
+            Op::Special(Special::Unreachable) => write!(f,"unreachable"),
+            x @ _ => todo!("{x:?}"),
         }
     }
 }
@@ -366,7 +379,7 @@ impl Literal {
 impl std::fmt::Display for Literal {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::String(string) => write!(f, "\"{string}\""),
+            Self::String(string) => write!(f, "{string:?}"),
             Self::Integer(integer) => write!(f, "{integer}"),
         }
     }

@@ -1,0 +1,14 @@
+a := "Hello, World!\n"
+b := 1
+c := b
+d := a
+e := sizeof a
+mov x8 64
+mov x0 c
+mov x1 d
+mov x2 e
+f := 0
+mov x8 93
+mov x0 f
+svc 0
+unreachable

@@ -1128,11 +1128,34 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
             .collect::<Vec<_>>()
     });
 
+    #[derive(Debug, Eq, PartialEq, Default, Clone, Hash)]
+    struct VariableAlias {
+        identifier: Identifier,
+        index: Option<Box<Index>>,
+    }
+    impl From<Variable> for VariableAlias {
+        fn from(variable: Variable) -> Self {
+            Self {
+                identifier: variable.identifier,
+                index: variable.index,
+            }
+        }
+    }
+    impl From<VariableAlias> for Variable {
+        fn from(alias: VariableAlias) -> Self {
+            Self {
+                addressing: Addressing::Direct,
+                identifier: alias.identifier,
+                index: alias.index,
+            }
+        }
+    }
+
     let mut stack = vec![(
         node,
         None,
         None,
-        Rc::new(RefCell::new(HashMap::<Variable, Variable>::new())),
+        Rc::new(RefCell::new(HashMap::<VariableAlias, VariableAlias>::new())),
     )];
 
     while let Some((current, mut preceding, next_carry, variable_map)) = stack.pop() {
@@ -1160,7 +1183,12 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
             },
             Op::Intrinsic(Intrinsic::Assign) => match current.as_ref().statement.arg.as_slice() {
                 // Function call
-                [Value::Variable(lhs), Value::Variable(Variable {
+                [Value::Variable(
+                    lhs @ Variable {
+                        addressing: Addressing::Direct,
+                        ..
+                    },
+                ), Value::Variable(Variable {
                     addressing: Addressing::Direct,
                     identifier: rhs,
                     index: None,
@@ -1171,21 +1199,20 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     let function = functions.get(rhs).unwrap();
 
                     let head_iter = std::iter::once({
-                        let existing = variable_map.borrow().get(lhs).cloned();
+                        let lhs_alias = VariableAlias::from(lhs.clone());
+                        let existing = variable_map.borrow().get(&lhs_alias).cloned();
                         let new_lhs = existing.unwrap_or_else(|| {
-                            let new_lhs = Variable {
-                                addressing: Addressing::Direct,
+                            let new_lhs = VariableAlias {
                                 identifier: identifier_iterator.next().unwrap(),
                                 index: None,
                             };
                             variable_map
                                 .borrow_mut()
-                                .insert(lhs.clone(), new_lhs.clone());
+                                .insert(lhs_alias.clone(), new_lhs.clone());
                             new_lhs
                         });
                         (
-                            Variable {
-                                addressing: Addressing::Direct,
+                            VariableAlias {
                                 identifier: Vec::from(b"out"),
                                 index: None,
                             },
@@ -1197,8 +1224,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         .enumerate()
                         .map(|(i, old_value)| match old_value {
                             Value::Literal(literal) => {
-                                let new_variable = Variable {
-                                    addressing: Addressing::Direct,
+                                let new_variable = VariableAlias {
                                     identifier: identifier_iterator.next().unwrap(),
                                     index: None,
                                 };
@@ -1213,7 +1239,9 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                                             comptime: false,
                                             op: Op::Intrinsic(Intrinsic::Assign),
                                             arg: vec![
-                                                Value::Variable(new_variable.clone()),
+                                                Value::Variable(Variable::from(
+                                                    new_variable.clone(),
+                                                )),
                                                 Value::Literal(literal.clone()),
                                             ],
                                         },
@@ -1242,8 +1270,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                                 preceding = Some(Preceding::Previous(new));
 
                                 (
-                                    Variable {
-                                        addressing: Addressing::Direct,
+                                    VariableAlias {
                                         identifier: Vec::from(b"in"),
                                         index: Some(Box::new(Index::Offset(Offset::Integer(
                                             i as u64,
@@ -1253,12 +1280,15 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                                 )
                             }
                             Value::Variable(old_variable) => (
-                                Variable {
-                                    addressing: Addressing::Direct,
+                                VariableAlias {
                                     identifier: Vec::from(b"in"),
                                     index: Some(Box::new(Index::Offset(Offset::Integer(i as u64)))),
                                 },
-                                variable_map.borrow().get(old_variable).unwrap().clone(),
+                                variable_map
+                                    .borrow()
+                                    .get(&VariableAlias::from(old_variable.clone()))
+                                    .unwrap()
+                                    .clone(),
                             ),
                             Value::Type(_) => todo!(),
                             Value::Register(_) => todo!(),
@@ -1301,22 +1331,28 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
 
                     // Update new variable
                     let new_identifier = identifier_iterator.next().unwrap();
-                    let new_variable = Variable {
-                        addressing: Addressing::Direct,
+                    let new_variable = VariableAlias {
                         identifier: new_identifier,
                         index: None,
                     };
                     let res = variable_map
                         .borrow_mut()
-                        .insert(variable.clone(), new_variable.clone());
+                        .insert(VariableAlias::from(variable.clone()), new_variable.clone());
                     assert!(res.is_none()); // Assert isn't pre-existing
-                    *variable = new_variable;
+                    *variable = Variable::from(new_variable);
 
                     // Update existing variables
                     for tail_variable in tail.iter_mut().filter_map(Value::variable_mut) {
-                        let new_tail_variable =
-                            variable_map.borrow().get(tail_variable).unwrap().clone();
-                        *tail_variable = new_tail_variable;
+                        let VariableAlias { identifier, index } = variable_map
+                            .borrow()
+                            .get(&VariableAlias::from(tail_variable.clone()))
+                            .unwrap()
+                            .clone();
+                        *tail_variable = Variable {
+                            addressing: tail_variable.addressing.clone(),
+                            identifier,
+                            index,
+                        };
                     }
 
                     debug_assert!(current.as_ref().child.is_none());
@@ -1349,8 +1385,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         .enumerate()
                         .map(|(i, old_value)| match old_value {
                             Value::Literal(literal) => {
-                                let new_variable = Variable {
-                                    addressing: Addressing::Direct,
+                                let new_variable = VariableAlias {
                                     identifier: identifier_iterator.next().unwrap(),
                                     index: None,
                                 };
@@ -1365,7 +1400,9 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                                             comptime: false,
                                             op: Op::Intrinsic(Intrinsic::Assign),
                                             arg: vec![
-                                                Value::Variable(new_variable.clone()),
+                                                Value::Variable(Variable::from(
+                                                    new_variable.clone(),
+                                                )),
                                                 Value::Literal(literal.clone()),
                                             ],
                                         },
@@ -1394,8 +1431,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                                 preceding = Some(Preceding::Previous(new));
 
                                 (
-                                    Variable {
-                                        addressing: Addressing::Direct,
+                                    VariableAlias {
                                         identifier: Vec::from(b"in"),
                                         index: Some(Box::new(Index::Offset(Offset::Integer(
                                             i as u64,
@@ -1405,12 +1441,15 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                                 )
                             }
                             Value::Variable(old_variable) => (
-                                Variable {
-                                    addressing: Addressing::Direct,
+                                VariableAlias {
                                     identifier: Vec::from(b"in"),
                                     index: Some(Box::new(Index::Offset(Offset::Integer(i as u64)))),
                                 },
-                                variable_map.borrow().get(old_variable).unwrap().clone(),
+                                variable_map
+                                    .borrow()
+                                    .get(&VariableAlias::from(old_variable.clone()))
+                                    .unwrap()
+                                    .clone(),
                             ),
                             Value::Type(_) => todo!(),
                             Value::Register(_) => todo!(),
@@ -1455,22 +1494,24 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
 
                     // Update new variable
                     let new_identifier = identifier_iterator.next().unwrap();
-                    let new_variable = Variable {
-                        addressing: Addressing::Direct,
+                    let new_variable = VariableAlias {
                         identifier: new_identifier,
                         index: None,
                     };
                     let res = variable_map
                         .borrow_mut()
-                        .insert(variable.clone(), new_variable.clone());
+                        .insert(VariableAlias::from(variable.clone()), new_variable.clone());
                     assert!(res.is_none()); // Assert isn't pre-existing
-                    *variable = new_variable;
+                    *variable = Variable::from(new_variable);
 
                     // Update existing variables
                     for tail_variable in tail.iter_mut().filter_map(Value::variable_mut) {
-                        let new_tail_variable =
-                            variable_map.borrow().get(tail_variable).unwrap().clone();
-                        *tail_variable = new_tail_variable;
+                        let VariableAlias { identifier, index } =
+                            variable_map.borrow().get(&VariableAlias::from(tail_variable.clone())).unwrap().clone();
+                        *tail_variable = Variable {
+                            addressing: tail_variable.addressing.clone(),
+                            identifier, index
+                        };
                     }
 
                     // Update child/next.
@@ -1492,6 +1533,8 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
             },
             Op::Syscall(Syscall::Read) => match current.as_ref().statement.arg.as_slice() {
                 [Value::Variable(_), ..] => {
+                    // TODO Support case where lhs already exists.
+
                     // Create new node.
                     let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
                     ptr::copy(current.as_ptr(), dst, 1);
@@ -1520,24 +1563,31 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
 
                     // Update new variable
                     let new_identifier = identifier_iterator.next().unwrap();
-                    let new_variable = Variable {
-                        addressing: Addressing::Direct,
+                    let new_variable = VariableAlias {
                         identifier: new_identifier,
                         index: None,
                     };
                     let res = variable_map
                         .borrow_mut()
-                        .insert(variable.clone(), new_variable.clone());
+                        .insert(VariableAlias::from(variable.clone()), new_variable.clone());
                     assert!(res.is_none()); // Assert isn't pre-existing
-                    *variable = new_variable;
+                    *variable = Variable::from(new_variable);
 
                     // Update existing variables
                     for tail_variable in tail.iter_mut().filter_map(Value::variable_mut) {
-                        let new_tail_variable =
-                            variable_map.borrow().get(tail_variable).unwrap().clone();
-                        *tail_variable = new_tail_variable;
+                        let VariableAlias { identifier, index } = variable_map
+                            .borrow()
+                            .get(&VariableAlias::from(tail_variable.clone()))
+                            .unwrap()
+                            .clone();
+                        *tail_variable = Variable {
+                            addressing: tail_variable.addressing.clone(),
+                            identifier,
+                            index,
+                        };
                     }
 
+                    // Go next statement.
                     debug_assert!(current.as_ref().child.is_none());
                     if let Some(next) = current.as_ref().next {
                         stack.push((
@@ -1553,6 +1603,77 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     }
                 }
                 _ => todo!(),
+            },
+            Op::Special(Special::SizeOf) => match current.as_ref().statement.arg.as_slice() {
+                [Value::Variable(_), Value::Variable(_)] => {
+                    // TODO Support case where lhs already exists.
+
+                    // Create new node.
+                    let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
+                    ptr::copy(current.as_ptr(), dst, 1);
+                    let mut new = NonNull::new(dst).unwrap();
+
+                    let [Value::Variable(lhs), Value::Variable(rhs)] =
+                        new.as_mut().statement.arg.as_mut_slice()
+                    else {
+                        unreachable!()
+                    };
+
+                    // Update new preceding.
+                    match preceding {
+                        Some(Preceding::Parent(mut parent)) => {
+                            debug_assert!(parent.as_ref().child.is_none());
+                            parent.as_mut().child = Some(new);
+                        }
+                        Some(Preceding::Previous(mut previous)) => {
+                            debug_assert!(previous.as_ref().next.is_none());
+                            previous.as_mut().next = Some(new);
+                        }
+                        None => {
+                            first = Some(new);
+                        }
+                    }
+
+                    // Update new variable
+                    let new_identifier = identifier_iterator.next().unwrap();
+                    let new_variable = VariableAlias {
+                        identifier: new_identifier,
+                        index: None,
+                    };
+                    let res = variable_map
+                        .borrow_mut()
+                        .insert(VariableAlias::from(lhs.clone()), new_variable.clone());
+                    assert!(res.is_none()); // Assert isn't pre-existing
+                    *lhs = Variable::from(new_variable);
+
+                    // Update right hande side
+                    let VariableAlias { identifier, index } = variable_map
+                        .borrow()
+                        .get(&VariableAlias::from(rhs.clone()))
+                        .unwrap()
+                        .clone();
+                    *rhs = Variable {
+                        addressing: rhs.addressing.clone(),
+                        identifier,
+                        index,
+                    };
+
+                    // Go next statement.
+                    debug_assert!(current.as_ref().child.is_none());
+                    if let Some(next) = current.as_ref().next {
+                        stack.push((
+                            next,
+                            Some(Preceding::Previous(new)),
+                            next_carry,
+                            variable_map,
+                        ));
+                        new.as_mut().next = None;
+                    } else if let Some((next, old_variable_map)) = next_carry {
+                        stack.push((next, Some(Preceding::Previous(new)), None, old_variable_map));
+                        new.as_mut().next = None;
+                    }
+                }
+                x @ _ => todo!("{x:?}"),
             },
             // Else
             _ => {
@@ -1585,8 +1706,16 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     .iter_mut()
                     .filter_map(Value::variable_mut)
                 {
-                    let new_variable = variable_map.borrow().get(variable).unwrap().clone();
-                    *variable = new_variable;
+                    let var = VariableAlias::from(variable.clone());
+                    println!("var: {var:?}");
+                    println!("variable_map: {variable_map:?}");
+                    let VariableAlias { identifier, index } =
+                        variable_map.borrow().get(&var).unwrap().clone();
+                    *variable = Variable {
+                        addressing: variable.addressing.clone(),
+                        identifier,
+                        index,
+                    };
                 }
 
                 // Update child/next.
@@ -2000,7 +2129,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                     _ => todo!(),
                 }
             }
-            _ => todo!(),
+            x @ _ => todo!("{x:?}"),
         },
         Op::Intrinsic(Intrinsic::SubAssign) => match slice {
             [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
