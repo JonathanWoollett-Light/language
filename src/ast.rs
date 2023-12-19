@@ -418,12 +418,12 @@ impl From<Identifier> for Variable {
         Self {
             addressing: Addressing::Direct,
             identifier,
-            index: None
+            index: None,
         }
     }
 }
 
-#[derive(Eq, PartialEq, Default, Clone, Hash,Debug)]
+#[derive(Eq, PartialEq, Default, Clone, Hash, Debug)]
 pub enum Addressing {
     /// &x
     Reference,
@@ -434,11 +434,22 @@ pub enum Addressing {
     Dereference,
 }
 
+impl std::fmt::Display for Addressing {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Reference => write!(f, "&"),
+            Self::Direct => Ok(()),
+            Self::Dereference => write!(f, "*"),
+        }
+    }
+}
+
 impl std::fmt::Display for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{}{}",
+            "{}{}{}",
+            self.addressing,
             std::str::from_utf8(&self.identifier).unwrap(),
             self.index
                 .as_ref()
@@ -632,11 +643,13 @@ pub enum Type {
     I64,
     #[allow(dead_code)]
     Array(Box<Array>),
+    Reference,
 }
 
 impl Type {
     pub fn bytes(&self) -> usize {
         match self {
+            Self::Reference => 0,
             Self::U8 => 1,
             Self::U16 => 2,
             Self::U32 => 4,

@@ -5,8 +5,8 @@ def exit
     unreachable
 def write
     fd := in[0]
-    ptr := &in[1]
-    len := sizeof in[1]
+    ptr := in[1]
+    len := sizeof *ptr
     mov x8 64
     mov x0 fd
     mov x1 ptr

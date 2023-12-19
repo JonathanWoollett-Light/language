@@ -229,7 +229,25 @@ pub unsafe fn build_optimized_tree(
                         .is_none());
                     next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
-                _ => todo!(),
+                [Value::Variable(lhs),Value::Variable(_rhs)] => {
+                    let variable_state = current
+                        .as_ref()
+                        .state
+                        .get(&TypeKey::from(lhs))
+                        .unwrap()
+                        .clone();
+
+                    match variable_state {
+                        TypeValue::Integer(TypeValueInteger::U8(range))
+                            if range.value().is_some() =>
+                        {
+                            // Removes node and sets next node.
+                            next_state_node = remove_node(current, &mut first_state_node);
+                        }
+                        x @ _ => todo!("{x:?}"),
+                    }
+                }
+                x @ _ => todo!("{x:?}"),
             },
             Op::Syscall(Syscall::Exit) => match slice {
                 [Value::Variable(variable)] => {
@@ -1114,15 +1132,15 @@ pub unsafe fn roots(node: NonNull<NewNode>) -> Vec<NonNull<NewStateNode>> {
 }
 
 #[derive(Debug, Eq, PartialEq, Default, Clone, Hash)]
-struct VariableAlias {
+pub struct VariableAlias {
     identifier: Identifier,
     index: Option<Box<Index>>,
 }
 impl From<&str> for VariableAlias {
-    fn from(s:&str) -> Self {
+    fn from(s: &str) -> Self {
         Self {
             identifier: Vec::from(s.as_bytes()),
-            index: None
+            index: None,
         }
     }
 }
@@ -1143,6 +1161,97 @@ impl From<VariableAlias> for Variable {
         }
     }
 }
+impl From<Identifier> for VariableAlias {
+    fn from(identifier: Identifier) -> Self {
+        Self {
+            identifier,
+            index: None,
+        }
+    }
+}
+
+unsafe fn create_inline_variable<I: Iterator<Item = Identifier>>(
+    values: &[Value],
+    variable_map: &HashMap<VariableAlias, VariableAlias>,
+    first: &mut Option<NonNull<NewNode>>,
+    preceding: &mut Option<Preceding>,
+    identifier_iterator: &mut I,
+) -> HashMap<VariableAlias, VariableAlias> {
+    values
+        .iter()
+        .enumerate()
+        .map(|(i, old_value)| {
+            let new_variable_identiier = identifier_iterator.next().unwrap();
+            let new_value = match old_value {
+                literal @ Value::Literal(_) => literal.clone(),
+                Value::Variable(Variable {
+                    addressing,
+                    identifier,
+                    index,
+                }) => {
+                    let VariableAlias { identifier, index } = variable_map
+                        .get(&VariableAlias {
+                            identifier: identifier.clone(),
+                            index: index.clone(),
+                        })
+                        .unwrap()
+                        .clone();
+                    Value::Variable(Variable {
+                        addressing: addressing.clone(),
+                        identifier,
+                        index,
+                    })
+                }
+                _ => todo!(),
+            };
+
+            // Create new node.
+            let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
+            std::ptr::write(
+                dst,
+                NewNode {
+                    statement: Statement {
+                        comptime: false,
+                        op: Op::Intrinsic(Intrinsic::Assign),
+                        arg: vec![
+                            Value::Variable(Variable::from(new_variable_identiier.clone())),
+                            new_value,
+                        ],
+                    },
+                    preceding: *preceding,
+                    child: None,
+                    next: None,
+                },
+            );
+            let new = NonNull::new(dst).unwrap();
+
+            // Update preceding
+            match preceding {
+                Some(Preceding::Previous(mut previous)) => {
+                    debug_assert!(previous.as_ref().next.is_none());
+                    previous.as_mut().next = Some(new);
+                }
+                Some(Preceding::Parent(mut parent)) => {
+                    debug_assert!(parent.as_ref().child.is_none());
+                    parent.as_mut().child = Some(new);
+                }
+                None => {
+                    *first = Some(new);
+                }
+            }
+
+            *preceding = Some(Preceding::Previous(new));
+
+            (
+                VariableAlias {
+                    identifier: Vec::from(b"in"),
+                    index: Some(Box::new(Index::Offset(Offset::Integer(i as u64)))),
+                },
+                VariableAlias::from(new_variable_identiier),
+            )
+        })
+        .collect()
+}
 
 pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
     let mut first = None;
@@ -1158,7 +1267,6 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
             .chain(std::iter::once((index % N) + b'a'))
             .collect::<Vec<_>>()
     });
-
 
     let mut stack = vec![(
         node,
@@ -1228,63 +1336,17 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                             new_lhs,
                         )
                     });
-                    let tail_iter = tail
-                        .iter()
-                        .enumerate()
-                        .map(|(i, old_value)| {
-                            let new_variable_identiier = identifier_iterator.next().unwrap();
-                            // Create new node.
-                            let dst =
-                                alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
-                            std::ptr::write(
-                                dst,
-                                NewNode {
-                                    statement: Statement {
-                                        comptime: false,
-                                        op: Op::Intrinsic(Intrinsic::Assign),
-                                        arg: vec![
-                                            Value::Variable(Variable::from(
-                                                new_variable_identiier.clone(),
-                                            )),
-                                            old_value.clone(),
-                                        ],
-                                    },
-                                    preceding,
-                                    child: None,
-                                    next: None,
-                                },
-                            );
-                            let new = NonNull::new(dst).unwrap();
+                    let tail_variables = create_inline_variable(
+                        tail,
+                        &variable_map.borrow(),
+                        &mut first,
+                        &mut preceding,
+                        &mut identifier_iterator,
+                    );
 
-                            // Update preceding
-                            match preceding {
-                                Some(Preceding::Previous(mut previous)) => {
-                                    debug_assert!(previous.as_ref().next.is_none());
-                                    previous.as_mut().next = Some(new);
-                                }
-                                Some(Preceding::Parent(mut parent)) => {
-                                    debug_assert!(parent.as_ref().child.is_none());
-                                    parent.as_mut().child = Some(new);
-                                }
-                                None => {
-                                    first = Some(new);
-                                }
-                            }
-
-                            preceding = Some(Preceding::Previous(new));
-
-                            (
-                                VariableAlias {
-                                    identifier: Vec::from(b"in"),
-                                    index: Some(Box::new(Index::Offset(Offset::Integer(
-                                        i as u64,
-                                    )))),
-                                },
-                                VariableAlias::from(new_variable_identiier),
-                            )
-                    });
-                    let new_variable_map =
-                        Rc::new(RefCell::new(head_iter.chain(tail_iter).collect()));
+                    let new_variable_map = Rc::new(RefCell::new(
+                        head_iter.chain(tail_variables.into_iter()).collect(),
+                    ));
                     stack.push((
                         *function,
                         preceding,
@@ -1292,7 +1354,10 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         new_variable_map,
                     ));
                 }
-                [Value::Variable(Variable { addressing: Addressing::Direct, .. }), ..] => {
+                [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
+                    ..
+                }), ..] => {
                     // Create new node.
                     let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
                     ptr::copy(current.as_ptr(), dst, 1);
@@ -1337,7 +1402,6 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
 
                     // Update existing variables
                     for tail_variable in tail.iter_mut().filter_map(Value::variable_mut) {
-                        
                         let VariableAlias { identifier, index } = variable_map
                             .borrow()
                             .get(&VariableAlias::from(tail_variable.clone()))
@@ -1375,81 +1439,14 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     debug_assert!(next_carry.is_none());
                     let function = functions.get(rhs).unwrap();
 
-                    let iter = tail
-                        .iter()
-                        .enumerate()
-                        .map(|(i, old_value)| match old_value {
-                            Value::Literal(literal) => {
-                                let new_variable = VariableAlias {
-                                    identifier: identifier_iterator.next().unwrap(),
-                                    index: None,
-                                };
-
-                                // Create new node.
-                                let dst =
-                                    alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
-                                std::ptr::write(
-                                    dst,
-                                    NewNode {
-                                        statement: Statement {
-                                            comptime: false,
-                                            op: Op::Intrinsic(Intrinsic::Assign),
-                                            arg: vec![
-                                                Value::Variable(Variable::from(
-                                                    new_variable.clone(),
-                                                )),
-                                                Value::Literal(literal.clone()),
-                                            ],
-                                        },
-                                        preceding,
-                                        child: None,
-                                        next: None,
-                                    },
-                                );
-                                let new = NonNull::new(dst).unwrap();
-
-                                // Update preceding
-                                match preceding {
-                                    Some(Preceding::Previous(mut previous)) => {
-                                        debug_assert!(previous.as_ref().next.is_none());
-                                        previous.as_mut().next = Some(new);
-                                    }
-                                    Some(Preceding::Parent(mut parent)) => {
-                                        debug_assert!(parent.as_ref().child.is_none());
-                                        parent.as_mut().child = Some(new);
-                                    }
-                                    None => {
-                                        first = Some(new);
-                                    }
-                                }
-
-                                preceding = Some(Preceding::Previous(new));
-
-                                (
-                                    VariableAlias {
-                                        identifier: Vec::from(b"in"),
-                                        index: Some(Box::new(Index::Offset(Offset::Integer(
-                                            i as u64,
-                                        )))),
-                                    },
-                                    new_variable,
-                                )
-                            }
-                            Value::Variable(old_variable) => (
-                                VariableAlias {
-                                    identifier: Vec::from(b"in"),
-                                    index: Some(Box::new(Index::Offset(Offset::Integer(i as u64)))),
-                                },
-                                variable_map
-                                    .borrow()
-                                    .get(&VariableAlias::from(old_variable.clone()))
-                                    .unwrap()
-                                    .clone(),
-                            ),
-                            Value::Type(_) => todo!(),
-                            Value::Register(_) => todo!(),
-                        });
-                    let new_variable_map = Rc::new(RefCell::new(iter.collect()));
+                    let map = create_inline_variable(
+                        tail,
+                        &variable_map.borrow(),
+                        &mut first,
+                        &mut preceding,
+                        &mut identifier_iterator,
+                    );
+                    let new_variable_map = Rc::new(RefCell::new(map));
                     stack.push((
                         *function,
                         preceding,
@@ -2128,20 +2125,39 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                     _ => todo!(),
                 }
             }
-            [Value::Variable(lhs), Value::Variable(rhs @ Variable { addressing: Addressing::Direct, .. })] => {
+            [Value::Variable(lhs), Value::Variable(
+                rhs @ Variable {
+                    addressing: Addressing::Direct,
+                    ..
+                },
+            )] => {
                 let key = TypeKey::from(lhs.clone());
-                let rhs_state = state.get(&TypeKey::from(rhs.clone())).unwrap();
+                let rhs_state = state
+                    .get(&TypeKey::from(rhs.clone()))
+                    .expect(&format!("{:?}", rhs));
                 match state.get(&key) {
                     None => {
                         let mut new_state = state.clone();
-                        new_state.insert(key.clone(),rhs_state.clone());
+                        new_state.insert(key.clone(), rhs_state.clone());
                         vec![new_state]
-                    },
-                    _ => todo!()
+                    }
+                    _ => todo!(),
                 }
             }
-            [Value::Variable(lhs),Value::Variable(rhs @ Variable { addressing: Addressing::Reference, .. })] => {
-
+            [Value::Variable(lhs), Value::Variable(Variable {
+                addressing: Addressing::Reference,
+                identifier,
+                index,
+            })] => {
+                let mut new_state = state.clone();
+                new_state.insert(
+                    TypeKey::from(lhs),
+                    TypeValue::Reference(VariableAlias {
+                        identifier: identifier.clone(),
+                        index: index.clone(),
+                    }),
+                );
+                vec![new_state]
             }
             x @ _ => todo!("{x:?}"),
         },
@@ -2397,48 +2413,53 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             [Value::Register(register), Value::Variable(variable)] => {
                 let mut new_state = state.clone();
-                let value = match state.get(&TypeKey::from(variable)) {
-                    Some(TypeValue::Integer(TypeValueInteger::I8(range)))
+                let Some(variable_state) = state.get(&TypeKey::from(variable)) else {
+                    return Vec::new();
+                };
+
+                let value = match variable_state {
+                    TypeValue::Integer(TypeValueInteger::I8(range))
                         if let Some(integer) = range.value() =>
                     {
                         TypeValue::Integer(TypeValueInteger::I64(MyRange::from(i64::from(integer))))
                     }
-                    Some(TypeValue::Integer(TypeValueInteger::I16(range)))
+                    TypeValue::Integer(TypeValueInteger::I16(range))
                         if let Some(integer) = range.value() =>
                     {
                         TypeValue::Integer(TypeValueInteger::I64(MyRange::from(i64::from(integer))))
                     }
-                    Some(TypeValue::Integer(TypeValueInteger::I32(range)))
+                    TypeValue::Integer(TypeValueInteger::I32(range))
                         if let Some(integer) = range.value() =>
                     {
                         TypeValue::Integer(TypeValueInteger::I64(MyRange::from(i64::from(integer))))
                     }
-                    Some(TypeValue::Integer(TypeValueInteger::I64(range)))
+                    TypeValue::Integer(TypeValueInteger::I64(range))
                         if let Some(integer) = range.value() =>
                     {
                         TypeValue::Integer(TypeValueInteger::I64(MyRange::from(i64::from(integer))))
                     }
-                    Some(TypeValue::Integer(TypeValueInteger::U8(range)))
+                    TypeValue::Integer(TypeValueInteger::U8(range))
                         if let Some(integer) = range.value() =>
                     {
                         TypeValue::Integer(TypeValueInteger::U64(MyRange::from(u64::from(integer))))
                     }
-                    Some(TypeValue::Integer(TypeValueInteger::U16(range)))
+                    TypeValue::Integer(TypeValueInteger::U16(range))
                         if let Some(integer) = range.value() =>
                     {
                         TypeValue::Integer(TypeValueInteger::U64(MyRange::from(u64::from(integer))))
                     }
-                    Some(TypeValue::Integer(TypeValueInteger::U32(range)))
+                    TypeValue::Integer(TypeValueInteger::U32(range))
                         if let Some(integer) = range.value() =>
                     {
                         TypeValue::Integer(TypeValueInteger::U64(MyRange::from(u64::from(integer))))
                     }
-                    Some(TypeValue::Integer(TypeValueInteger::U64(range)))
+                    TypeValue::Integer(TypeValueInteger::U64(range))
                         if let Some(integer) = range.value() =>
                     {
                         TypeValue::Integer(TypeValueInteger::U64(MyRange::from(u64::from(integer))))
                     }
-                    _ => todo!(),
+                    reference @ TypeValue::Reference(_) => reference.clone(),
+                    x @ _ => todo!("{x:?}"),
                 };
                 new_state.insert(TypeKey::Register(register.clone()), value);
                 vec![new_state]
@@ -2450,7 +2471,8 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
         Op::Special(Special::SizeOf) => match slice {
             [Value::Variable(rhs), Value::Variable(lhs)] => {
                 let key = TypeKey::from(rhs.clone());
-                let size = Type::from(state.get(&TypeKey::from(lhs.clone())).unwrap().clone()).bytes();
+                let size =
+                    Type::from(state.get(&TypeKey::from(lhs.clone())).unwrap().clone()).bytes();
                 match state.get(&key) {
                     // Iterates over the set of integer types which could contain `x`, returning a new state for each possibility.
                     None => TypeValueInteger::possible(size as i128)
@@ -2592,6 +2614,7 @@ impl TypeState {
 impl Type {
     fn cost(&self) -> u64 {
         match self {
+            Self::Reference => 0,
             Self::U8 => 1,
             Self::U16 => 2,
             Self::U32 => 4,
@@ -2615,6 +2638,7 @@ impl From<TypeValue> for Type {
         match x {
             TypeValue::Integer(int) => Type::from(int),
             TypeValue::Array(array) => Type::from(array),
+            TypeValue::Reference(_) => Type::Reference,
         }
     }
 }
@@ -2623,6 +2647,7 @@ impl From<TypeValue> for Type {
 pub enum TypeValue {
     Integer(TypeValueInteger),
     Array(TypeValueArray),
+    Reference(VariableAlias),
 }
 
 impl TryFrom<i128> for TypeValue {
@@ -2692,6 +2717,7 @@ impl TypeValue {
 impl From<(Type, i128)> for TypeValue {
     fn from((x, y): (Type, i128)) -> TypeValue {
         match x {
+            Type::Reference => todo!(),
             Type::U8 => TypeValue::Integer(TypeValueInteger::U8(MyRange::from(y as u8))),
             Type::U16 => TypeValue::Integer(TypeValueInteger::U16(MyRange::from(y as u16))),
             Type::U32 => TypeValue::Integer(TypeValueInteger::U32(MyRange::from(y as u32))),
@@ -2708,6 +2734,7 @@ impl From<(Type, i128)> for TypeValue {
 impl From<Type> for TypeValue {
     fn from(x: Type) -> TypeValue {
         match x {
+            Type::Reference => todo!(),
             Type::U8 => TypeValue::Integer(TypeValueInteger::U8(MyRange::any())),
             Type::U16 => TypeValue::Integer(TypeValueInteger::U16(MyRange::any())),
             Type::U32 => TypeValue::Integer(TypeValueInteger::U32(MyRange::any())),

@@ -109,6 +109,7 @@ pub fn instruction_from_node(
                 {
                     type_data.insert(identifier.clone(), value_type.clone());
                     let data_value = match value_type {
+                        Type::Reference => todo!(),
                         Type::U8 => format!(".byte {}", literal.integer().unwrap()),
                         Type::U16 => format!(".2byte {}", literal.integer().unwrap()),
                         Type::U32 => format!(".4byte {}", literal.integer().unwrap()),

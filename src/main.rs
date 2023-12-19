@@ -67,7 +67,7 @@ fn write_file(dir: &PathBuf, file: PathBuf, bytes: &[u8], lock_file: &mut std::f
     // Write data hash
     let hash = HEXUPPER.encode(sha256_digest(bytes).unwrap().as_ref());
     let file_name = file.file_stem().unwrap();
-    writeln!(lock_file, "{},{hash}",file_name.to_str().unwrap()).unwrap();
+    writeln!(lock_file, "{},{hash}", file_name.to_str().unwrap()).unwrap();
 }
 
 #[allow(unreachable_code)]
@@ -112,10 +112,20 @@ fn main() {
             if !build_dir.exists() {
                 std::fs::create_dir(build_dir).unwrap();
             }
-            let mut lock_file = OpenOptions::new().create(true).truncate(true).write(true).open(path.join("lock.csv")).unwrap();
-            writeln!(&mut lock_file,"file,hash").unwrap();
+            let mut lock_file = OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(path.join("lock.csv"))
+                .unwrap();
+            writeln!(&mut lock_file, "file,hash").unwrap();
 
-            write_file(path, PathBuf::from("included").with_extension(LANGUAGE_EXTENSION), &bytes,&mut lock_file);
+            write_file(
+                path,
+                PathBuf::from("included").with_extension(LANGUAGE_EXTENSION),
+                &bytes,
+                &mut lock_file,
+            );
             Some(lock_file)
         } else {
             None
@@ -130,7 +140,12 @@ fn main() {
         let inlined = inline_functions(nodes);
         if let Some(path) = &path_opt {
             let inlined_string = display_ast(inlined);
-            write_file(path, PathBuf::from("inlined").with_extension(LANGUAGE_EXTENSION), inlined_string.as_bytes(),lock.as_mut().unwrap());
+            write_file(
+                path,
+                PathBuf::from("inlined").with_extension(LANGUAGE_EXTENSION),
+                inlined_string.as_bytes(),
+                lock.as_mut().unwrap(),
+            );
         }
 
         // Explores states
@@ -147,13 +162,23 @@ fn main() {
         let optimized = optimize(path);
         if let Some(path) = &path_opt {
             let optimized_string = display_ast(optimized);
-            write_file(path, PathBuf::from("optimized").with_extension(LANGUAGE_EXTENSION), optimized_string.as_bytes(),lock.as_mut().unwrap());
+            write_file(
+                path,
+                PathBuf::from("optimized").with_extension(LANGUAGE_EXTENSION),
+                optimized_string.as_bytes(),
+                lock.as_mut().unwrap(),
+            );
         }
 
         // Construct assembly
         let assembly = assembly_from_node(optimized);
         if let Some(path) = path_opt {
-            write_file(&path, PathBuf::from("assembly").with_extension("s"), assembly.as_bytes(),lock.as_mut().unwrap());
+            write_file(
+                &path,
+                PathBuf::from("assembly").with_extension("s"),
+                assembly.as_bytes(),
+                lock.as_mut().unwrap(),
+            );
         }
 
         std::io::stdout().write_all(assembly.as_bytes()).unwrap();
