@@ -52,24 +52,22 @@ fn sha256_digest<R: Read>(mut reader: R) -> std::io::Result<Digest> {
     Ok(context.finish())
 }
 
-fn write_file(dir: &PathBuf, file: &str, bytes: &[u8]) {
+const LANGUAGE_EXTENSION: &str = "abc";
+const BUILD_DIR: &str = "build";
+
+fn write_file(dir: &PathBuf, file: PathBuf, bytes: &[u8], lock_file: &mut std::fs::File) {
     // Write data
     let mut data = OpenOptions::new()
         .create(true)
         .truncate(true)
         .write(true)
-        .open(dir.join(file))
+        .open(dir.join(BUILD_DIR).join(&file))
         .unwrap();
     data.write_all(bytes).unwrap();
     // Write data hash
     let hash = HEXUPPER.encode(sha256_digest(bytes).unwrap().as_ref());
-    let mut hash_file = OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(dir.join(format!("{file}.sha")))
-        .unwrap();
-    hash_file.write_all(hash.as_bytes()).unwrap();
+    let file_name = file.file_stem().unwrap();
+    writeln!(lock_file, "{},{hash}",file_name.to_str().unwrap()).unwrap();
 }
 
 #[allow(unreachable_code)]
@@ -109,9 +107,19 @@ fn main() {
         // Includes dependencies
         let mut bytes = source.into_bytes();
         get_includes(&mut bytes);
-        if let Some(path) = &path_opt {
-            write_file(path, "included", &bytes);
-        }
+        let mut lock = if let Some(path) = &path_opt {
+            let build_dir = path.join(BUILD_DIR);
+            if !build_dir.exists() {
+                std::fs::create_dir(build_dir).unwrap();
+            }
+            let mut lock_file = OpenOptions::new().create(true).truncate(true).write(true).open(path.join("lock.csv")).unwrap();
+            writeln!(&mut lock_file,"file,hash").unwrap();
+
+            write_file(path, PathBuf::from("included").with_extension(LANGUAGE_EXTENSION), &bytes,&mut lock_file);
+            Some(lock_file)
+        } else {
+            None
+        };
 
         // Parses AST
         let reader = std::io::BufReader::new(bytes.as_slice());
@@ -122,7 +130,7 @@ fn main() {
         let inlined = inline_functions(nodes);
         if let Some(path) = &path_opt {
             let inlined_string = display_ast(inlined);
-            write_file(path, "inlined", inlined_string.as_bytes());
+            write_file(path, PathBuf::from("inlined").with_extension(LANGUAGE_EXTENSION), inlined_string.as_bytes(),lock.as_mut().unwrap());
         }
 
         // Explores states
@@ -139,13 +147,13 @@ fn main() {
         let optimized = optimize(path);
         if let Some(path) = &path_opt {
             let optimized_string = display_ast(optimized);
-            write_file(path, "optimized", optimized_string.as_bytes());
+            write_file(path, PathBuf::from("optimized").with_extension(LANGUAGE_EXTENSION), optimized_string.as_bytes(),lock.as_mut().unwrap());
         }
 
         // Construct assembly
         let assembly = assembly_from_node(optimized);
         if let Some(path) = path_opt {
-            write_file(&path, "assembly", assembly.as_bytes());
+            write_file(&path, PathBuf::from("assembly").with_extension("s"), assembly.as_bytes(),lock.as_mut().unwrap());
         }
 
         std::io::stdout().write_all(assembly.as_bytes()).unwrap();

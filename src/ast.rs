@@ -58,18 +58,18 @@ impl std::fmt::Display for Statement {
                     .collect::<String>()
             ),
             Op::Special(Special::SizeOf) => match self.arg.as_slice() {
-                [lhs,rhs] => write!(f, "{lhs} := sizeof {rhs}"),
+                [lhs, rhs] => write!(f, "{lhs} := sizeof {rhs}"),
                 _ => todo!(),
             },
             Op::Assembly(Assembly::Mov) => match self.arg.as_slice() {
                 [lhs, rhs] => write!(f, "mov {lhs} {rhs}"),
-                _ => todo!()
-            }
+                _ => todo!(),
+            },
             Op::Assembly(Assembly::Svc) => match self.arg.as_slice() {
                 [value] => write!(f, "svc {value}"),
-                _ => todo!()
-            }
-            Op::Special(Special::Unreachable) => write!(f,"unreachable"),
+                _ => todo!(),
+            },
+            Op::Special(Special::Unreachable) => write!(f, "unreachable"),
             x @ _ => todo!("{x:?}"),
         }
     }
@@ -393,14 +393,37 @@ impl Default for Literal {
     }
 }
 
-#[derive(Eq, PartialEq, Default, Clone, Hash)]
+#[derive(Default, Clone, Hash, PartialEq, Eq)]
 pub struct Variable {
     pub addressing: Addressing,
     pub identifier: Identifier,
     pub index: Option<Box<Index>>,
 }
 
-#[derive(Eq, PartialEq, Default, Clone, Hash)]
+// impl PartialEq for Variable {
+//     fn eq(&self, other: &Self) -> bool {
+//         println!("hit this");
+//         let a = self.addressing == other.addressing;
+//         let b = self.identifier == other.identifier;
+//         println!("{:?} {:?}",self.addressing,other.addressing);
+//         println!("a: {a}");
+//         println!("b: {b}");
+//         a && b
+//     }
+// }
+// impl Eq for Variable {}
+
+impl From<Identifier> for Variable {
+    fn from(identifier: Identifier) -> Self {
+        Self {
+            addressing: Addressing::Direct,
+            identifier,
+            index: None
+        }
+    }
+}
+
+#[derive(Eq, PartialEq, Default, Clone, Hash,Debug)]
 pub enum Addressing {
     /// &x
     Reference,
@@ -440,6 +463,7 @@ pub type Identifier = Vec<u8>;
 impl std::fmt::Debug for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Variable")
+            .field("addressing", &self.addressing)
             .field("identifier", &std::str::from_utf8(&self.identifier))
             .field("index", &self.index)
             .finish()
