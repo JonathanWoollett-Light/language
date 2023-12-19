@@ -1,9 +1,9 @@
 a := "Hello, World!\n"
 b := 1
-c := a
+c := &a
 d := b
-e := &c
-f := sizeof c
+e := c
+f := sizeof *e
 mov x8 64
 mov x0 d
 mov x1 e

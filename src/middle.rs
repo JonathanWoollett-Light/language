@@ -229,7 +229,7 @@ pub unsafe fn build_optimized_tree(
                         .is_none());
                     next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
-                [Value::Variable(lhs),Value::Variable(_rhs)] => {
+                [Value::Variable(lhs), Value::Variable(_rhs)] => {
                     let variable_state = current
                         .as_ref()
                         .state
@@ -241,6 +241,10 @@ pub unsafe fn build_optimized_tree(
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if range.value().is_some() =>
                         {
+                            // Removes node and sets next node.
+                            next_state_node = remove_node(current, &mut first_state_node);
+                        }
+                        TypeValue::Reference(_) => {
                             // Removes node and sets next node.
                             next_state_node = remove_node(current, &mut first_state_node);
                         }
@@ -747,7 +751,7 @@ pub unsafe fn build_optimized_tree(
                     current.as_mut().statement.as_mut().statement.arg[1] =
                         Value::Literal(Literal::Integer(sized_type.bytes() as i128));
                 }
-                _ => todo!(),
+                x @ _ => todo!("{x:?}"),
             },
             _ => todo!(),
         }
@@ -1609,7 +1613,11 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     ptr::copy(current.as_ptr(), dst, 1);
                     let mut new = NonNull::new(dst).unwrap();
 
-                    let [Value::Variable(lhs), Value::Variable(rhs)] =
+                    let [Value::Variable(lhs), Value::Variable(Variable {
+                        addressing: _,
+                        identifier: rhs_identifier,
+                        index: rhs_index
+                    })] =
                         new.as_mut().statement.arg.as_mut_slice()
                     else {
                         unreachable!()
@@ -1645,14 +1653,14 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     // Update right hande side
                     let VariableAlias { identifier, index } = variable_map
                         .borrow()
-                        .get(&VariableAlias::from(rhs.clone()))
+                        .get(&VariableAlias {
+                            identifier: rhs_identifier.clone(),
+                            index: rhs_index.clone()
+                        })
                         .unwrap()
                         .clone();
-                    *rhs = Variable {
-                        addressing: rhs.addressing.clone(),
-                        identifier,
-                        index,
-                    };
+                    *rhs_identifier = identifier;
+                    *rhs_index = index;
 
                     // Go next statement.
                     debug_assert!(current.as_ref().child.is_none());

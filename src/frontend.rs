@@ -505,7 +505,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             }
         }
         _ => {
-            let lhs = Value::Variable(variable);
+            let lhs: Value = Value::Variable(variable);
             assert_eq!(
                 bytes.next().map(Result::unwrap),
                 Some(b' '),
@@ -551,76 +551,85 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                             assert_eq!(Some(b' '), bytes.next().map(Result::unwrap));
                             let first = get_value(bytes);
 
-                            let get_statement = |lhs: Value,
-                                                 first: Value,
-                                                 bytes: &mut Peekable<Bytes<R>>|
-                             -> Statement {
-                                let tail = get_values(bytes);
-                                match (&first, &tail) {
-                                    (
-                                        Value::Variable(Variable {
-                                            addressing: Addressing::Direct,
-                                            identifier,
-                                            index: None,
-                                        }),
-                                        _,
-                                    ) if let Ok(syscall) =
-                                        Syscall::try_from(identifier.as_slice()) =>
-                                    {
-                                        Statement {
-                                            comptime,
-                                            op: Op::Syscall(syscall),
-                                            arg: once(lhs).chain(tail.iter().cloned()).collect(),
-                                        }
-                                    }
-                                    (
-                                        Value::Variable(Variable {
-                                            addressing: Addressing::Direct,
-                                            identifier,
-                                            index: None,
-                                        }),
-                                        _,
-                                    ) if identifier == b"sizeof" => Statement {
-                                        comptime,
-                                        op: Op::Special(Special::SizeOf),
-                                        arg: once(lhs).chain(tail.iter().cloned()).collect(),
-                                    },
-                                    _ => Statement {
-                                        comptime,
-                                        op: Op::Intrinsic(Intrinsic::Assign),
-                                        arg: once(lhs)
-                                            .chain(once(first.clone()))
-                                            .chain(tail.iter().cloned())
-                                            .collect(),
-                                    },
-                                }
-                            };
-
                             match bytes.peek().map(|r| r.as_ref().unwrap()) {
                                 Some(b' ') => {
                                     bytes.next().unwrap().unwrap(); // Skip space.
-                                    match bytes.peek().map(|r| r.as_ref().unwrap()) {
-                                        Some(p)
-                                            if let Some(arithmetic) = Intrinsic::arithmetic(*p) =>
-                                        {
-                                            bytes.next().unwrap().unwrap(); // Skip arithmetic operator.
-                                            assert_eq!(
-                                                Some(b' '),
-                                                bytes.next().map(Result::unwrap)
-                                            );
-
-                                            let second = get_value(bytes);
-                                            let arg = vec![lhs, first, second];
+                                    match first {
+                                        Value::Variable(Variable {
+                                            addressing: Addressing::Direct,
+                                            identifier,
+                                            index: None,
+                                        }) if identifier == b"sizeof" => {
+                                            let tail = get_values(bytes);
                                             Statement {
                                                 comptime,
-                                                op: Op::Intrinsic(arithmetic),
-                                                arg,
+                                                op: Op::Special(Special::SizeOf),
+                                                arg: once(lhs)
+                                                    .chain(tail.iter().cloned())
+                                                    .collect(),
                                             }
                                         }
-                                        _ => get_statement(lhs, first, bytes),
+                                        Value::Variable(Variable {
+                                            addressing: Addressing::Direct,
+                                            identifier,
+                                            index: None,
+                                        }) if let Ok(syscall) =
+                                            Syscall::try_from(identifier.as_slice()) =>
+                                        {
+                                            let tail = get_values(bytes);
+                                            Statement {
+                                                comptime,
+                                                op: Op::Syscall(syscall),
+                                                arg: once(lhs)
+                                                    .chain(tail.iter().cloned())
+                                                    .collect(),
+                                            }
+                                        }
+                                        _ => match bytes.peek().map(|r| r.as_ref().unwrap()) {
+                                            Some(p)
+                                                if let Some(arithmetic) =
+                                                    Intrinsic::arithmetic(*p) =>
+                                            {
+                                                bytes.next().unwrap().unwrap(); // Skip arithmetic operator.
+                                                assert_eq!(
+                                                    bytes.next().map(Result::unwrap),
+                                                    Some(b' '),
+                                                    "{:?}",
+                                                    std::str::from_utf8(
+                                                        &bytes
+                                                            .map(Result::unwrap)
+                                                            .collect::<Vec<_>>()
+                                                    )
+                                                );
+
+                                                let second = get_value(bytes);
+                                                let arg = vec![lhs, first, second];
+                                                Statement {
+                                                    comptime,
+                                                    op: Op::Intrinsic(arithmetic),
+                                                    arg,
+                                                }
+                                            }
+                                            _ => {
+                                                let tail = get_values(bytes);
+                                                Statement {
+                                                    comptime,
+                                                    op: Op::Intrinsic(Intrinsic::Assign),
+                                                    arg: once(lhs)
+                                                        .chain(once(first.clone()))
+                                                        .chain(tail.iter().cloned())
+                                                        .collect(),
+                                                }
+                                            }
+                                        },
                                     }
                                 }
-                                _ => get_statement(lhs, first, bytes),
+                                Some(b'\n') => Statement {
+                                    comptime,
+                                    op: Op::Intrinsic(Intrinsic::Assign),
+                                    arg: once(lhs).chain(once(first.clone())).collect(),
+                                },
+                                _ => todo!(),
                             }
                         }
                         _ => panic!(
