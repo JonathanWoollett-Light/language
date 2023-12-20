@@ -8,6 +8,7 @@ mov x8 64
 mov x0 d
 mov x1 e
 mov x2 f
+svc 0
 g := 0
 mov x8 93
 mov x0 g

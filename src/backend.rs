@@ -132,7 +132,7 @@ pub fn instruction_from_node(
                         Type::I16 => format!(".2byte {}", literal.integer().unwrap()),
                         Type::I32 => format!(".4byte {}", literal.integer().unwrap()),
                         Type::I64 => format!(".8byte {}", literal.integer().unwrap()),
-                        _ => todo!()
+                        _ => todo!(),
                     };
 
                     writeln!(
@@ -593,7 +593,19 @@ pub fn instruction_from_node(
                 [Value::Register(register), Value::Literal(Literal::Integer(integer))] => {
                     writeln!(&mut assembly, "mov {register}, #{integer}").unwrap();
                 }
-                _ => todo!(),
+                [Value::Register(register), Value::Variable(Variable {
+                    addressing: Addressing::Reference,
+                    identifier,
+                    index: None,
+                })] => {
+                    writeln!(
+                        &mut assembly,
+                        "mov {register}, ={}",
+                        std::str::from_utf8(identifier).unwrap()
+                    )
+                    .unwrap();
+                }
+                x @ _ => todo!("{x:?}"),
             },
             Op::Assembly(Assembly::Svc) => match arg {
                 [Value::Literal(Literal::Integer(integer))] => {

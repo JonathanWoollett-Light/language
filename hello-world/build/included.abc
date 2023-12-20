@@ -11,6 +11,7 @@ def write
     mov x0 fd
     mov x1 ptr
     mov x2 len
+    svc 0
 x := "Hello, World!\n"
 write 1 &x
 exit 0
