@@ -109,15 +109,13 @@ pub fn instruction_from_node(
                 {
                     type_data.insert(identifier.clone(), value_type.clone());
                     let data_value = match value_type {
-                        Type::Reference => todo!(),
                         Type::U8 => format!(".byte {}", literal.integer().unwrap()),
                         Type::U16 => format!(".2byte {}", literal.integer().unwrap()),
                         Type::U32 => format!(".4byte {}", literal.integer().unwrap()),
                         Type::U64 => format!(".8byte {}", literal.integer().unwrap()),
-                        Type::Array(box Array { item, len }) => {
-                            assert_eq!(*item, Type::U8);
+                        Type::Array(box Array(vec)) if vec.iter().all(|t| *t == Type::U8) => {
                             let string = literal.string().unwrap();
-                            assert_eq!(string.as_bytes().len(), *len);
+                            assert_eq!(string.as_bytes().len(), vec.len());
 
                             format!(
                                 ".byte {}",
@@ -134,6 +132,7 @@ pub fn instruction_from_node(
                         Type::I16 => format!(".2byte {}", literal.integer().unwrap()),
                         Type::I32 => format!(".4byte {}", literal.integer().unwrap()),
                         Type::I64 => format!(".8byte {}", literal.integer().unwrap()),
+                        _ => todo!()
                     };
 
                     writeln!(
@@ -149,36 +148,40 @@ pub fn instruction_from_node(
                     let iter = once(literal).chain(tail.iter().map(|v| v.literal().unwrap()));
 
                     let data_value = match value_type {
-                        Type::Array(box Array { item: Type::U8, .. }) => format!(
-                            ".byte {}",
-                            iter.map(|l| l.integer().unwrap().to_string())
-                                .intersperse(String::from(","))
-                                .collect::<String>()
-                        ),
-                        Type::Array(box Array {
-                            item: Type::U16, ..
-                        }) => format!(
-                            ".2byte {}",
-                            iter.map(|l| l.integer().unwrap().to_string())
-                                .intersperse(String::from(","))
-                                .collect::<String>()
-                        ),
-                        Type::Array(box Array {
-                            item: Type::U32, ..
-                        }) => format!(
-                            ".4byte {}",
-                            iter.map(|l| l.integer().unwrap().to_string())
-                                .intersperse(String::from(","))
-                                .collect::<String>()
-                        ),
-                        Type::Array(box Array {
-                            item: Type::U64, ..
-                        }) => format!(
-                            ".8byte {}",
-                            iter.map(|l| l.integer().unwrap().to_string())
-                                .intersperse(String::from(","))
-                                .collect::<String>()
-                        ),
+                        Type::Array(box Array(vec)) if vec.iter().all(|t| *t == Type::U8) => {
+                            format!(
+                                ".byte {}",
+                                iter.map(|l| l.integer().unwrap().to_string())
+                                    .intersperse(String::from(","))
+                                    .collect::<String>()
+                            )
+                        }
+                        Type::Array(box Array(vec))
+                            if vec.iter().all(|t: &Type| *t == Type::U16) =>
+                        {
+                            format!(
+                                ".2byte {}",
+                                iter.map(|l| l.integer().unwrap().to_string())
+                                    .intersperse(String::from(","))
+                                    .collect::<String>()
+                            )
+                        }
+                        Type::Array(box Array(vec)) if vec.iter().all(|t| *t == Type::U32) => {
+                            format!(
+                                ".4byte {}",
+                                iter.map(|l| l.integer().unwrap().to_string())
+                                    .intersperse(String::from(","))
+                                    .collect::<String>()
+                            )
+                        }
+                        Type::Array(box Array(vec)) if vec.iter().all(|t| *t == Type::U64) => {
+                            format!(
+                                ".8byte {}",
+                                iter.map(|l| l.integer().unwrap().to_string())
+                                    .intersperse(String::from(","))
+                                    .collect::<String>()
+                            )
+                        }
                         _ => todo!(),
                     };
 
@@ -260,14 +263,11 @@ pub fn instruction_from_node(
                     index: None,
                 }), Value::Literal(Literal::String(string))] => {
                     let bytes = string.as_bytes();
-                    let Type::Array(box Array {
-                        item: Type::U8,
-                        len,
-                    }) = type_data.get(identifier).unwrap()
-                    else {
+                    let Type::Array(box Array(vec)) = type_data.get(identifier).unwrap() else {
                         panic!("Can't assign string to non-U8 array")
                     };
-                    assert_eq!(*len, bytes.len());
+                    assert!(vec.iter().all(|t| *t == Type::U8));
+                    assert_eq!(vec.len(), bytes.len());
 
                     // Loads the address of the array.
                     writeln!(
@@ -314,11 +314,8 @@ pub fn instruction_from_node(
                     identifier,
                     index: None,
                 }), rest @ ..] => match type_data.get(identifier).unwrap() {
-                    Type::Array(box Array {
-                        item: Type::U8,
-                        len,
-                    }) => {
-                        assert_eq!(*len, rest.len());
+                    Type::Array(box Array(vec)) if vec.iter().all(|t| *t == Type::U8) => {
+                        assert_eq!(vec.len(), rest.len());
 
                         // Loads the address of the array.
                         writeln!(

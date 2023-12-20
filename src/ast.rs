@@ -70,6 +70,17 @@ impl std::fmt::Display for Statement {
                 _ => todo!(),
             },
             Op::Special(Special::Unreachable) => write!(f, "unreachable"),
+            Op::Special(Special::Type) => match self.arg.as_slice() {
+                [rhs, rhs_type, lhs @ ..] => write!(
+                    f,
+                    "{rhs} : {rhs_type} := {}",
+                    lhs.iter()
+                        .map(|x| x.to_string())
+                        .intersperse(String::from(" "))
+                        .collect::<String>()
+                ),
+                _ => todo!(),
+            },
             x @ _ => todo!("{x:?}"),
         }
     }
@@ -758,20 +769,32 @@ impl std::fmt::Display for Type {
             Self::I16 => write!(f, "i16"),
             Self::I32 => write!(f, "i32"),
             Self::I64 => write!(f, "i64"),
+            Self::Array(array) => write!(f, "{array}"),
             _ => todo!(),
         }
     }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Array {
-    pub item: Type,
-    pub len: usize,
-}
+pub struct Array(pub Vec<Type>);
 
 impl Array {
     pub fn bytes(&self) -> usize {
-        self.len * self.item.bytes()
+        self.0.iter().map(|t| t.bytes()).sum()
+    }
+}
+
+impl std::fmt::Display for Array {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.0
+                .iter()
+                .map(|t| t.to_string())
+                .intersperse(String::from(" "))
+                .collect::<String>()
+        )
     }
 }
 

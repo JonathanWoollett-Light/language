@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use crate::ast::*;
+use itertools::Itertools;
 use num_traits::bounds::Bounded;
 use num_traits::identities::One;
 use num_traits::identities::Zero;
@@ -130,26 +131,27 @@ pub unsafe fn build_optimized_tree(
             .and(current.as_ref().next.1)
             .is_none());
 
-        // println!("------------checking optimization input------------");
-        // let mut check_stack = vec![first_state_node.unwrap()];
-        // let mut check_counter = 0;
-        // while let Some(check_current) = check_stack.pop() {
-        //     println!();
-        //     println!("{:?}: {:?} {:?} {:?}", check_current, check_current.as_ref().prev, check_current.as_ref().statement, check_current.as_ref().next);
-        //     println!("{:?}: {:?} {:?} {:?} {:?}", check_current.as_ref().statement, check_current.as_ref().statement.as_ref().statement.op, check_current.as_ref().statement.as_ref().preceding, check_current.as_ref().statement.as_ref().child, check_current.as_ref().statement.as_ref().next);
+        println!("------------checking optimization input------------");
+        let mut check_stack = vec![first_state_node.unwrap()];
+        let mut check_counter = 0;
+        while let Some(check_current) = check_stack.pop() {
+            println!();
+            // println!("{:?}: {:?} {:?} {:?}", check_current, check_current.as_ref().prev, check_current.as_ref().statement, check_current.as_ref().next);
+            // println!("{:?}: {:?} {:?} {:?} {:?}", check_current.as_ref().statement, check_current.as_ref().statement.as_ref().statement.op, check_current.as_ref().statement.as_ref().preceding, check_current.as_ref().statement.as_ref().child, check_current.as_ref().statement.as_ref().next);
+            println!("{:?}", check_current.as_ref().statement.as_ref().statement);
 
-        //     if let Some(one) = check_current.as_ref().next.0 {
-        //         check_stack.push(one);
-        //     }
-        //     if let Some(two) = check_current.as_ref().next.1 {
-        //         check_stack.push(two);
-        //     }
-        //     check_counter += 1;
-        //     if check_counter > 2 {
-        //         break;
-        //     }
-        // }
-        // println!("-----------------------------------------------");
+            if let Some(one) = check_current.as_ref().next.0 {
+                check_stack.push(one);
+            }
+            if let Some(two) = check_current.as_ref().next.1 {
+                check_stack.push(two);
+            }
+            check_counter += 1;
+            if check_counter > 2 {
+                break;
+            }
+        }
+        println!("-----------------------------------------------");
 
         // println!("current: {current:?}");
         // println!("statement: {:?}",current.as_ref().statement);
@@ -652,50 +654,62 @@ pub unsafe fn build_optimized_tree(
                     next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
                 [Value::Register(_), Value::Variable(variable)] => {
-                    match current.as_ref().state.get(&TypeKey::from(variable)) {
-                        Some(TypeValue::Integer(TypeValueInteger::U64(range)))
+                    let Some(type_value) = current.as_ref().state.get(&TypeKey::from(variable))
+                    else {
+                        todo!()
+                    };
+                    match type_value {
+                        TypeValue::Integer(TypeValueInteger::U64(range))
                             if let Some(integer) = range.value() =>
                         {
                             current.as_mut().statement.as_mut().statement.arg[1] =
                                 Value::Literal(Literal::Integer(integer as i128));
                         }
-                        Some(TypeValue::Integer(TypeValueInteger::U32(range)))
+                        TypeValue::Integer(TypeValueInteger::U32(range))
                             if let Some(integer) = range.value() =>
                         {
                             current.as_mut().statement.as_mut().statement.arg[1] =
                                 Value::Literal(Literal::Integer(integer as i128));
                         }
-                        Some(TypeValue::Integer(TypeValueInteger::U16(range)))
+                        TypeValue::Integer(TypeValueInteger::U16(range))
                             if let Some(integer) = range.value() =>
                         {
                             current.as_mut().statement.as_mut().statement.arg[1] =
                                 Value::Literal(Literal::Integer(integer as i128));
                         }
-                        Some(TypeValue::Integer(TypeValueInteger::U8(range)))
+                        TypeValue::Integer(TypeValueInteger::U8(range))
                             if let Some(integer) = range.value() =>
                         {
                             current.as_mut().statement.as_mut().statement.arg[1] =
                                 Value::Literal(Literal::Integer(integer as i128));
                         }
-                        Some(TypeValue::Integer(TypeValueInteger::I64(range)))
+                        TypeValue::Integer(TypeValueInteger::I64(range))
                             if let Some(integer) = range.value() =>
                         {
                             current.as_mut().statement.as_mut().statement.arg[1] =
                                 Value::Literal(Literal::Integer(integer as i128));
                         }
-                        Some(TypeValue::Integer(TypeValueInteger::I32(range)))
+                        TypeValue::Integer(TypeValueInteger::I32(range))
                             if let Some(integer) = range.value() =>
                         {
                             current.as_mut().statement.as_mut().statement.arg[1] =
                                 Value::Literal(Literal::Integer(integer as i128));
                         }
-                        Some(TypeValue::Integer(TypeValueInteger::I16(range)))
+                        TypeValue::Integer(TypeValueInteger::I16(range))
                             if let Some(integer) = range.value() =>
                         {
                             current.as_mut().statement.as_mut().statement.arg[1] =
                                 Value::Literal(Literal::Integer(integer as i128));
                         }
-                        _ => todo!(),
+                        TypeValue::Reference(VariableAlias { identifier, index }) => {
+                            current.as_mut().statement.as_mut().statement.arg[1] =
+                                Value::Variable(Variable {
+                                    addressing: Addressing::Reference,
+                                    identifier: identifier.clone(),
+                                    index: index.clone(),
+                                });
+                        }
+                        x @ _ => todo!("{x:?}"),
                     }
 
                     // Set next node.
@@ -744,15 +758,21 @@ pub unsafe fn build_optimized_tree(
                 // Set next node
                 next_state_node = None;
             }
-            Op::Special(Special::SizeOf) => match slice {
-                [Value::Variable(_), Value::Variable(sized)] => {
-                    let sized_state = current.as_ref().state.get(&TypeKey::from(sized)).unwrap();
-                    let sized_type = Type::from(sized_state.clone());
-                    current.as_mut().statement.as_mut().statement.arg[1] =
-                        Value::Literal(Literal::Integer(sized_type.bytes() as i128));
+            Op::Special(Special::SizeOf) => {
+                match slice {
+                    [Value::Variable(variable), Value::Variable(_)] => {
+                        // All type sizes should be known at compile time.
+                        assert!(matches!(
+                            current.as_ref().state.get(&TypeKey::from(variable)),
+                            Some(TypeValue::Integer(_))
+                        ));
+                    }
+                    x @ _ => todo!("{x:?}"),
                 }
-                x @ _ => todo!("{x:?}"),
-            },
+
+                // Removes node and sets next node.
+                next_state_node = remove_node(current, &mut first_state_node);
+            }
             _ => todo!(),
         }
     }
@@ -772,22 +792,22 @@ pub unsafe fn finish_optimized_tree(
         match current.as_ref().statement.op {
             Op::Special(Special::Type) => match current.as_ref().statement.arg.as_slice() {
                 [Value::Variable(variable), Value::Type(_), Value::Literal(_)] => {
-                    dbg!("hit here");
+                    // dbg!("hit here");
                     if !read.contains(variable) {
-                        dbg!("hit here");
-                        println!("bruh: {:?}", current.as_ref().preceding);
+                        // dbg!("hit here");
+                        // println!("bruh: {:?}", current.as_ref().preceding);
 
                         match current.as_ref().preceding {
                             Some(Preceding::Parent(mut parent)) => {
                                 parent.as_mut().child = current.as_ref().next;
                             }
                             Some(Preceding::Previous(mut previous)) => {
-                                dbg!("hit this?");
-                                println!("bruh: {:?}", previous.as_ref());
+                                // dbg!("hit this?");
+                                // println!("bruh: {:?}", previous.as_ref());
                                 previous.as_mut().next = current.as_ref().next;
                             }
                             None => {
-                                dbg!("hit here");
+                                // dbg!("hit here");
                                 debug_assert_eq!(first, Some(current));
                                 // dbg!(&current.as_ref().child.unwrap().as_ref().statement);
                                 // dbg!(&current.as_ref().statement);
@@ -1616,9 +1636,8 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     let [Value::Variable(lhs), Value::Variable(Variable {
                         addressing: _,
                         identifier: rhs_identifier,
-                        index: rhs_index
-                    })] =
-                        new.as_mut().statement.arg.as_mut_slice()
+                        index: rhs_index,
+                    })] = new.as_mut().statement.arg.as_mut_slice()
                     else {
                         unreachable!()
                     };
@@ -1655,7 +1674,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         .borrow()
                         .get(&VariableAlias {
                             identifier: rhs_identifier.clone(),
-                            index: rhs_index.clone()
+                            index: rhs_index.clone(),
                         })
                         .unwrap()
                         .clone();
@@ -2078,35 +2097,58 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                     _ => todo!(),
                 }
             }
-            [Value::Variable(variable), outer @ Value::Literal(Literal::Integer(first)), tail @ ..] =>
+            [Value::Variable(variable), tail @ ..]
+                if tail
+                    .iter()
+                    .all(|t| matches!(t, Value::Literal(Literal::Integer(_)))) =>
             {
                 let key = TypeKey::from(variable);
                 match state.get(&key) {
                     None => {
-                        let possible = tail.iter().fold(Type::possible(*first), |acc, x| {
-                            let next = Type::possible(*x.literal().unwrap().integer().unwrap());
-                            acc.into_iter().filter(|y| next.contains(y)).collect()
-                        });
+                        // An array of 2 literal can be `u8 u8`, `u8 u16`, `u8 u32` etc.
+                        let possible = tail
+                            .iter()
+                            .map(|t| {
+                                TypeValueInteger::possible(*t.literal().unwrap().integer().unwrap())
+                            })
+                            .multi_cartesian_product();
                         possible
-                            .into_iter()
-                            .map(|item| {
+                            .map(|set| {
                                 let mut new_state = state.clone();
-                                let values = std::iter::repeat(item.clone())
-                                    .zip(
-                                        std::iter::once(outer)
-                                            .chain(tail)
-                                            .map(|v| *v.literal().unwrap().integer().unwrap()),
-                                    )
-                                    .map(TypeValue::from)
-                                    .collect::<Vec<_>>();
-
                                 new_state.insert(
                                     key.clone(),
-                                    TypeValue::Array(TypeValueArray { item, values }),
+                                    TypeValue::Array(TypeValueArray(
+                                        set.into_iter().map(TypeValue::Integer).collect(),
+                                    )),
                                 );
                                 new_state
                             })
                             .collect()
+
+                        // let possible = tail.iter().fold(Type::possible(*first), |acc, x| {
+                        //     let next = Type::possible(*x.literal().unwrap().integer().unwrap());
+                        //     acc.into_iter().filter(|y| next.contains(y)).collect()
+                        // });
+                        // possible
+                        //     .into_iter()
+                        //     .map(|item| {
+                        //         let mut new_state = state.clone();
+                        //         let values = std::iter::repeat(item.clone())
+                        //             .zip(
+                        //                 std::iter::once(outer)
+                        //                     .chain(tail)
+                        //                     .map(|v| *v.literal().unwrap().integer().unwrap()),
+                        //             )
+                        //             .map(TypeValue::from)
+                        //             .collect::<Vec<_>>();
+
+                        //         new_state.insert(
+                        //             key.clone(),
+                        //             TypeValue::Array(TypeValueArray { item, values }),
+                        //         );
+                        //         new_state
+                        //     })
+                        //     .collect()
                     }
                     _ => todo!(),
                 }
@@ -2116,18 +2158,14 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                 match state.get(&key) {
                     None => {
                         let mut new_state = state.clone();
-                        let values = std::iter::repeat(Type::U8)
-                            .zip(s.as_bytes().iter().map(|v| *v as i128))
-                            .map(TypeValue::from)
-                            .collect::<Vec<_>>();
 
-                        new_state.insert(
-                            key.clone(),
-                            TypeValue::Array(TypeValueArray {
-                                item: Type::U8,
-                                values,
-                            }),
-                        );
+                        let values = s
+                            .as_bytes()
+                            .iter()
+                            .map(|b| TypeValue::Integer(TypeValueInteger::U8(MyRange::from(*b))))
+                            .collect();
+
+                        new_state.insert(key.clone(), TypeValue::Array(TypeValueArray(values)));
                         vec![new_state]
                     }
                     _ => todo!(),
@@ -2477,17 +2515,37 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
         Op::Assembly(Assembly::Svc) => vec![state.clone()],
         Op::Special(Special::Unreachable) => vec![state.clone()],
         Op::Special(Special::SizeOf) => match slice {
-            [Value::Variable(rhs), Value::Variable(lhs)] => {
-                let key = TypeKey::from(rhs.clone());
-                let size =
-                    Type::from(state.get(&TypeKey::from(lhs.clone())).unwrap().clone()).bytes();
-                match state.get(&key) {
+            [Value::Variable(rhs), Value::Variable(Variable {
+                addressing,
+                identifier,
+                index,
+            })] => {
+                let lhs_key = TypeKey::Variable(VariableAlias {
+                    identifier: identifier.clone(),
+                    index: index.clone(),
+                });
+                // If dereferencing a value, we get the size of the value it points to, not the size
+                // of the reference.
+                let lhs_key = match addressing {
+                    Addressing::Dereference => {
+                        let ref_state = state.get(&lhs_key).unwrap();
+                        let TypeValue::Reference(alias) = ref_state else {
+                            todo!()
+                        };
+                        TypeKey::Variable(alias.clone())
+                    }
+                    Addressing::Direct => lhs_key,
+                    _ => todo!(),
+                };
+                let rhs_key = TypeKey::from(rhs.clone());
+                let size = Type::from(state.get(&lhs_key).unwrap().clone()).bytes();
+                match state.get(&rhs_key) {
                     // Iterates over the set of integer types which could contain `x`, returning a new state for each possibility.
                     None => TypeValueInteger::possible(size as i128)
                         .into_iter()
                         .map(|p| {
                             let mut new_state = state.clone();
-                            new_state.insert(key.clone(), TypeValue::Integer(p));
+                            new_state.insert(rhs_key.clone(), TypeValue::Integer(p));
                             new_state
                         })
                         .collect(),
@@ -2637,7 +2695,11 @@ impl Type {
 }
 impl Array {
     fn cost(&self) -> u64 {
-        self.item.cost().saturating_mul(self.len as u64)
+        let mut cost = 0u64;
+        for t in &self.0 {
+            cost = cost.saturating_add(t.cost());
+        }
+        cost
     }
 }
 
@@ -2751,26 +2813,19 @@ impl From<Type> for TypeValue {
             Type::I16 => TypeValue::Integer(TypeValueInteger::I16(MyRange::any())),
             Type::I32 => TypeValue::Integer(TypeValueInteger::I32(MyRange::any())),
             Type::I64 => TypeValue::Integer(TypeValueInteger::I64(MyRange::any())),
-            Type::Array(box Array { item, len }) => TypeValue::Array(TypeValueArray {
-                item: item.clone(),
-                values: std::iter::repeat(TypeValue::from(item)).take(len).collect(),
-            }),
+            Type::Array(box Array(vec)) => TypeValue::Array(TypeValueArray(
+                vec.into_iter().map(TypeValue::from).collect(),
+            )),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeValueArray {
-    item: Type,
-    values: Vec<TypeValue>,
-}
+pub struct TypeValueArray(pub Vec<TypeValue>);
 
 impl From<TypeValueArray> for Type {
     fn from(x: TypeValueArray) -> Self {
-        Type::Array(Box::new(Array {
-            item: x.item.clone(),
-            len: x.values.len(),
-        }))
+        Type::Array(Box::new(Array(x.0.into_iter().map(Type::from).collect())))
     }
 }
 

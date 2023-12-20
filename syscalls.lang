@@ -11,3 +11,4 @@ def write
     mov x0 fd
     mov x1 ptr
     mov x2 len
+    svc 0
