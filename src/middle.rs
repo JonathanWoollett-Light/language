@@ -109,9 +109,6 @@ pub unsafe fn build_optimized_tree(
     let mut types = HashMap::<Variable, Type>::new();
     let mut read = HashSet::<VariableAlias>::new();
 
-    // If the key is used the value is also used.
-    let mut read_links = HashMap::<VariableAlias, VariableAlias>::new();
-
     // The 1st step is iterating over nodes which don't diverge
     // (`next.0.is_none() || next.1.is_none()`), all these can be simply inlined.
     let mut next_state_node = Some(graph);
@@ -122,9 +119,7 @@ pub unsafe fn build_optimized_tree(
     while let Some(mut current) = next_state_node {
         #[cfg(debug_assertions)]
         {
-            // println!("current: {:?}",current.as_ref());
-            // println!("current: {:?}", current.as_ref().statement.as_ref());
-            // assert!(checker < 8);
+            assert!(checker < 100);
             checker += 1;
         }
 
@@ -135,8 +130,6 @@ pub unsafe fn build_optimized_tree(
             .0
             .and(current.as_ref().next.1)
             .is_none());
-
-        // debug_assert!(checker < 8);
 
         // println!("------------checking optimization input------------");
         // let mut check_stack = vec![first_state_node.unwrap()];
@@ -161,11 +154,7 @@ pub unsafe fn build_optimized_tree(
         // println!("-----------------------------------------------");
 
         let slice = current.as_ref().statement.as_ref().statement.arg.as_slice();
-        // debug_assert!(checker < 8);
-        println!("slice: {slice:?}");
         let op = &current.as_ref().statement.as_ref().statement.op;
-        println!("op: {op:?}");
-        // debug_assert!(checker < 8);
         match op {
             Op::Intrinsic(Intrinsic::Assign) => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
@@ -236,20 +225,13 @@ pub unsafe fn build_optimized_tree(
                         .is_none());
                     next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
-                [Value::Variable(lhs), Value::Variable(rhs)] => {
+                [Value::Variable(lhs), Value::Variable(_)] => {
                     let variable_state = current
                         .as_ref()
                         .state
                         .get(&TypeKey::from(lhs))
                         .unwrap()
                         .clone();
-
-                    if Addressing::Reference == rhs.addressing {
-                        read_links.insert(
-                            VariableAlias::from(lhs.clone()),
-                            VariableAlias::from(rhs.clone()),
-                        );
-                    }
 
                     match variable_state {
                         TypeValue::Integer(TypeValueInteger::U8(range))
@@ -547,8 +529,6 @@ pub unsafe fn build_optimized_tree(
                     else {
                         todo!()
                     };
-                    println!("type_value: {type_value:?}");
-                    // debug_assert!(checker < 8);
 
                     let rhs = &mut current.as_mut().statement.as_mut().statement.arg[1];
                     *rhs = match type_value {
@@ -588,16 +568,7 @@ pub unsafe fn build_optimized_tree(
                             Value::Literal(Literal::Integer(integer as i128))
                         }
                         TypeValue::Reference(alias @ VariableAlias { identifier, index }) => {
-                            // I expect it will be the case in the future that the use of 1 variable means
-                            // the use of multiple other variables, this design supports this with slight
-                            // alteration.
-                            let mut read_stack = vec![alias.clone()];
-                            while let Some(read_current) = read_stack.pop() {
-                                if let Some(link) = read_links.get(&read_current) {
-                                    read_stack.push(link.clone());
-                                }
-                                read.insert(read_current);
-                            }
+                            read.insert(alias.clone());
 
                             Value::Variable(Variable {
                                 addressing: Addressing::Reference,
@@ -711,6 +682,11 @@ pub unsafe fn finish_optimized_tree(
                         debug_assert!(current.as_ref().child.is_none());
 
                         alloc::dealloc(current.as_ptr().cast(), alloc::Layout::new::<NewNode>());
+                    } else {
+                        if let Some(next) = current.as_ref().next {
+                            stack.push(next);
+                        }
+                        debug_assert!(current.as_ref().child.is_none());
                     }
                 }
                 _ => todo!(),
@@ -731,16 +707,9 @@ pub unsafe fn finish_optimized_tree(
 
 // Applies typical optimizations. E.g. removing unused variables, unreachable code, etc.
 pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
-    // println!("graph {:?}", graph.as_ref());
-    // println!("graph {:?}", graph.as_ref().statement.as_ref());
-    // panic!("hit this");
-
     // Construct new optimized abstract syntax tree.
     // TODO This doesn't dealloc anything in `graph` which may be very very big. Do this deallocation.
     let (new_nodes, read) = build_optimized_tree(graph);
-
-    // println!("read {:?}", read);
-    // panic!("does not hit this");
 
     finish_optimized_tree(new_nodes.unwrap(), read).unwrap()
 }
@@ -1853,7 +1822,6 @@ pub unsafe fn close_path(current: NonNull<NewStateNode>) {
         if current.as_ref().statement.as_ref().statement.op == Op::Special(Special::Unreachable) {
             new_passback_end(current, GraphNodeEnd::Valid);
         } else {
-            println!("hit invalid");
             new_passback_end(current, GraphNodeEnd::Invalid);
         }
     } else if let Some(0) = current.as_ref().loop_limit.last() {

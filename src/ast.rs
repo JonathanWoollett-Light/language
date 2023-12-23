@@ -6,14 +6,6 @@ pub enum Preceding {
     Parent(NonNull<NewNode>),
     Previous(NonNull<NewNode>),
 }
-impl Preceding {
-    pub fn parent(&self) -> Option<&NonNull<NewNode>> {
-        match self {
-            Self::Parent(parent) => Some(parent),
-            Self::Previous(_) => None,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct NewNode {
@@ -107,12 +99,6 @@ impl Value {
     pub fn literal(&self) -> Option<&Literal> {
         match self {
             Self::Literal(literal) => Some(literal),
-            _ => None,
-        }
-    }
-    pub fn variable(&self) -> Option<&Variable> {
-        match self {
-            Self::Variable(variable) => Some(variable),
             _ => None,
         }
     }
@@ -418,19 +404,6 @@ pub struct Variable {
     pub identifier: Identifier,
     pub index: Option<Box<Index>>,
 }
-
-// impl PartialEq for Variable {
-//     fn eq(&self, other: &Self) -> bool {
-//         println!("hit this");
-//         let a = self.addressing == other.addressing;
-//         let b = self.identifier == other.identifier;
-//         println!("{:?} {:?}",self.addressing,other.addressing);
-//         println!("a: {a}");
-//         println!("b: {b}");
-//         a && b
-//     }
-// }
-// impl Eq for Variable {}
 
 impl From<Identifier> for Variable {
     fn from(identifier: Identifier) -> Self {

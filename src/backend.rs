@@ -603,7 +603,7 @@ pub unsafe fn instruction_from_node(
                 })] => {
                     writeln!(
                         &mut assembly,
-                        "mov {register}, ={}",
+                        "ldr {register}, ={}",
                         std::str::from_utf8(identifier).unwrap()
                     )
                     .unwrap();
@@ -630,7 +630,8 @@ pub unsafe fn instruction_from_node(
                 let mut preceding = current_ref.preceding;
                 #[cfg(debug_assertions)]
                 let mut checker = 0;
-                let parent_opt = loop {
+
+                loop {
                     #[cfg(debug_assertions)]
                     {
                         assert!(checker < 100);
@@ -641,10 +642,7 @@ pub unsafe fn instruction_from_node(
                         Some(Preceding::Parent(p)) => break Some(p),
                         None => break None,
                     };
-                };
-
-                // println!("parent_opt: {parent_opt:?}");
-                parent_opt
+                }
             };
             // If there is no parent the write stack should be empty.
             debug_assert!((parent_opt.is_none() && write_stack.is_empty()) || parent_opt.is_some());

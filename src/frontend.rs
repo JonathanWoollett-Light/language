@@ -512,7 +512,6 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                 "{:?}",
                 std::str::from_utf8(&bytes.map(Result::unwrap).collect::<Vec<_>>())
             );
-            // println!("lhs: {lhs:?}");
 
             // if let Ok(syscall) = Syscall::try_from(lhs.variable().unwrap().identifier.as_slice()) {
             //     return Statement {

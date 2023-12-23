@@ -175,15 +175,91 @@ fn main() {
         // Construct assembly
         let assembly = assembly_from_node(optimized);
         if let Some(path) = path_opt {
+            let assembly_path = PathBuf::from("assembly").with_extension("s");
             write_file(
                 &path,
-                PathBuf::from("assembly").with_extension("s"),
+                assembly_path.clone(),
                 assembly.as_bytes(),
                 lock.as_mut().unwrap(),
             );
-        }
 
-        std::io::stdout().write_all(assembly.as_bytes()).unwrap();
+            let object_path = path.join("build").join("object").with_extension("o");
+            let object_output = std::process::Command::new("as")
+                .args([
+                    "-o",
+                    &object_path.display().to_string(),
+                    &path.join("build").join(assembly_path).display().to_string(),
+                ])
+                .output()
+                .unwrap();
+            assert_eq!(
+                object_output.stdout,
+                [],
+                "{}",
+                std::str::from_utf8(&object_output.stdout).unwrap()
+            );
+            assert_eq!(
+                object_output.stderr,
+                [],
+                "{}",
+                std::str::from_utf8(&object_output.stderr).unwrap()
+            );
+            assert_eq!(object_output.status.code(), Some(0));
+
+            // Write object hash
+            let mut object_buffer = Vec::new();
+            let mut object_file = OpenOptions::new().read(true).open(&object_path).unwrap();
+            object_file.read_to_end(&mut object_buffer).unwrap();
+            let object_hash =
+                HEXUPPER.encode(sha256_digest(object_buffer.as_slice()).unwrap().as_ref());
+            let object_file_name = object_path.file_stem().unwrap();
+            writeln!(
+                lock.as_mut().unwrap(),
+                "{},{object_hash}",
+                object_file_name.to_str().unwrap()
+            )
+            .unwrap();
+
+            let binary_path = path.join("build").join("binary");
+            let binary_output = std::process::Command::new("ld")
+                .args([
+                    "-s",
+                    "-o",
+                    &binary_path.display().to_string(),
+                    &object_path.display().to_string(),
+                ])
+                .output()
+                .unwrap();
+            assert_eq!(
+                binary_output.stdout,
+                [],
+                "{}",
+                std::str::from_utf8(&binary_output.stdout).unwrap()
+            );
+            assert_eq!(
+                binary_output.stderr,
+                [],
+                "{}",
+                std::str::from_utf8(&binary_output.stderr).unwrap()
+            );
+            assert_eq!(binary_output.status.code(), Some(0));
+
+            // Write binary hash
+            let mut binary_buffer = Vec::new();
+            let mut binary_file = OpenOptions::new().read(true).open(&binary_path).unwrap();
+            binary_file.read_to_end(&mut binary_buffer).unwrap();
+            let binary_hash =
+                HEXUPPER.encode(sha256_digest(binary_buffer.as_slice()).unwrap().as_ref());
+            let binary_file_name = binary_path.file_stem().unwrap();
+            writeln!(
+                lock.as_mut().unwrap(),
+                "{},{binary_hash}",
+                binary_file_name.to_str().unwrap()
+            )
+            .unwrap();
+        } else {
+            std::io::stdout().write_all(assembly.as_bytes()).unwrap();
+        }
     }
 }
 
@@ -244,7 +320,6 @@ mod tests {
     }
 
     fn match_nodes(actual: NonNull<NewNode>, expected: &[Statement]) {
-        // println!("match_nodes:");
         let mut stack = vec![(actual, 0)];
 
         println!("Checking nodes");
