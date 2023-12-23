@@ -14,14 +14,16 @@ pub fn assembly_from_node(nodes: NonNull<NewNode>) -> String {
     let mut empty = false;
     let mut type_data = HashMap::new();
 
-    let assembly = instruction_from_node(
-        nodes,
-        &mut data,
-        &mut bss,
-        &mut block_counter,
-        &mut empty,
-        &mut type_data,
-    );
+    let assembly = unsafe {
+        instruction_from_node(
+            nodes,
+            &mut data,
+            &mut bss,
+            &mut block_counter,
+            &mut empty,
+            &mut type_data,
+        )
+    };
 
     let data_str = if data.is_empty() {
         String::new()
@@ -66,7 +68,7 @@ pub fn assembly_from_node(nodes: NonNull<NewNode>) -> String {
 
 // }
 
-pub fn instruction_from_node(
+pub unsafe fn instruction_from_node(
     nodes: NonNull<NewNode>,
     data: &mut String,
     bss: &mut String,
@@ -80,6 +82,7 @@ pub fn instruction_from_node(
     #[cfg(debug_assertions)]
     let mut i = 0;
 
+    // The list of node that created new scopes and their scope endings.
     let mut write_stack = Vec::new();
 
     while let Some(current) = stack.pop() {
@@ -623,22 +626,36 @@ pub fn instruction_from_node(
             stack.push(next);
         } else {
             // Get parent
-            let mut preceding = current_ref.preceding;
-            while let Some(Preceding::Previous(previous)) = preceding {
-                preceding = unsafe { previous.as_ref().preceding };
-            }
+            let parent_opt = {
+                let mut preceding = current_ref.preceding;
+                #[cfg(debug_assertions)]
+                let mut checker = 0;
+                let parent_opt = loop {
+                    #[cfg(debug_assertions)]
+                    {
+                        assert!(checker < 9);
+                        checker += 1;
+                    }
+                    preceding = match preceding {
+                        Some(Preceding::Previous(p)) => p.as_ref().preceding,
+                        Some(Preceding::Parent(p)) => break Some(p),
+                        None => break None,
+                    };
+                };
 
-            match preceding {
-                None => {}
-                Some(Preceding::Parent(parent)) => {
-                    while let Some((node, end)) = write_stack.pop() {
-                        assembly.push_str(&end);
-                        if node == parent {
-                            break;
-                        }
+                println!("parent_opt: {parent_opt:?}");
+                parent_opt
+            };
+            // If there is no parent the write stack should be empty.
+            debug_assert!((parent_opt.is_none() && write_stack.is_empty()) || parent_opt.is_some());
+            // Pop scopes from the write stack.
+            if let Some(parent) = parent_opt {
+                while let Some((node, end)) = write_stack.pop() {
+                    assembly.push_str(&end);
+                    if node == parent {
+                        break;
                     }
                 }
-                Some(Preceding::Previous(_)) => unreachable!(),
             }
         }
     }

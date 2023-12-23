@@ -105,9 +105,12 @@ unsafe fn remove_node(
 
 pub unsafe fn build_optimized_tree(
     graph: NonNull<NewStateNode>,
-) -> (Option<NonNull<NewNode>>, HashSet<Variable>) {
+) -> (Option<NonNull<NewNode>>, HashSet<VariableAlias>) {
     let mut types = HashMap::<Variable, Type>::new();
-    let mut read = HashSet::<Variable>::new();
+    let mut read = HashSet::<VariableAlias>::new();
+
+    // If the key is used the value is also used.
+    let mut read_links = HashMap::<VariableAlias, VariableAlias>::new();
 
     // The 1st step is iterating over nodes which don't diverge
     // (`next.0.is_none() || next.1.is_none()`), all these can be simply inlined.
@@ -131,34 +134,27 @@ pub unsafe fn build_optimized_tree(
             .and(current.as_ref().next.1)
             .is_none());
 
-        println!("------------checking optimization input------------");
-        let mut check_stack = vec![first_state_node.unwrap()];
-        let mut check_counter = 0;
-        while let Some(check_current) = check_stack.pop() {
-            println!();
-            // println!("{:?}: {:?} {:?} {:?}", check_current, check_current.as_ref().prev, check_current.as_ref().statement, check_current.as_ref().next);
-            // println!("{:?}: {:?} {:?} {:?} {:?}", check_current.as_ref().statement, check_current.as_ref().statement.as_ref().statement.op, check_current.as_ref().statement.as_ref().preceding, check_current.as_ref().statement.as_ref().child, check_current.as_ref().statement.as_ref().next);
-            println!("{:?}", check_current.as_ref().statement.as_ref().statement);
+        // println!("------------checking optimization input------------");
+        // let mut check_stack = vec![first_state_node.unwrap()];
+        // let mut check_counter = 0;
+        // while let Some(check_current) = check_stack.pop() {
+        //     println!();
+        //     // println!("{:?}: {:?} {:?} {:?}", check_current, check_current.as_ref().prev, check_current.as_ref().statement, check_current.as_ref().next);
+        //     // println!("{:?}: {:?} {:?} {:?} {:?}", check_current.as_ref().statement, check_current.as_ref().statement.as_ref().statement.op, check_current.as_ref().statement.as_ref().preceding, check_current.as_ref().statement.as_ref().child, check_current.as_ref().statement.as_ref().next);
+        //     println!("{:?}", check_current.as_ref().statement.as_ref().statement);
 
-            if let Some(one) = check_current.as_ref().next.0 {
-                check_stack.push(one);
-            }
-            if let Some(two) = check_current.as_ref().next.1 {
-                check_stack.push(two);
-            }
-            check_counter += 1;
-            if check_counter > 2 {
-                break;
-            }
-        }
-        println!("-----------------------------------------------");
-
-        // println!("current: {current:?}");
-        // println!("statement: {:?}",current.as_ref().statement);
-
-        // dbg!(&current.as_ref().statement.as_ref().statement.op);
-
-        // println!("op: {:?}", current.as_ref().statement.as_ref().statement.op);
+        //     if let Some(one) = check_current.as_ref().next.0 {
+        //         check_stack.push(one);
+        //     }
+        //     if let Some(two) = check_current.as_ref().next.1 {
+        //         check_stack.push(two);
+        //     }
+        //     check_counter += 1;
+        //     if check_counter > 2 {
+        //         break;
+        //     }
+        // }
+        // println!("-----------------------------------------------");
 
         let slice = current.as_ref().statement.as_ref().statement.arg.as_slice();
         match current.as_ref().statement.as_ref().statement.op {
@@ -231,13 +227,20 @@ pub unsafe fn build_optimized_tree(
                         .is_none());
                     next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
-                [Value::Variable(lhs), Value::Variable(_rhs)] => {
+                [Value::Variable(lhs), Value::Variable(rhs)] => {
                     let variable_state = current
                         .as_ref()
                         .state
                         .get(&TypeKey::from(lhs))
                         .unwrap()
                         .clone();
+
+                    if Addressing::Reference == rhs.addressing {
+                        read_links.insert(
+                            VariableAlias::from(lhs.clone()),
+                            VariableAlias::from(rhs.clone()),
+                        );
+                    }
 
                     match variable_state {
                         TypeValue::Integer(TypeValueInteger::U8(range))
@@ -254,74 +257,6 @@ pub unsafe fn build_optimized_tree(
                     }
                 }
                 x @ _ => todo!("{x:?}"),
-            },
-            Op::Syscall(Syscall::Exit) => match slice {
-                [Value::Variable(variable)] => {
-                    let variable_state = current
-                        .as_ref()
-                        .state
-                        .get(&TypeKey::from(variable))
-                        .unwrap();
-                    match variable_state {
-                        TypeValue::Integer(TypeValueInteger::U8(range)) => {
-                            if let Some(exact) = range.value() {
-                                current.as_mut().statement.as_mut().statement.arg =
-                                    vec![Value::Literal(Literal::Integer(i128::from(exact)))];
-                            } else {
-                                read.insert(variable.clone());
-                            }
-
-                            // Set next node.
-                            {
-                                debug_assert!(current
-                                    .as_ref()
-                                    .next
-                                    .0
-                                    .and(current.as_ref().next.1)
-                                    .is_none());
-                                // Exits mark the end of execution, their shouldn't be a following node.
-                                debug_assert_eq!(current.as_ref().next, (None, None));
-
-                                // Update syntax node
-                                debug_assert_eq!(current.as_mut().statement.as_mut().child, None);
-                                if let Some(next_syntax_node) =
-                                    current.as_ref().statement.as_ref().next
-                                {
-                                    dealloc_syntax(next_syntax_node);
-                                    current.as_mut().statement.as_mut().next = None;
-                                }
-
-                                // Set next node
-                                next_state_node = None;
-                            }
-                        }
-                        _ => todo!(),
-                    }
-                }
-                [Value::Literal(Literal::Integer(_))] => {
-                    // Set next node.
-                    {
-                        debug_assert!(current
-                            .as_ref()
-                            .next
-                            .0
-                            .and(current.as_ref().next.1)
-                            .is_none());
-                        // Exits mark the end of execution, their shouldn't be a following node.
-                        debug_assert_eq!(current.as_ref().next, (None, None));
-
-                        // Update syntax node
-                        debug_assert_eq!(current.as_mut().statement.as_mut().child, None);
-                        if let Some(next_syntax_node) = current.as_ref().statement.as_ref().next {
-                            dealloc_syntax(next_syntax_node);
-                            current.as_mut().statement.as_mut().next = None;
-                        }
-
-                        // Set next node
-                        next_state_node = None;
-                    }
-                }
-                _ => todo!(),
             },
             // On the linear path, these statements can simply be removed.
             Op::Intrinsic(Intrinsic::AddAssign) => match slice {
@@ -543,61 +478,6 @@ pub unsafe fn build_optimized_tree(
                 // Set next node.
                 next_state_node = Some(if_next_state_node);
             }
-            Op::Syscall(Syscall::Read) => match slice {
-                [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
-                    let state = Type::from(
-                        current
-                            .as_ref()
-                            .state
-                            .get(&TypeKey::from(variable))
-                            .unwrap()
-                            .clone(),
-                    );
-
-                    // This will may move `identifier` so we need to re-acquire it after.
-                    current
-                        .as_mut()
-                        .statement
-                        .as_mut()
-                        .statement
-                        .arg
-                        .insert(1, Value::Type(state));
-                    let variable = current.as_ref().statement.as_ref().statement.arg[0]
-                        .variable()
-                        .unwrap();
-
-                    read.insert(variable.clone());
-
-                    // Set next node.
-                    debug_assert!(current
-                        .as_ref()
-                        .next
-                        .0
-                        .and(current.as_ref().next.1)
-                        .is_none());
-                    next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
-                }
-                _ => todo!(),
-            },
-            Op::Syscall(Syscall::Write) => match slice {
-                [Value::Literal(Literal::Integer(_)), Value::Variable(variable)] => {
-                    debug_assert!(current
-                        .as_ref()
-                        .state
-                        .contains_key(&TypeKey::from(variable)));
-                    read.insert(variable.clone());
-
-                    // Set next node.
-                    debug_assert!(current
-                        .as_ref()
-                        .next
-                        .0
-                        .and(current.as_ref().next.1)
-                        .is_none());
-                    next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
-                }
-                _ => todo!(),
-            },
             Op::Intrinsic(Intrinsic::Add) => match slice {
                 [value @ Value::Variable(variable), Value::Variable(_), Value::Variable(_)] => {
                     // let variable_state = (
@@ -712,6 +592,17 @@ pub unsafe fn build_optimized_tree(
                         x @ _ => todo!("{x:?}"),
                     }
 
+                    // I expect it will be the case in the future that the use of 1 variable means
+                    // the use of multiple other variables, this design supports this with slight
+                    // alteration.
+                    let mut read_stack = vec![VariableAlias::from(variable.clone())];
+                    while let Some(read_current) = read_stack.pop() {
+                        if let Some(link) = read_links.get(&read_current) {
+                            read_stack.push(link.clone());
+                        }
+                        read.insert(read_current);
+                    }
+
                     // Set next node.
                     debug_assert!(current
                         .as_ref()
@@ -782,7 +673,7 @@ pub unsafe fn build_optimized_tree(
 
 pub unsafe fn finish_optimized_tree(
     new_nodes: NonNull<NewNode>,
-    read: HashSet<Variable>,
+    read: HashSet<VariableAlias>,
 ) -> Option<NonNull<NewNode>> {
     // After iterating through the full AST we now know which variables are used so can remove
     // unused variables
@@ -792,18 +683,12 @@ pub unsafe fn finish_optimized_tree(
         match current.as_ref().statement.op {
             Op::Special(Special::Type) => match current.as_ref().statement.arg.as_slice() {
                 [Value::Variable(variable), Value::Type(_), Value::Literal(_)] => {
-                    // dbg!("hit here");
-                    if !read.contains(variable) {
-                        // dbg!("hit here");
-                        // println!("bruh: {:?}", current.as_ref().preceding);
-
+                    if !read.contains(&VariableAlias::from(variable.clone())) {
                         match current.as_ref().preceding {
                             Some(Preceding::Parent(mut parent)) => {
                                 parent.as_mut().child = current.as_ref().next;
                             }
                             Some(Preceding::Previous(mut previous)) => {
-                                // dbg!("hit this?");
-                                // println!("bruh: {:?}", previous.as_ref());
                                 previous.as_mut().next = current.as_ref().next;
                             }
                             None => {
@@ -842,10 +727,17 @@ pub unsafe fn finish_optimized_tree(
 // Applies typical optimizations. E.g. removing unused variables, unreachable code, etc.
 pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
     // Construct new optimized abstract syntax tree.
-    // TODO This doesn't dealloc anything in `graph` which may be very very big. Do this deallocation.
+    // TODO This doesn't dealloc anything in `graph` which may be very very big. Do this deallocation.    
     let (new_nodes, read) = build_optimized_tree(graph);
 
-    finish_optimized_tree(new_nodes.unwrap(), read).unwrap()
+    println!("read {:?}", read);
+    panic!("hit this");
+
+    let x = finish_optimized_tree(new_nodes.unwrap(), read).unwrap();
+
+    panic!("hit this");
+
+    x
 }
 
 unsafe fn new_passback_end(mut node: NonNull<NewStateNode>, end: GraphNodeEnd) {
@@ -1316,7 +1208,9 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         functions.insert(identifier, current.as_ref().child.unwrap());
                     assert!(pre_existing.is_none());
 
-                    if let Some(next) = current.as_ref().next {
+                    if let Some(mut next) = current.as_ref().next {
+                        next.as_mut().preceding = current.as_ref().preceding;
+
                         stack.push((next, preceding, next_carry, variable_map));
                     }
                 }
@@ -1730,8 +1624,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     .filter_map(Value::variable_mut)
                 {
                     let var = VariableAlias::from(variable.clone());
-                    // println!("var: {var:?}");
-                    // println!("variable_map: {variable_map:?}");
+
                     let VariableAlias { identifier, index } =
                         variable_map.borrow().get(&var).unwrap().clone();
                     *variable = Variable {

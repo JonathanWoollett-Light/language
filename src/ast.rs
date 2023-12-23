@@ -6,6 +6,14 @@ pub enum Preceding {
     Parent(NonNull<NewNode>),
     Previous(NonNull<NewNode>),
 }
+impl Preceding {
+    pub fn parent(&self) -> Option<&NonNull<NewNode>> {
+        match self {
+            Self::Parent(parent) => Some(parent),
+            Self::Previous(_) => None,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct NewNode {
