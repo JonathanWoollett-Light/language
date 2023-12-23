@@ -633,7 +633,7 @@ pub unsafe fn instruction_from_node(
                 let parent_opt = loop {
                     #[cfg(debug_assertions)]
                     {
-                        assert!(checker < 9);
+                        assert!(checker < 100);
                         checker += 1;
                     }
                     preceding = match preceding {
@@ -643,7 +643,7 @@ pub unsafe fn instruction_from_node(
                     };
                 };
 
-                println!("parent_opt: {parent_opt:?}");
+                // println!("parent_opt: {parent_opt:?}");
                 parent_opt
             };
             // If there is no parent the write stack should be empty.

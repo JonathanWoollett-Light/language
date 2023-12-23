@@ -170,6 +170,8 @@ fn main() {
             );
         }
 
+        // panic!("does not hit this");
+
         // Construct assembly
         let assembly = assembly_from_node(optimized);
         if let Some(path) = path_opt {

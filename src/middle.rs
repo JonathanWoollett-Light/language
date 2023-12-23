@@ -122,7 +122,9 @@ pub unsafe fn build_optimized_tree(
     while let Some(mut current) = next_state_node {
         #[cfg(debug_assertions)]
         {
-            assert!(checker < 100);
+            // println!("current: {:?}",current.as_ref());
+            // println!("current: {:?}", current.as_ref().statement.as_ref());
+            // assert!(checker < 8);
             checker += 1;
         }
 
@@ -133,6 +135,8 @@ pub unsafe fn build_optimized_tree(
             .0
             .and(current.as_ref().next.1)
             .is_none());
+
+        // debug_assert!(checker < 8);
 
         // println!("------------checking optimization input------------");
         // let mut check_stack = vec![first_state_node.unwrap()];
@@ -157,7 +161,12 @@ pub unsafe fn build_optimized_tree(
         // println!("-----------------------------------------------");
 
         let slice = current.as_ref().statement.as_ref().statement.arg.as_slice();
-        match current.as_ref().statement.as_ref().statement.op {
+        // debug_assert!(checker < 8);
+        println!("slice: {slice:?}");
+        let op = &current.as_ref().statement.as_ref().statement.op;
+        println!("op: {op:?}");
+        // debug_assert!(checker < 8);
+        match op {
             Op::Intrinsic(Intrinsic::Assign) => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
                     let variable_state = current
@@ -538,70 +547,66 @@ pub unsafe fn build_optimized_tree(
                     else {
                         todo!()
                     };
-                    match type_value {
+                    println!("type_value: {type_value:?}");
+                    // debug_assert!(checker < 8);
+
+                    let rhs = &mut current.as_mut().statement.as_mut().statement.arg[1];
+                    *rhs = match type_value {
                         TypeValue::Integer(TypeValueInteger::U64(range))
                             if let Some(integer) = range.value() =>
                         {
-                            current.as_mut().statement.as_mut().statement.arg[1] =
-                                Value::Literal(Literal::Integer(integer as i128));
+                            Value::Literal(Literal::Integer(integer as i128))
                         }
                         TypeValue::Integer(TypeValueInteger::U32(range))
                             if let Some(integer) = range.value() =>
                         {
-                            current.as_mut().statement.as_mut().statement.arg[1] =
-                                Value::Literal(Literal::Integer(integer as i128));
+                            Value::Literal(Literal::Integer(integer as i128))
                         }
                         TypeValue::Integer(TypeValueInteger::U16(range))
                             if let Some(integer) = range.value() =>
                         {
-                            current.as_mut().statement.as_mut().statement.arg[1] =
-                                Value::Literal(Literal::Integer(integer as i128));
+                            Value::Literal(Literal::Integer(integer as i128))
                         }
                         TypeValue::Integer(TypeValueInteger::U8(range))
                             if let Some(integer) = range.value() =>
                         {
-                            current.as_mut().statement.as_mut().statement.arg[1] =
-                                Value::Literal(Literal::Integer(integer as i128));
+                            Value::Literal(Literal::Integer(integer as i128))
                         }
                         TypeValue::Integer(TypeValueInteger::I64(range))
                             if let Some(integer) = range.value() =>
                         {
-                            current.as_mut().statement.as_mut().statement.arg[1] =
-                                Value::Literal(Literal::Integer(integer as i128));
+                            Value::Literal(Literal::Integer(integer as i128))
                         }
                         TypeValue::Integer(TypeValueInteger::I32(range))
                             if let Some(integer) = range.value() =>
                         {
-                            current.as_mut().statement.as_mut().statement.arg[1] =
-                                Value::Literal(Literal::Integer(integer as i128));
+                            Value::Literal(Literal::Integer(integer as i128))
                         }
                         TypeValue::Integer(TypeValueInteger::I16(range))
                             if let Some(integer) = range.value() =>
                         {
-                            current.as_mut().statement.as_mut().statement.arg[1] =
-                                Value::Literal(Literal::Integer(integer as i128));
+                            Value::Literal(Literal::Integer(integer as i128))
                         }
-                        TypeValue::Reference(VariableAlias { identifier, index }) => {
-                            current.as_mut().statement.as_mut().statement.arg[1] =
-                                Value::Variable(Variable {
-                                    addressing: Addressing::Reference,
-                                    identifier: identifier.clone(),
-                                    index: index.clone(),
-                                });
+                        TypeValue::Reference(alias @ VariableAlias { identifier, index }) => {
+                            // I expect it will be the case in the future that the use of 1 variable means
+                            // the use of multiple other variables, this design supports this with slight
+                            // alteration.
+                            let mut read_stack = vec![alias.clone()];
+                            while let Some(read_current) = read_stack.pop() {
+                                if let Some(link) = read_links.get(&read_current) {
+                                    read_stack.push(link.clone());
+                                }
+                                read.insert(read_current);
+                            }
+
+                            Value::Variable(Variable {
+                                addressing: Addressing::Reference,
+                                identifier: identifier.clone(),
+                                index: index.clone(),
+                            })
                         }
                         x @ _ => todo!("{x:?}"),
-                    }
-
-                    // I expect it will be the case in the future that the use of 1 variable means
-                    // the use of multiple other variables, this design supports this with slight
-                    // alteration.
-                    let mut read_stack = vec![VariableAlias::from(variable.clone())];
-                    while let Some(read_current) = read_stack.pop() {
-                        if let Some(link) = read_links.get(&read_current) {
-                            read_stack.push(link.clone());
-                        }
-                        read.insert(read_current);
-                    }
+                    };
 
                     // Set next node.
                     debug_assert!(current
@@ -726,18 +731,18 @@ pub unsafe fn finish_optimized_tree(
 
 // Applies typical optimizations. E.g. removing unused variables, unreachable code, etc.
 pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
+    // println!("graph {:?}", graph.as_ref());
+    // println!("graph {:?}", graph.as_ref().statement.as_ref());
+    // panic!("hit this");
+
     // Construct new optimized abstract syntax tree.
-    // TODO This doesn't dealloc anything in `graph` which may be very very big. Do this deallocation.    
+    // TODO This doesn't dealloc anything in `graph` which may be very very big. Do this deallocation.
     let (new_nodes, read) = build_optimized_tree(graph);
 
-    println!("read {:?}", read);
-    panic!("hit this");
+    // println!("read {:?}", read);
+    // panic!("does not hit this");
 
-    let x = finish_optimized_tree(new_nodes.unwrap(), read).unwrap();
-
-    panic!("hit this");
-
-    x
+    finish_optimized_tree(new_nodes.unwrap(), read).unwrap()
 }
 
 unsafe fn new_passback_end(mut node: NonNull<NewStateNode>, end: GraphNodeEnd) {
