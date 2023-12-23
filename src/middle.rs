@@ -1026,6 +1026,7 @@ pub struct VariableAlias {
     identifier: Identifier,
     index: Option<Box<Index>>,
 }
+
 impl From<&str> for VariableAlias {
     fn from(s: &str) -> Self {
         Self {
@@ -1034,6 +1035,7 @@ impl From<&str> for VariableAlias {
         }
     }
 }
+
 impl From<Variable> for VariableAlias {
     fn from(variable: Variable) -> Self {
         Self {
@@ -1042,6 +1044,7 @@ impl From<Variable> for VariableAlias {
         }
     }
 }
+
 impl From<VariableAlias> for Variable {
     fn from(alias: VariableAlias) -> Self {
         Self {
@@ -1051,6 +1054,7 @@ impl From<VariableAlias> for Variable {
         }
     }
 }
+
 impl From<Identifier> for VariableAlias {
     fn from(identifier: Identifier) -> Self {
         Self {
@@ -2444,26 +2448,31 @@ impl From<&Variable> for TypeKey {
         TypeKey::Variable(VariableAlias::from(variable.clone()))
     }
 }
+
 impl From<Variable> for TypeKey {
     fn from(variable: Variable) -> TypeKey {
         TypeKey::Variable(VariableAlias::from(variable))
     }
 }
+
 impl From<VariableAlias> for TypeKey {
     fn from(variable: VariableAlias) -> TypeKey {
         TypeKey::Variable(variable)
     }
 }
+
 impl From<Register> for TypeKey {
     fn from(variable: Register) -> TypeKey {
         TypeKey::Register(variable)
     }
 }
+
 impl From<&VariableAlias> for TypeKey {
     fn from(variable: &VariableAlias) -> TypeKey {
         TypeKey::Variable(variable.clone())
     }
 }
+
 impl From<&Register> for TypeKey {
     fn from(variable: &Register) -> TypeKey {
         TypeKey::Register(variable.clone())
@@ -2559,6 +2568,7 @@ impl Type {
         }
     }
 }
+
 impl Array {
     fn cost(&self) -> u64 {
         let mut cost = 0u64;
@@ -2592,41 +2602,49 @@ impl TryFrom<i128> for TypeValue {
         Ok(Self::Integer(TypeValueInteger::try_from(x)?))
     }
 }
+
 impl From<i8> for TypeValue {
     fn from(x: i8) -> Self {
         Self::Integer(TypeValueInteger::from(x))
     }
 }
+
 impl From<i16> for TypeValue {
     fn from(x: i16) -> Self {
         Self::Integer(TypeValueInteger::from(x))
     }
 }
+
 impl From<i32> for TypeValue {
     fn from(x: i32) -> Self {
         Self::Integer(TypeValueInteger::from(x))
     }
 }
+
 impl From<i64> for TypeValue {
     fn from(x: i64) -> Self {
         Self::Integer(TypeValueInteger::from(x))
     }
 }
+
 impl From<u8> for TypeValue {
     fn from(x: u8) -> Self {
         Self::Integer(TypeValueInteger::from(x))
     }
 }
+
 impl From<u16> for TypeValue {
     fn from(x: u16) -> Self {
         Self::Integer(TypeValueInteger::from(x))
     }
 }
+
 impl From<u32> for TypeValue {
     fn from(x: u32) -> Self {
         Self::Integer(TypeValueInteger::from(x))
     }
 }
+
 impl From<u64> for TypeValue {
     fn from(x: u64) -> Self {
         Self::Integer(TypeValueInteger::from(x))
@@ -2739,36 +2757,43 @@ impl From<i8> for TypeValueInteger {
         Self::I8(MyRange::from(x))
     }
 }
+
 impl From<i16> for TypeValueInteger {
     fn from(x: i16) -> Self {
         Self::I16(MyRange::from(x))
     }
 }
+
 impl From<i32> for TypeValueInteger {
     fn from(x: i32) -> Self {
         Self::I32(MyRange::from(x))
     }
 }
+
 impl From<i64> for TypeValueInteger {
     fn from(x: i64) -> Self {
         Self::I64(MyRange::from(x))
     }
 }
+
 impl From<u8> for TypeValueInteger {
     fn from(x: u8) -> Self {
         Self::U8(MyRange::from(x))
     }
 }
+
 impl From<u16> for TypeValueInteger {
     fn from(x: u16) -> Self {
         Self::U16(MyRange::from(x))
     }
 }
+
 impl From<u32> for TypeValueInteger {
     fn from(x: u32) -> Self {
         Self::U32(MyRange::from(x))
     }
 }
+
 impl From<u64> for TypeValueInteger {
     fn from(x: u64) -> Self {
         Self::U64(MyRange::from(x))
