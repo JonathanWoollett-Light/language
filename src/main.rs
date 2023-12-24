@@ -36,12 +36,12 @@ enum Args {
 impl From<Vec<String>> for Args {
     fn from(args: Vec<String>) -> Self {
         match args.as_slice() {
-            [_, arg] if arg == "--build" => Self::Build(None),
-            [_, arg] if arg == "--new" => Self::New(None),
-            [_, arg] if arg == "--run" => Self::Run(None),
-            [_, arg, path] if arg == "--build" => Self::Build(Some(PathBuf::from(path))),
-            [_, arg, path] if arg == "--new" => Self::New(Some(PathBuf::from(path))),
-            [_, arg, path] if arg == "--run" => Self::Run(Some(PathBuf::from(path))),
+            [_, arg] if arg == "build" => Self::Build(None),
+            [_, arg] if arg == "new" => Self::New(None),
+            [_, arg] if arg == "run" => Self::Run(None),
+            [_, arg, path] if arg == "build" => Self::Build(Some(PathBuf::from(path))),
+            [_, arg, path] if arg == "new" => Self::New(Some(PathBuf::from(path))),
+            [_, arg, path] if arg == "run" => Self::Run(Some(PathBuf::from(path))),
             _ => todo!(),
         }
     }
