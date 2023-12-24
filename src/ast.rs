@@ -189,6 +189,13 @@ pub enum Register {
     W31,
 }
 
+impl TryFrom<&Identifier> for Register {
+    type Error = ();
+    fn try_from(Identifier(bytes): &Identifier) -> Result<Self, Self::Error> {
+        Self::try_from(bytes.as_slice())
+    }
+}
+
 impl TryFrom<&[u8]> for Register {
     type Error = ();
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
@@ -345,7 +352,7 @@ impl TryFrom<&Variable> for Register {
     ) -> Result<Self, Self::Error> {
         if *addressing == Addressing::Direct
             && *index == None
-            && let Ok(register) = Register::try_from(identifier.as_slice())
+            && let Ok(register) = Register::try_from(identifier)
         {
             Ok(register)
         } else {
@@ -398,7 +405,7 @@ impl Default for Literal {
     }
 }
 
-#[derive(Default, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
 pub struct Variable {
     pub addressing: Addressing,
     pub identifier: Identifier,
@@ -442,7 +449,7 @@ impl std::fmt::Display for Variable {
             f,
             "{}{}{}",
             self.addressing,
-            std::str::from_utf8(&self.identifier).unwrap(),
+            self.identifier,
             self.index
                 .as_ref()
                 .map(|v| format!("[{v}]"))
@@ -452,24 +459,48 @@ impl std::fmt::Display for Variable {
 }
 
 impl From<&str> for Variable {
-    fn from(bytes: &str) -> Self {
+    fn from(s: &str) -> Self {
         Self {
             addressing: Addressing::Direct,
-            identifier: Identifier::from(bytes.as_bytes()),
+            identifier: Identifier::from(s),
             index: None,
         }
     }
 }
+#[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Default, Hash)]
+pub struct Identifier(pub Vec<u8>);
 
-pub type Identifier = Vec<u8>;
+impl PartialEq<&str> for Identifier {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == other.as_bytes()
+    }
+}
 
-impl std::fmt::Debug for Variable {
+impl Identifier {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+    pub fn push(&mut self, x: u8) {
+        self.0.push(x);
+    }
+}
+
+impl From<&str> for Identifier {
+    fn from(s: &str) -> Self {
+        Self(Vec::from(s.as_bytes()))
+    }
+}
+
+impl std::fmt::Debug for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Variable")
-            .field("addressing", &self.addressing)
-            .field("identifier", &std::str::from_utf8(&self.identifier))
-            .field("index", &self.index)
+        f.debug_tuple("Identifier")
+            .field(&std::str::from_utf8(&self.0))
             .finish()
+    }
+}
+impl std::fmt::Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", std::str::from_utf8(&self.0).unwrap())
     }
 }
 
@@ -591,6 +622,12 @@ pub enum Syscall {
     MemfdCreate,
     FTruncate,
     Mmap,
+}
+impl TryFrom<&Identifier> for Syscall {
+    type Error = ();
+    fn try_from(identifier: &Identifier) -> Result<Self, Self::Error> {
+        Self::try_from(identifier.0.as_slice())
+    }
 }
 impl TryFrom<&[u8]> for Syscall {
     type Error = ();

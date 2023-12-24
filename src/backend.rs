@@ -100,13 +100,7 @@ pub unsafe fn instruction_from_node(
             Op::Special(Special::Type) => match arg {
                 [Value::Variable(Variable { identifier, .. }), Value::Type(value_type)] => {
                     type_data.insert(identifier.clone(), value_type.clone());
-                    writeln!(
-                        bss,
-                        "{}: .skip {}",
-                        std::str::from_utf8(identifier).unwrap(),
-                        value_type.bytes()
-                    )
-                    .unwrap();
+                    writeln!(bss, "{identifier}: .skip {}", value_type.bytes()).unwrap();
                 }
                 [Value::Variable(Variable { identifier, .. }), Value::Type(value_type), Value::Literal(literal)] =>
                 {
@@ -138,12 +132,7 @@ pub unsafe fn instruction_from_node(
                         _ => todo!(),
                     };
 
-                    writeln!(
-                        data,
-                        "{}: {data_value}",
-                        std::str::from_utf8(identifier).unwrap(),
-                    )
-                    .unwrap();
+                    writeln!(data, "{identifier}: {data_value}").unwrap();
                 }
                 [Value::Variable(Variable { identifier, .. }), Value::Type(value_type), Value::Literal(literal), tail @ ..] =>
                 {
@@ -188,12 +177,7 @@ pub unsafe fn instruction_from_node(
                         _ => todo!(),
                     };
 
-                    writeln!(
-                        data,
-                        "{}: {data_value}",
-                        std::str::from_utf8(identifier).unwrap(),
-                    )
-                    .unwrap();
+                    writeln!(data, "{identifier}: {data_value}").unwrap();
                 }
                 _ => todo!(),
             },
@@ -217,12 +201,11 @@ pub unsafe fn instruction_from_node(
                         &mut assembly,
                         "\
                             mov x8, #{}\n\
-                            ldr x0, ={}\n\
+                            ldr x0, ={identifier}\n\
                             ldrb w0, [x0]\n\
                             svc #0\n\
                         ",
-                        libc::SYS_exit,
-                        std::str::from_utf8(identifier).unwrap()
+                        libc::SYS_exit
                     )
                     .unwrap(),
                     _ => todo!(),
@@ -239,21 +222,19 @@ pub unsafe fn instruction_from_node(
                         Type::U8 => write!(
                             assembly,
                             "\
-                            ldr x0, ={}\n\
+                            ldr x0, ={identifier}\n\
                             mov w1, #{y}\n\
                             strb w1, [x0]\n\
-                        ",
-                            std::str::from_utf8(identifier).unwrap()
+                        "
                         )
                         .unwrap(),
                         Type::U64 => write!(
                             assembly,
                             "\
-                            ldr x0, ={}\n\
+                            ldr x0, ={identifier}\n\
                             mov x1, #{y}\n\
                             str x1, [x0]\n\
-                        ",
-                            std::str::from_utf8(identifier).unwrap()
+                        "
                         )
                         .unwrap(),
                         _ => todo!(),
@@ -273,12 +254,7 @@ pub unsafe fn instruction_from_node(
                     assert_eq!(vec.len(), bytes.len());
 
                     // Loads the address of the array.
-                    writeln!(
-                        assembly,
-                        "ldr x0, ={}",
-                        std::str::from_utf8(identifier).unwrap()
-                    )
-                    .unwrap();
+                    writeln!(assembly, "ldr x0, ={identifier}").unwrap();
 
                     // Packs 2 bytes into stores of the full 32 bit register.
                     let mut chunks = bytes.array_chunks::<2>();
@@ -321,12 +297,7 @@ pub unsafe fn instruction_from_node(
                         assert_eq!(vec.len(), rest.len());
 
                         // Loads the address of the array.
-                        writeln!(
-                            assembly,
-                            "ldr x0, ={}",
-                            std::str::from_utf8(identifier).unwrap()
-                        )
-                        .unwrap();
+                        writeln!(assembly, "ldr x0, ={identifier}").unwrap();
 
                         // Packs 2 bytes into stores of the full 32 bit register.
                         let mut chunks = rest.array_chunks::<2>();
@@ -375,23 +346,21 @@ pub unsafe fn instruction_from_node(
                         Type::U8 => write!(
                             &mut assembly,
                             "\
-                            ldr x0, ={}\n\
+                            ldr x0, ={identifier}\n\
                             ldr w1, [x0]\n\
                             add w1, w1, #{y}\n\
                             strb w1, [x0]\n\
-                        ",
-                            std::str::from_utf8(identifier).unwrap()
+                        "
                         )
                         .unwrap(),
                         Type::U64 => write!(
                             &mut assembly,
                             "\
-                            ldr x0, ={}\n\
+                            ldr x0, ={identifier}\n\
                             ldr x1, [x0]\n\
                             add x1, x1, #{y}\n\
                             str x1, [x0]\n\
-                        ",
-                            std::str::from_utf8(identifier).unwrap()
+                        "
                         )
                         .unwrap(),
                         _ => todo!(),
@@ -409,23 +378,21 @@ pub unsafe fn instruction_from_node(
                         Type::U8 => write!(
                             &mut assembly,
                             "\
-                            ldr x0, ={}\n\
+                            ldr x0, ={identifier}\n\
                             ldr w1, [x0]\n\
                             sub w1, w1, #{y}\n\
                             strb w1, [x0]\n\
-                        ",
-                            std::str::from_utf8(identifier).unwrap()
+                        "
                         )
                         .unwrap(),
                         Type::U64 => write!(
                             &mut assembly,
                             "\
-                            ldr x0, ={}\n\
+                            ldr x0, ={identifier}\n\
                             ldr x1, [x0]\n\
                             sub x1, x1, #{y}\n\
                             str x1, [x0]\n\
-                        ",
-                            std::str::from_utf8(identifier).unwrap()
+                        "
                         )
                         .unwrap(),
                         _ => todo!(),
@@ -442,12 +409,11 @@ pub unsafe fn instruction_from_node(
                     write!(
                         &mut assembly,
                         "\
-                        ldr x0, ={}\n\
+                        ldr x0, ={identifier}\n\
                         ldr x0, [x0]\n\
                         cmp w0, #{y}\n\
                         bne block{block_counter}\n\
-                    ",
-                        std::str::from_utf8(identifier).unwrap(),
+                    "
                     )
                     .unwrap();
 
@@ -472,12 +438,11 @@ pub unsafe fn instruction_from_node(
                         "\
                         mov x8, #{}\n\
                         mov x0, #{fd}\n\
-                        ldr x1, ={}\n\
+                        ldr x1, ={identifier}\n\
                         mov x2, #{}\n\
                         svc #0\n\
                     ",
                         libc::SYS_read,
-                        std::str::from_utf8(identifier).unwrap(),
                         type_data.get(identifier).unwrap().bytes()
                     )
                     .unwrap();
@@ -488,25 +453,18 @@ pub unsafe fn instruction_from_node(
                     index: None,
                 }), Value::Type(variable_type), Value::Literal(Literal::Integer(fd))] => {
                     type_data.insert(identifier.clone(), variable_type.clone());
-                    writeln!(
-                        bss,
-                        "{}: .skip {}",
-                        std::str::from_utf8(identifier).unwrap(),
-                        variable_type.bytes()
-                    )
-                    .unwrap();
+                    writeln!(bss, "{identifier}: .skip {}", variable_type.bytes()).unwrap();
 
                     write!(
                         &mut assembly,
                         "\
                         mov x8, #{}\n\
                         mov x0, #{fd}\n\
-                        ldr x1, ={}\n\
+                        ldr x1, ={identifier}\n\
                         mov x2, #{}\n\
                         svc #0\n\
                     ",
                         libc::SYS_read,
-                        std::str::from_utf8(identifier).unwrap(),
                         variable_type.bytes()
                     )
                     .unwrap();
@@ -524,12 +482,11 @@ pub unsafe fn instruction_from_node(
                         "\
                         mov x8, #{}\n\
                         mov x0, #{fd}\n\
-                        ldr x1, ={}\n\
+                        ldr x1, ={identifier}\n\
                         mov x2, #{}\n\
                         svc #0\n\
                     ",
                         libc::SYS_write,
-                        std::str::from_utf8(identifier).unwrap(),
                         type_data.get(identifier).unwrap().bytes()
                     )
                     .unwrap();
@@ -551,11 +508,10 @@ pub unsafe fn instruction_from_node(
                             ldr x0, =empty\n\
                             mov x1, #0\n\
                             svc #0\n\
-                            ldr x1, ={}\n\
+                            ldr x1, ={identifier}\n\
                             str w0, [x1, 4]\n\
                         ",
                                 libc::SYS_memfd_create,
-                                std::str::from_utf8(identifier).unwrap()
                             )
                             .unwrap();
 
@@ -573,11 +529,10 @@ pub unsafe fn instruction_from_node(
                             ldr x0, =empty\n\
                             mov x1, #0\n\
                             svc #0\n\
-                            ldr x1, ={}\n\
+                            ldr x1, ={identifier}\n\
                             str w0, [x1]\n\
                         ",
                                 libc::SYS_memfd_create,
-                                std::str::from_utf8(identifier).unwrap()
                             )
                             .unwrap();
 
@@ -601,12 +556,7 @@ pub unsafe fn instruction_from_node(
                     identifier,
                     index: None,
                 })] => {
-                    writeln!(
-                        &mut assembly,
-                        "ldr {register}, ={}",
-                        std::str::from_utf8(identifier).unwrap()
-                    )
-                    .unwrap();
+                    writeln!(&mut assembly, "ldr {register}, ={identifier}",).unwrap();
                 }
                 x @ _ => todo!("{x:?}"),
             },

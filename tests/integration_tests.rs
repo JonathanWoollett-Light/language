@@ -174,7 +174,7 @@ fn helloworld_new() {
 fn build_and_run(source: &[u8], expected_stdout: &[u8], expected_code: i32) {
     let directory = PathBuf::from(format!("/tmp/a{}", Uuid::new_v4()));
     let output = Command::new(BINARY)
-        .args(["--new", &directory.display().to_string()])
+        .args(["new", &directory.display().to_string()])
         .output()
         .unwrap();
     assert_eq!(output.stderr, &[], "{}", from_utf8(&output.stderr).unwrap());
@@ -189,7 +189,7 @@ fn build_and_run(source: &[u8], expected_stdout: &[u8], expected_code: i32) {
     source_file.write_all(source).unwrap();
 
     let output = Command::new(BINARY)
-        .args(["--run", &directory.display().to_string()])
+        .args(["run", &directory.display().to_string()])
         .output()
         .unwrap();
 

@@ -1030,7 +1030,7 @@ pub struct VariableAlias {
 impl From<&str> for VariableAlias {
     fn from(s: &str) -> Self {
         Self {
-            identifier: Vec::from(s.as_bytes()),
+            identifier: Identifier::from(s),
             index: None,
         }
     }
@@ -1138,7 +1138,7 @@ unsafe fn create_inline_variable<I: Iterator<Item = Identifier>>(
 
             (
                 VariableAlias {
-                    identifier: Vec::from(b"in"),
+                    identifier: Identifier::from("in"),
                     index: Some(Box::new(Index::Offset(Offset::Integer(i as u64)))),
                 },
                 VariableAlias::from(new_variable_identiier),
@@ -1156,10 +1156,12 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
     // An iterator yielding unique identifiers.
     const N: u8 = b'z' - b'a';
     let mut identifier_iterator = (0..).map(|index| {
-        (0..index / N)
-            .map(|_| b'z')
-            .chain(std::iter::once((index % N) + b'a'))
-            .collect::<Vec<_>>()
+        Identifier(
+            (0..index / N)
+                .map(|_| b'z')
+                .chain(std::iter::once((index % N) + b'a'))
+                .collect::<Vec<_>>(),
+        )
     });
 
     let mut stack = vec![(
@@ -1170,7 +1172,8 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
     )];
 
     while let Some((current, mut preceding, next_carry, variable_map)) = stack.pop() {
-        // dbg!(&current.as_ref().statement.op);
+        eprintln!("op: {:?}", &current.as_ref().statement.op);
+        eprintln!("variable_map: {:?}", variable_map.borrow());
 
         match current.as_ref().statement.op {
             // Function definition
@@ -1226,7 +1229,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         });
                         (
                             VariableAlias {
-                                identifier: Vec::from(b"out"),
+                                identifier: Identifier::from("out"),
                                 index: None,
                             },
                             new_lhs,
@@ -1602,6 +1605,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     .filter_map(Value::variable_mut)
                 {
                     let var = VariableAlias::from(variable.clone());
+                    eprintln!("var: {var:?}");
 
                     let VariableAlias { identifier, index } =
                         variable_map.borrow().get(&var).unwrap().clone();

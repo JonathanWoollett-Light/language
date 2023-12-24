@@ -52,7 +52,7 @@ pub fn get_type<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Type {
 #[cfg_attr(test, instrument(level = "TRACE", skip(bytes), ret))]
 pub fn get_variable<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Variable {
     // Get identifier
-    let mut identifier = Vec::new();
+    let mut identifier = Identifier::new();
 
     let addressing = match bytes.peek().map(|r| r.as_ref().unwrap()) {
         Some(b'&') => {
@@ -69,8 +69,7 @@ pub fn get_variable<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Variable {
             Addressing::Direct
         }
         _ => panic!(
-            "{:?} {:?}",
-            std::str::from_utf8(&identifier),
+            "{identifier:?} {:?}",
             std::str::from_utf8(&bytes.map(Result::unwrap).collect::<Vec<_>>())
         ),
     };
@@ -141,8 +140,7 @@ pub fn get_variable<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Variable {
                 }
             }
             _ => panic!(
-                "{:?} {:?}",
-                std::str::from_utf8(&identifier),
+                "{identifier:?} {:?}",
                 std::str::from_utf8(&bytes.map(Result::unwrap).collect::<Vec<_>>())
             ),
         }
@@ -441,7 +439,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
     //     comptime = true;
     // }
 
-    match (variable.identifier.as_slice(), &variable.index) {
+    match (variable.identifier.0.as_slice(), &variable.index) {
         // Loop
         (b"loop", None) => Statement {
             comptime,
@@ -558,7 +556,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                                             addressing: Addressing::Direct,
                                             identifier,
                                             index: None,
-                                        }) if identifier == b"sizeof" => {
+                                        }) if identifier == "sizeof" => {
                                             let tail = get_values(bytes);
                                             Statement {
                                                 comptime,
@@ -572,9 +570,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                                             addressing: Addressing::Direct,
                                             identifier,
                                             index: None,
-                                        }) if let Ok(syscall) =
-                                            Syscall::try_from(identifier.as_slice()) =>
-                                        {
+                                        }) if let Ok(syscall) = Syscall::try_from(&identifier) => {
                                             let tail = get_values(bytes);
                                             Statement {
                                                 comptime,
