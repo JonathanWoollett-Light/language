@@ -9,7 +9,6 @@ edition = "2021"
 libc = "0.2.147"
 reqwest = { version = "0.11.22", features=["blocking"]}
 num-traits = "0.2.16"
-clap = { version = "4.4.11", features=["derive"] }
 ring = "0.17.7"
 data-encoding = "2.5.0"
 itertools = "0.11.0"

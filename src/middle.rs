@@ -1023,8 +1023,8 @@ pub unsafe fn roots(node: NonNull<NewNode>) -> Vec<NonNull<NewStateNode>> {
 
 #[derive(Debug, Eq, PartialEq, Default, Clone, Hash)]
 pub struct VariableAlias {
-    identifier: Identifier,
-    index: Option<Box<Index>>,
+    pub identifier: Identifier,
+    pub index: Option<Box<Index>>,
 }
 
 impl From<&str> for VariableAlias {

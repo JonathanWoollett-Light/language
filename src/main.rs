@@ -9,7 +9,6 @@
 
 extern crate test;
 
-use clap::Parser;
 use data_encoding::HEXUPPER;
 use ring::digest::{Context, Digest, SHA256};
 use std::fs::OpenOptions;
@@ -27,14 +26,23 @@ use backend::*;
 #[cfg(debug_assertions)]
 const LOOP_LIMIT: usize = 200;
 
-#[derive(Parser, Debug)]
-struct Args {
-    #[arg(long)]
-    source: Option<String>,
-    #[arg(long)]
-    path: Option<PathBuf>,
-    #[arg(long)]
-    new: Option<PathBuf>,
+enum Args {
+    Build(Option<PathBuf>),
+    New(Option<PathBuf>),
+    Run(Option<PathBuf>),
+}
+impl From<Vec<String>> for Args {
+    fn from(args: Vec<String>) -> Self {
+        match args.as_slice() {
+            [_, arg] if arg == "--build" => Self::Build(None),
+            [_, arg] if arg == "--new" => Self::New(None),
+            [_, arg] if arg == "--run" => Self::Run(None),
+            [_, arg, path] if arg == "--build" => Self::Build(Some(PathBuf::from(path))),
+            [_, arg, path] if arg == "--new" => Self::New(Some(PathBuf::from(path))),
+            [_, arg, path] if arg == "--run" => Self::Run(Some(PathBuf::from(path))),
+            _ => todo!(),
+        }
+    }
 }
 
 fn sha256_digest<R: Read>(mut reader: R) -> std::io::Result<Digest> {
@@ -53,6 +61,7 @@ fn sha256_digest<R: Read>(mut reader: R) -> std::io::Result<Digest> {
 }
 
 const LANGUAGE_EXTENSION: &str = "abc";
+
 const BUILD_DIR: &str = "build";
 
 fn write_file(dir: &PathBuf, file: PathBuf, bytes: &[u8], lock_file: &mut std::fs::File) {
@@ -70,196 +79,202 @@ fn write_file(dir: &PathBuf, file: PathBuf, bytes: &[u8], lock_file: &mut std::f
     writeln!(lock_file, "{},{hash}", file_name.to_str().unwrap()).unwrap();
 }
 
-#[allow(unreachable_code)]
-fn main() {
-    let args = Args::parse();
+fn build(path: Option<PathBuf>) {
+    let project_path = path.unwrap_or(PathBuf::from("./"));
+    let source_path = project_path
+        .join("source")
+        .with_extension(LANGUAGE_EXTENSION);
+    let source = std::fs::read_to_string(source_path).unwrap();
 
-    if let Some(new) = args.new {
-        if !new.exists() {
-            std::fs::create_dir(&new).unwrap();
-        }
-        let mut source = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open(new.join("source"))
-            .unwrap();
-        source.write_all(b"\
-            include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\n\
-            x := \"Hello, World!\\n\"\n\
-            write 1 x\n\
-            exit 0\n\
-        ").unwrap();
-        return;
+    // Create build directory
+    let build_dir = project_path.join(BUILD_DIR);
+    if !build_dir.exists() {
+        std::fs::create_dir(build_dir).unwrap();
     }
 
-    let (source, path_opt) = if let Some(source) = args.source {
-        (source, None)
-    } else {
-        let project_path = args.path.unwrap_or_else(|| PathBuf::from("./"));
-        let source_path = project_path.join("source");
-        (
-            std::fs::read_to_string(source_path).unwrap(),
-            Some(project_path),
-        )
+    // Create lock file
+    let mut lock_file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(project_path.join("lock.csv"))
+        .unwrap();
+    writeln!(&mut lock_file, "file,hash").unwrap();
+
+    // Includes dependencies
+    let mut bytes = source.into_bytes();
+    get_includes(&mut bytes);
+    write_file(
+        &project_path,
+        PathBuf::from("included").with_extension(LANGUAGE_EXTENSION),
+        &bytes,
+        &mut lock_file,
+    );
+
+    // Parses AST
+    let reader = std::io::BufReader::new(bytes.as_slice());
+    let mut iter = reader.bytes().peekable();
+    let nodes = get_nodes(&mut iter).unwrap();
+
+    // Inlines functions
+    let inlined = unsafe { inline_functions(nodes) };
+    let inlined_string = display_ast(inlined);
+    write_file(
+        &project_path,
+        PathBuf::from("inlined").with_extension(LANGUAGE_EXTENSION),
+        inlined_string.as_bytes(),
+        &mut lock_file,
+    );
+
+    // Explores states
+    let roots = unsafe { roots(inlined) };
+    let mut explorer = unsafe { Explorer::new(&roots) };
+    let path = loop {
+        match unsafe { explorer.next() } {
+            Explore::Current(_) => continue,
+            Explore::Finished(x) => break x,
+        }
     };
 
-    unsafe {
-        // Includes dependencies
-        let mut bytes = source.into_bytes();
-        get_includes(&mut bytes);
-        let mut lock = if let Some(path) = &path_opt {
-            let build_dir = path.join(BUILD_DIR);
-            if !build_dir.exists() {
-                std::fs::create_dir(build_dir).unwrap();
+    // Optimize source
+    let optimized = unsafe { optimize(path) };
+    let optimized_string = display_ast(optimized);
+    write_file(
+        &project_path,
+        PathBuf::from("optimized").with_extension(LANGUAGE_EXTENSION),
+        optimized_string.as_bytes(),
+        &mut lock_file,
+    );
+
+    // Construct assembly
+    let assembly = assembly_from_node(optimized);
+    let assembly_path = PathBuf::from("assembly").with_extension("s");
+    write_file(
+        &project_path,
+        assembly_path.clone(),
+        assembly.as_bytes(),
+        &mut lock_file,
+    );
+
+    // Make object file
+    let object_path = project_path
+        .join("build")
+        .join("object")
+        .with_extension("o");
+    let object_output = std::process::Command::new("as")
+        .args([
+            "-o",
+            &object_path.display().to_string(),
+            &project_path
+                .join("build")
+                .join(assembly_path)
+                .display()
+                .to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        object_output.stdout,
+        [],
+        "{}",
+        std::str::from_utf8(&object_output.stdout).unwrap()
+    );
+    assert_eq!(
+        object_output.stderr,
+        [],
+        "{}",
+        std::str::from_utf8(&object_output.stderr).unwrap()
+    );
+    assert_eq!(object_output.status.code(), Some(0));
+    // Write object hash
+    let mut object_buffer = Vec::new();
+    let mut object_file = OpenOptions::new().read(true).open(&object_path).unwrap();
+    object_file.read_to_end(&mut object_buffer).unwrap();
+    let object_hash = HEXUPPER.encode(sha256_digest(object_buffer.as_slice()).unwrap().as_ref());
+    let object_file_name = object_path.file_stem().unwrap();
+    writeln!(
+        &mut lock_file,
+        "{},{object_hash}",
+        object_file_name.to_str().unwrap()
+    )
+    .unwrap();
+
+    // Make binary file
+    let binary_path = project_path.join("build").join("binary");
+    let binary_output = std::process::Command::new("ld")
+        .args([
+            "-s",
+            "-o",
+            &binary_path.display().to_string(),
+            &object_path.display().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        binary_output.stdout,
+        [],
+        "{}",
+        std::str::from_utf8(&binary_output.stdout).unwrap()
+    );
+    assert_eq!(
+        binary_output.stderr,
+        [],
+        "{}",
+        std::str::from_utf8(&binary_output.stderr).unwrap()
+    );
+    assert_eq!(binary_output.status.code(), Some(0));
+    // Write binary hash
+    let mut binary_buffer = Vec::new();
+    let mut binary_file = OpenOptions::new().read(true).open(&binary_path).unwrap();
+    binary_file.read_to_end(&mut binary_buffer).unwrap();
+    let binary_hash = HEXUPPER.encode(sha256_digest(binary_buffer.as_slice()).unwrap().as_ref());
+    let binary_file_name = binary_path.file_stem().unwrap();
+    writeln!(
+        &mut lock_file,
+        "{},{binary_hash}",
+        binary_file_name.to_str().unwrap()
+    )
+    .unwrap();
+}
+
+fn run(path: Option<PathBuf>) {
+    build(path.clone());
+    let project_path = path.unwrap_or(PathBuf::from("./"));
+    std::process::Command::new(
+        &project_path
+            .join("build")
+            .join("binary")
+            .display()
+            .to_string(),
+    )
+    .spawn()
+    .unwrap();
+}
+
+#[allow(unreachable_code)]
+fn main() {
+    let args = Args::from(std::env::args().collect::<Vec<_>>());
+
+    match args {
+        Args::New(Some(path)) => {
+            if !path.exists() {
+                std::fs::create_dir(&path).unwrap();
             }
-            let mut lock_file = OpenOptions::new()
+            let mut source = OpenOptions::new()
                 .create(true)
-                .truncate(true)
                 .write(true)
-                .open(path.join("lock.csv"))
+                .open(path.join("source").with_extension(LANGUAGE_EXTENSION))
                 .unwrap();
-            writeln!(&mut lock_file, "file,hash").unwrap();
-
-            write_file(
-                path,
-                PathBuf::from("included").with_extension(LANGUAGE_EXTENSION),
-                &bytes,
-                &mut lock_file,
-            );
-            Some(lock_file)
-        } else {
-            None
-        };
-
-        // Parses AST
-        let reader = std::io::BufReader::new(bytes.as_slice());
-        let mut iter = reader.bytes().peekable();
-        let nodes = get_nodes(&mut iter).unwrap();
-
-        // Inlines functions
-        let inlined = inline_functions(nodes);
-        if let Some(path) = &path_opt {
-            let inlined_string = display_ast(inlined);
-            write_file(
-                path,
-                PathBuf::from("inlined").with_extension(LANGUAGE_EXTENSION),
-                inlined_string.as_bytes(),
-                lock.as_mut().unwrap(),
-            );
+            source.write_all(b"\
+                include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\n\
+                x := \"Hello, World!\\n\"\n\
+                write 1 x\n\
+                exit 0\n\
+            ").unwrap();
         }
-
-        // Explores states
-        let roots = roots(inlined);
-        let mut explorer = Explorer::new(&roots);
-        let path = loop {
-            match explorer.next() {
-                Explore::Current(_) => continue,
-                Explore::Finished(x) => break x,
-            }
-        };
-
-        // Optimize source
-        let optimized = optimize(path);
-        if let Some(path) = &path_opt {
-            let optimized_string = display_ast(optimized);
-            write_file(
-                path,
-                PathBuf::from("optimized").with_extension(LANGUAGE_EXTENSION),
-                optimized_string.as_bytes(),
-                lock.as_mut().unwrap(),
-            );
-        }
-
-        // panic!("does not hit this");
-
-        // Construct assembly
-        let assembly = assembly_from_node(optimized);
-        if let Some(path) = path_opt {
-            let assembly_path = PathBuf::from("assembly").with_extension("s");
-            write_file(
-                &path,
-                assembly_path.clone(),
-                assembly.as_bytes(),
-                lock.as_mut().unwrap(),
-            );
-
-            let object_path = path.join("build").join("object").with_extension("o");
-            let object_output = std::process::Command::new("as")
-                .args([
-                    "-o",
-                    &object_path.display().to_string(),
-                    &path.join("build").join(assembly_path).display().to_string(),
-                ])
-                .output()
-                .unwrap();
-            assert_eq!(
-                object_output.stdout,
-                [],
-                "{}",
-                std::str::from_utf8(&object_output.stdout).unwrap()
-            );
-            assert_eq!(
-                object_output.stderr,
-                [],
-                "{}",
-                std::str::from_utf8(&object_output.stderr).unwrap()
-            );
-            assert_eq!(object_output.status.code(), Some(0));
-
-            // Write object hash
-            let mut object_buffer = Vec::new();
-            let mut object_file = OpenOptions::new().read(true).open(&object_path).unwrap();
-            object_file.read_to_end(&mut object_buffer).unwrap();
-            let object_hash =
-                HEXUPPER.encode(sha256_digest(object_buffer.as_slice()).unwrap().as_ref());
-            let object_file_name = object_path.file_stem().unwrap();
-            writeln!(
-                lock.as_mut().unwrap(),
-                "{},{object_hash}",
-                object_file_name.to_str().unwrap()
-            )
-            .unwrap();
-
-            let binary_path = path.join("build").join("binary");
-            let binary_output = std::process::Command::new("ld")
-                .args([
-                    "-s",
-                    "-o",
-                    &binary_path.display().to_string(),
-                    &object_path.display().to_string(),
-                ])
-                .output()
-                .unwrap();
-            assert_eq!(
-                binary_output.stdout,
-                [],
-                "{}",
-                std::str::from_utf8(&binary_output.stdout).unwrap()
-            );
-            assert_eq!(
-                binary_output.stderr,
-                [],
-                "{}",
-                std::str::from_utf8(&binary_output.stderr).unwrap()
-            );
-            assert_eq!(binary_output.status.code(), Some(0));
-
-            // Write binary hash
-            let mut binary_buffer = Vec::new();
-            let mut binary_file = OpenOptions::new().read(true).open(&binary_path).unwrap();
-            binary_file.read_to_end(&mut binary_buffer).unwrap();
-            let binary_hash =
-                HEXUPPER.encode(sha256_digest(binary_buffer.as_slice()).unwrap().as_ref());
-            let binary_file_name = binary_path.file_stem().unwrap();
-            writeln!(
-                lock.as_mut().unwrap(),
-                "{},{binary_hash}",
-                binary_file_name.to_str().unwrap()
-            )
-            .unwrap();
-        } else {
-            std::io::stdout().write_all(assembly.as_bytes()).unwrap();
-        }
+        Args::Build(path) => build(path),
+        Args::Run(path) => run(path),
+        _ => todo!(),
     }
 }
 
@@ -460,7 +475,7 @@ mod tests {
             } else {
                 loop {
                     match explorer.next() {
-                        Explore::Current(current) => {}
+                        Explore::Current(_) => {}
                         Explore::Finished(finished) => break finished,
                     }
                 }
@@ -474,7 +489,7 @@ mod tests {
     fn test_optimization(
         nodes: NonNull<NewStateNode>,
         expected_build: &[Statement],
-        expected_read: HashSet<Variable>,
+        expected_read: HashSet<VariableAlias>,
         expected_finish: &[Statement],
     ) -> NonNull<NewNode> {
         println!("test_optimization");
@@ -570,20 +585,21 @@ mod tests {
     }
 
     fn ident(s: &str) -> TypeKey {
-        TypeKey::Variable(Variable {
-            addressing: Addressing::Direct,
+        TypeKey::Variable(VariableAlias {
             identifier: s.bytes().collect::<Vec<_>>(),
             index: None,
         })
     }
 
+    const SYSCALLS: &str = include_str!("../syscalls.lang");
+
     #[test]
     fn one() {
-        const SOURCE: &str = "exit 0";
+        let source = format!("{SYSCALLS}\nexit 0");
 
         // Parsing
         let nodes = test_parsing(
-            SOURCE,
+            &source,
             &[Statement {
                 comptime: false,
                 op: Op::Syscall(Syscall::Exit),
@@ -1757,7 +1773,7 @@ mod tests {
                     arg: vec![Value::Variable(Variable::new("a"))],
                 },
             ],
-            HashSet::from([Variable::from("a")]),
+            HashSet::from([VariableAlias::from("a")]),
             &[
                 Statement {
                     comptime: false,
@@ -2054,7 +2070,7 @@ mod tests {
                     arg: vec![Value::Literal(Literal::Integer(0))],
                 },
             ],
-            HashSet::from([Variable::from("a")]),
+            HashSet::from([VariableAlias::from("a")]),
             &[
                 Statement {
                     comptime: false,
@@ -3079,27 +3095,60 @@ mod tests {
         let path = test_exploration(
             inlined,
             &[
-                TypeValueState::from([(TypeKey::from(Variable::from("a")), TypeValue::from(0i64))]),
-                TypeValueState::from([(TypeKey::from(Variable::from("a")), TypeValue::from(0i32))]),
-                TypeValueState::from([(TypeKey::from(Variable::from("a")), TypeValue::from(0i16))]),
-                TypeValueState::from([(TypeKey::from(Variable::from("a")), TypeValue::from(0i8))]),
-                TypeValueState::from([(TypeKey::from(Variable::from("a")), TypeValue::from(0u64))]),
-                TypeValueState::from([(TypeKey::from(Variable::from("a")), TypeValue::from(0u32))]),
-                TypeValueState::from([(TypeKey::from(Variable::from("a")), TypeValue::from(0u16))]),
-                TypeValueState::from([(TypeKey::from(Variable::from("a")), TypeValue::from(0u8))]),
+                TypeValueState::from([(
+                    TypeKey::from(VariableAlias::from("a")),
+                    TypeValue::from(0i64),
+                )]),
+                TypeValueState::from([(
+                    TypeKey::from(VariableAlias::from("a")),
+                    TypeValue::from(0i32),
+                )]),
+                TypeValueState::from([(
+                    TypeKey::from(VariableAlias::from("a")),
+                    TypeValue::from(0i16),
+                )]),
+                TypeValueState::from([(
+                    TypeKey::from(VariableAlias::from("a")),
+                    TypeValue::from(0i8),
+                )]),
+                TypeValueState::from([(
+                    TypeKey::from(VariableAlias::from("a")),
+                    TypeValue::from(0u64),
+                )]),
+                TypeValueState::from([(
+                    TypeKey::from(VariableAlias::from("a")),
+                    TypeValue::from(0u32),
+                )]),
+                TypeValueState::from([(
+                    TypeKey::from(VariableAlias::from("a")),
+                    TypeValue::from(0u16),
+                )]),
+                TypeValueState::from([(
+                    TypeKey::from(VariableAlias::from("a")),
+                    TypeValue::from(0u8),
+                )]),
             ],
             None,
             &[
-                TypeValueState::from([(TypeKey::from(Variable::from("a")), TypeValue::from(0u8))]),
+                TypeValueState::from([(
+                    TypeKey::from(VariableAlias::from("a")),
+                    TypeValue::from(0u8),
+                )]),
                 TypeValueState::from([
-                    (TypeKey::from(Variable::from("a")), TypeValue::from(0u8)),
+                    (
+                        TypeKey::from(VariableAlias::from("a")),
+                        TypeValue::from(0u8),
+                    ),
                     (
                         TypeKey::from(Register::X8),
                         TypeValue::try_from(93u64).unwrap(),
                     ),
                 ]),
                 TypeValueState::from([
-                    (TypeKey::from(Variable::from("a")), TypeValue::from(0u8)),
+                    (
+                        TypeKey::from(VariableAlias::from("a")),
+                        TypeValue::from(0u8),
+                    ),
                     (
                         TypeKey::from(Register::X8),
                         TypeValue::try_from(93u64).unwrap(),
@@ -3110,7 +3159,10 @@ mod tests {
                     ),
                 ]),
                 TypeValueState::from([
-                    (TypeKey::from(Variable::from("a")), TypeValue::from(0u8)),
+                    (
+                        TypeKey::from(VariableAlias::from("a")),
+                        TypeValue::from(0u8),
+                    ),
                     (
                         TypeKey::from(Register::X8),
                         TypeValue::try_from(93u64).unwrap(),
@@ -3121,7 +3173,10 @@ mod tests {
                     ),
                 ]),
                 TypeValueState::from([
-                    (TypeKey::from(Variable::from("a")), TypeValue::from(0u8)),
+                    (
+                        TypeKey::from(VariableAlias::from("a")),
+                        TypeValue::from(0u8),
+                    ),
                     (
                         TypeKey::from(Register::X8),
                         TypeValue::try_from(93u64).unwrap(),
