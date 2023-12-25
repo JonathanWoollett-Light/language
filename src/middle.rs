@@ -1172,13 +1172,13 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
     )];
 
     while let Some((current, mut preceding, next_carry, variable_map)) = stack.pop() {
-        // eprintln!("old ast:\n{}\n", crate::display_ast_addresses(node));
-        // eprintln!(
-        //     "new ast:\n{}\n",
-        //     first
-        //         .map(|n| crate::display_ast_addresses(n))
-        //         .unwrap_or(String::new())
-        // );
+        eprintln!("old ast:\n{}\n", crate::display_ast_addresses(node));
+        eprintln!(
+            "new ast:\n{}\n",
+            first
+                .map(|n| crate::display_ast_addresses(n))
+                .unwrap_or(String::new())
+        );
 
         match current.as_ref().statement.op {
             // Function definition
@@ -1777,8 +1777,6 @@ pub unsafe fn explore_node(
             }
             _ => todo!(),
         },
-        // See 2
-        Op::Syscall(Syscall::Exit) => {}
         Op::Special(Special::Unreachable) => {
             assert!(statement.arg.is_empty());
             // As execution ends, we return no valid states.
@@ -1897,31 +1895,6 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                     }
                 }
             }
-            _ => todo!(),
-        },
-        Op::Syscall(Syscall::Exit) => match slice {
-            // TODO Check the integer fits into i32.
-            [Value::Literal(Literal::Integer(_))] => vec![state.clone()],
-            // TODO Check the variable fits into i32.
-            [Value::Variable(variable)] => match state.get(&TypeKey::from(variable)) {
-                Some(TypeValue::Integer(integer)) => match integer {
-                    TypeValueInteger::I8(_) => vec![state.clone()],
-                    TypeValueInteger::U8(_) => vec![state.clone()],
-                    TypeValueInteger::I16(_) => vec![state.clone()],
-                    TypeValueInteger::U16(_) => vec![state.clone()],
-                    TypeValueInteger::I32(_) => vec![state.clone()],
-                    TypeValueInteger::U32(x) if x.max() <= (i32::MAX as u32) => vec![state.clone()],
-                    TypeValueInteger::I64(x)
-                        if x.max() <= (i32::MAX as i64) && x.min() >= (i32::MIN as i64) =>
-                    {
-                        vec![state.clone()]
-                    }
-                    TypeValueInteger::U64(x) if x.max() <= (i32::MAX as u64) => vec![state.clone()],
-                    _ => Vec::new(),
-                },
-                None => Vec::new(),
-                _ => todo!(),
-            },
             _ => todo!(),
         },
         Op::Intrinsic(Intrinsic::Assign) => match slice {
@@ -2211,35 +2184,6 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                         false => Vec::new(),
                     },
                     _ => todo!(),
-                }
-            }
-            _ => todo!(),
-        },
-        Op::Syscall(Syscall::Read) => match slice {
-            [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
-                let key = TypeKey::from(variable);
-                match state.get(&key) {
-                    // Iterates over the set of integer types which could contain `x`, returning a new state for each possibility.
-                    None => TypeValueInteger::any()
-                        .into_iter()
-                        .map(|p| {
-                            let mut new_state = state.clone();
-                            new_state.insert(key.clone(), TypeValue::Integer(p));
-                            new_state
-                        })
-                        .collect(),
-                    _ => todo!(),
-                }
-            }
-            _ => todo!(),
-        },
-        Op::Syscall(Syscall::Write) => match slice {
-            [Value::Literal(Literal::Integer(_)), Value::Variable(variable)] => {
-                match state.get(&TypeKey::from(variable)) {
-                    // All defined values have known sizes so can be written.
-                    Some(_) => vec![state.clone()],
-                    // You cannot write an undefined value.
-                    None => Vec::new(),
                 }
             }
             _ => todo!(),

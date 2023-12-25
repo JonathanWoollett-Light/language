@@ -677,37 +677,6 @@ impl Intrinsic {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Default, Clone)]
-pub enum Syscall {
-    #[default]
-    Exit,
-    Read,
-    Write,
-    MemfdCreate,
-    FTruncate,
-    Mmap,
-}
-impl TryFrom<&Identifier> for Syscall {
-    type Error = ();
-    fn try_from(identifier: &Identifier) -> Result<Self, Self::Error> {
-        Self::try_from(identifier.0.as_slice())
-    }
-}
-impl TryFrom<&[u8]> for Syscall {
-    type Error = ();
-    fn try_from(x: &[u8]) -> Result<Self, Self::Error> {
-        match x {
-            b"exit" => Ok(Self::Exit),
-            b"write" => Ok(Self::Write),
-            b"read" => Ok(Self::Read),
-            b"memfd_create" => Ok(Self::MemfdCreate),
-            b"ftruncate" => Ok(Self::FTruncate),
-            b"mmap" => Ok(Self::Mmap),
-            _ => Err(()),
-        }
-    }
-}
-
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Special {
     Assume(Cmp),
@@ -809,7 +778,6 @@ pub enum Cmp {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Op {
     Intrinsic(Intrinsic),
-    Syscall(Syscall),
     Special(Special),
     Assembly(Assembly),
 }

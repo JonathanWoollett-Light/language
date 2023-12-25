@@ -566,20 +566,6 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                                                     .collect(),
                                             }
                                         }
-                                        Value::Variable(Variable {
-                                            addressing: Addressing::Direct,
-                                            identifier,
-                                            index: None,
-                                        }) if let Ok(syscall) = Syscall::try_from(&identifier) => {
-                                            let tail = get_values(bytes);
-                                            Statement {
-                                                comptime,
-                                                op: Op::Syscall(syscall),
-                                                arg: once(lhs)
-                                                    .chain(tail.iter().cloned())
-                                                    .collect(),
-                                            }
-                                        }
                                         _ => match bytes.peek().map(|r| r.as_ref().unwrap()) {
                                             Some(p)
                                                 if let Some(arithmetic) =
