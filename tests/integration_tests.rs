@@ -77,7 +77,7 @@ fn variable_if_false() {
     build_and_run(
         b"include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nx := 1\nif x = 2\n    exit 1\nexit 0",
         b"",
-        1
+        0
     );
 }
 
@@ -86,7 +86,7 @@ fn variable_if_true() {
     build_and_run(
         b"include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nx := 2\nif x = 2\n    exit 1\nexit 0",
         b"",
-        2
+        1
     );
 }
 
@@ -193,8 +193,11 @@ fn build_and_run(source: &[u8], expected_stdout: &[u8], expected_code: i32) {
         .output()
         .unwrap();
 
-    // use std::fs::read_to_string;
-    // println!("--- included ---\n{}\n-----------",read_to_string(directory.join("build").join("included.abc")).unwrap());
+    use std::fs::read_to_string;
+    println!(
+        "--- included ---\n{}\n-----------",
+        read_to_string(directory.join("build").join("included.abc")).unwrap()
+    );
     // println!("--- inlined ---\n{}\n-----------",read_to_string(directory.join("build").join("inlined.abc")).unwrap());
     // println!("--- optimized ---\n{}\n-----------",read_to_string(directory.join("build").join("optimized.abc")).unwrap());
     // println!("--- assembly ---\n{}\n-----------",read_to_string(directory.join("build").join("assembly.s")).unwrap());

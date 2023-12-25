@@ -81,6 +81,70 @@ impl std::fmt::Display for Statement {
                 ),
                 _ => todo!(),
             },
+            Op::Intrinsic(Intrinsic::Def) => match self.arg.as_slice() {
+                [x] => write!(f, "def {x}"),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => match self.arg.as_slice() {
+                [lhs, rhs] => write!(f, "if {lhs} = {rhs}"),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::Add) => match self.arg.as_slice() {
+                [a, b, c] => write!(f, "{a} := {b} + {c}"),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::Sub) => match self.arg.as_slice() {
+                [a, b, c] => write!(f, "{a} := {b} - {c}"),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::Div) => match self.arg.as_slice() {
+                [a, b, c] => write!(f, "{a} := {b} / {c}"),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::Mul) => match self.arg.as_slice() {
+                [a, b, c] => write!(f, "{a} := {b} * {c}"),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::Or) => match self.arg.as_slice() {
+                [a, b, c] => write!(f, "{a} := {b} | {c}"),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::And) => match self.arg.as_slice() {
+                [a, b, c] => write!(f, "{a} := {b} & {c}"),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::Xor) => match self.arg.as_slice() {
+                [a, b, c] => write!(f, "{a} := {b} ^ {c}"),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::AddAssign) => match self.arg.as_slice() {
+                [a, b] => write!(f, "{a} += {b}"),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::SubAssign) => match self.arg.as_slice() {
+                [a, b] => write!(f, "{a} -= {b}"),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::DivAssign) => match self.arg.as_slice() {
+                [a, b] => write!(f, "{a} /= {b}"),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::MulAssign) => match self.arg.as_slice() {
+                [a, b] => write!(f, "{a} *= {b}"),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::OrAssign) => match self.arg.as_slice() {
+                [a, b] => write!(f, "{a} |= {b}"),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::AndAssign) => match self.arg.as_slice() {
+                [a, b] => write!(f, "{a} &= {b}"),
+                _ => todo!(),
+            },
+            Op::Intrinsic(Intrinsic::XorAssign) => match self.arg.as_slice() {
+                [a, b] => write!(f, "{a} ^= {b}"),
+                _ => todo!(),
+            },
             x @ _ => todo!("{x:?}"),
         }
     }

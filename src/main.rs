@@ -301,6 +301,32 @@ fn display_ast(node: std::ptr::NonNull<crate::ast::NewNode>) -> String {
     }
 }
 
+#[allow(dead_code)] // This is used for debugging
+fn display_ast_addresses(node: std::ptr::NonNull<crate::ast::NewNode>) -> String {
+    unsafe {
+        use std::fmt::Write;
+        let mut stack = vec![(node, 0)];
+        let mut string = String::new();
+        while let Some((current, indent)) = stack.pop() {
+            writeln!(
+                &mut string,
+                "{current:?}    {}{}",
+                "    ".repeat(indent),
+                current.as_ref().statement
+            )
+            .unwrap();
+
+            if let Some(next) = current.as_ref().next {
+                stack.push((next, indent));
+            }
+            if let Some(child) = current.as_ref().child {
+                stack.push((child, indent + 1));
+            }
+        }
+        string
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "false")]

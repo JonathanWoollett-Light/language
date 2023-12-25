@@ -1172,8 +1172,13 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
     )];
 
     while let Some((current, mut preceding, next_carry, variable_map)) = stack.pop() {
-        eprintln!("op: {:?}", &current.as_ref().statement.op);
-        eprintln!("variable_map: {:?}", variable_map.borrow());
+        // eprintln!("old ast:\n{}\n", crate::display_ast_addresses(node));
+        // eprintln!(
+        //     "new ast:\n{}\n",
+        //     first
+        //         .map(|n| crate::display_ast_addresses(n))
+        //         .unwrap_or(String::new())
+        // );
 
         match current.as_ref().statement.op {
             // Function definition
@@ -1191,7 +1196,6 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
 
                     if let Some(mut next) = current.as_ref().next {
                         next.as_mut().preceding = current.as_ref().preceding;
-
                         stack.push((next, preceding, next_carry, variable_map));
                     }
                 }
@@ -1259,7 +1263,15 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                 }), ..] => {
                     // Create new node.
                     let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
-                    ptr::copy(current.as_ptr(), dst, 1);
+                    ptr::write(
+                        dst,
+                        NewNode {
+                            statement: current.as_ref().statement.clone(),
+                            preceding,
+                            child: None,
+                            next: None,
+                        },
+                    );
                     let mut new = NonNull::new(dst).unwrap();
 
                     let [Value::Variable(variable), tail @ ..] =
@@ -1326,6 +1338,8 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         stack.push((next, Some(Preceding::Previous(new)), None, old_variable_map));
                         new.as_mut().next = None;
                     }
+                    debug_assert_eq!(new.as_ref().next, None);
+                    debug_assert_eq!(new.as_ref().child, None);
                 }
                 _ => todo!(),
             },
@@ -1359,7 +1373,15 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                 [Value::Variable(_), ..] => {
                     // Create new node.
                     let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
-                    ptr::copy(current.as_ptr(), dst, 1);
+                    ptr::write(
+                        dst,
+                        NewNode {
+                            statement: current.as_ref().statement.clone(),
+                            preceding,
+                            child: None,
+                            next: None,
+                        },
+                    );
                     let mut new = NonNull::new(dst).unwrap();
 
                     let [Value::Variable(variable), tail @ ..] =
@@ -1423,79 +1445,8 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         stack.push((next, Some(Preceding::Previous(new)), None, old_variable_map));
                         new.as_mut().next = None;
                     }
-                }
-                _ => todo!(),
-            },
-            Op::Syscall(Syscall::Read) => match current.as_ref().statement.arg.as_slice() {
-                [Value::Variable(_), ..] => {
-                    // TODO Support case where lhs already exists.
-
-                    // Create new node.
-                    let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
-                    ptr::copy(current.as_ptr(), dst, 1);
-                    let mut new = NonNull::new(dst).unwrap();
-
-                    let [Value::Variable(variable), tail @ ..] =
-                        new.as_mut().statement.arg.as_mut_slice()
-                    else {
-                        unreachable!()
-                    };
-
-                    // Update new preceding.
-                    match preceding {
-                        Some(Preceding::Parent(mut parent)) => {
-                            debug_assert!(parent.as_ref().child.is_none());
-                            parent.as_mut().child = Some(new);
-                        }
-                        Some(Preceding::Previous(mut previous)) => {
-                            debug_assert!(previous.as_ref().next.is_none());
-                            previous.as_mut().next = Some(new);
-                        }
-                        None => {
-                            first = Some(new);
-                        }
-                    }
-
-                    // Update new variable
-                    let new_identifier = identifier_iterator.next().unwrap();
-                    let new_variable = VariableAlias {
-                        identifier: new_identifier,
-                        index: None,
-                    };
-                    let res = variable_map
-                        .borrow_mut()
-                        .insert(VariableAlias::from(variable.clone()), new_variable.clone());
-                    assert!(res.is_none()); // Assert isn't pre-existing
-                    *variable = Variable::from(new_variable);
-
-                    // Update existing variables
-                    for tail_variable in tail.iter_mut().filter_map(Value::variable_mut) {
-                        let VariableAlias { identifier, index } = variable_map
-                            .borrow()
-                            .get(&VariableAlias::from(tail_variable.clone()))
-                            .unwrap()
-                            .clone();
-                        *tail_variable = Variable {
-                            addressing: tail_variable.addressing.clone(),
-                            identifier,
-                            index,
-                        };
-                    }
-
-                    // Go next statement.
-                    debug_assert!(current.as_ref().child.is_none());
-                    if let Some(next) = current.as_ref().next {
-                        stack.push((
-                            next,
-                            Some(Preceding::Previous(new)),
-                            next_carry,
-                            variable_map,
-                        ));
-                        new.as_mut().next = None;
-                    } else if let Some((next, old_variable_map)) = next_carry {
-                        stack.push((next, Some(Preceding::Previous(new)), None, old_variable_map));
-                        new.as_mut().next = None;
-                    }
+                    debug_assert_eq!(new.as_ref().next, None);
+                    debug_assert_eq!(new.as_ref().child, None);
                 }
                 _ => todo!(),
             },
@@ -1505,7 +1456,15 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
 
                     // Create new node.
                     let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
-                    ptr::copy(current.as_ptr(), dst, 1);
+                    ptr::write(
+                        dst,
+                        NewNode {
+                            statement: current.as_ref().statement.clone(),
+                            preceding,
+                            child: None,
+                            next: None,
+                        },
+                    );
                     let mut new = NonNull::new(dst).unwrap();
 
                     let [Value::Variable(lhs), Value::Variable(Variable {
@@ -1570,6 +1529,8 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         stack.push((next, Some(Preceding::Previous(new)), None, old_variable_map));
                         new.as_mut().next = None;
                     }
+                    debug_assert_eq!(new.as_ref().next, None);
+                    debug_assert_eq!(new.as_ref().child, None);
                 }
                 x @ _ => todo!("{x:?}"),
             },
@@ -1577,11 +1538,18 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
             _ => {
                 // Create new node.
                 let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
-                ptr::copy(current.as_ptr(), dst, 1);
+                ptr::write(
+                    dst,
+                    NewNode {
+                        statement: current.as_ref().statement.clone(),
+                        preceding,
+                        child: None,
+                        next: None,
+                    },
+                );
                 let mut new = NonNull::new(dst).unwrap();
 
                 // Update new preceding.
-                new.as_mut().preceding = preceding;
                 match preceding {
                     Some(Preceding::Parent(mut parent)) => {
                         debug_assert!(parent.as_ref().child.is_none());
@@ -1605,7 +1573,6 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     .filter_map(Value::variable_mut)
                 {
                     let var = VariableAlias::from(variable.clone());
-                    eprintln!("var: {var:?}");
 
                     let VariableAlias { identifier, index } =
                         variable_map.borrow().get(&var).unwrap().clone();
@@ -1638,6 +1605,8 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     stack.push((next, Some(Preceding::Previous(new)), None, old_variable_map));
                     new.as_mut().next = None;
                 }
+                debug_assert_eq!(new.as_ref().next, None);
+                debug_assert_eq!(new.as_ref().child, None);
             }
         }
     }
