@@ -96,6 +96,10 @@ pub unsafe fn instruction_from_node(
         let statement = &current_ref.statement;
         let arg = statement.arg.as_slice();
 
+        // eprintln!("type_data: {type_data:?}");
+        // eprintln!("statement.op: {:?}",statement.op);
+        // eprintln!("arg: {arg:?}");
+
         match statement.op {
             Op::Special(Special::Type) => match arg {
                 [Value::Variable(Variable { identifier, .. }), Value::Type(value_type)] => {
@@ -259,6 +263,35 @@ pub unsafe fn instruction_from_node(
                 }
                 [Value::Variable(Variable {
                     addressing: Addressing::Direct,
+                    identifier: lhs_identifier,
+                    index: None,
+                }), Value::Variable(Variable {
+                    addressing: Addressing::Direct,
+                    identifier: rhs_identifier,
+                    index: None,
+                })] => {
+                    let rhs_type = type_data.get(rhs_identifier).unwrap();
+                    match rhs_type {
+                        Type::U8 => {
+                            // Load data and store data in new location.
+                            write!(
+                                assembly,
+                                "\
+                                ldr x0, ={rhs_identifier}\n\
+                                ldrb w1, [x0]\n\
+                                ldr x0, ={lhs_identifier}\n\
+                                strb w1, [x0]\n\
+                            "
+                            )
+                            .unwrap();
+                            writeln!(bss, "{lhs_identifier}: .skip 1").unwrap();
+                        }
+                        _ => todo!(),
+                    }
+                    type_data.insert(lhs_identifier.clone(), rhs_type.clone());
+                }
+                [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
                     identifier,
                     index: None,
                 }), rest @ ..] => match type_data.get(identifier).unwrap() {
@@ -400,6 +433,25 @@ pub unsafe fn instruction_from_node(
                 [Value::Register(register), Value::Literal(Literal::Integer(integer))] => {
                     writeln!(&mut assembly, "mov {register}, #{integer}").unwrap();
                 }
+                [Value::Register(register), Value::Variable(Variable {
+                    addressing: Addressing::Direct,
+                    identifier,
+                    index: None,
+                })] => match type_data.get(identifier).unwrap() {
+                    Type::U8 => {
+                        // Load data and store data in new location.
+                        write!(
+                            assembly,
+                            "\
+                            ldr x0, ={identifier}\n\
+                            ldrb {}, [x0]\n\
+                        ",
+                            register.w()
+                        )
+                        .unwrap();
+                    }
+                    _ => todo!(),
+                },
                 [Value::Register(register), Value::Variable(Variable {
                     addressing: Addressing::Reference,
                     identifier,

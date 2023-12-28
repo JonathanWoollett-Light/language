@@ -156,6 +156,41 @@ pub unsafe fn build_optimized_tree(
         let slice = current.as_ref().statement.as_ref().statement.arg.as_slice();
         let op = &current.as_ref().statement.as_ref().statement.op;
         match op {
+            Op::Special(Special::Type) => match slice {
+                [Value::Variable(variable)] => {
+                    let variable_state = current
+                        .as_ref()
+                        .state
+                        .get(&TypeKey::from(variable))
+                        .unwrap()
+                        .clone();
+                    let variable_type = Type::from(variable_state);
+
+                    let existing = types.insert(variable.clone(), variable_type.clone());
+                    // Definng the variable twice is pointless, but is not really problematic. This
+                    // is just a paranoid check since asserting this doesn't block anything.
+                    assert!(existing.is_none());
+
+                    // Annotate type
+                    current
+                        .as_mut()
+                        .statement
+                        .as_mut()
+                        .statement
+                        .arg
+                        .push(Value::Type(variable_type));
+
+                    // Set next node.
+                    debug_assert!(current
+                        .as_ref()
+                        .next
+                        .0
+                        .and(current.as_ref().next.1)
+                        .is_none());
+                    next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
+                }
+                _ => todo!(),
+            },
             Op::Intrinsic(Intrinsic::Assign) => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
                     let variable_state = current
@@ -225,7 +260,18 @@ pub unsafe fn build_optimized_tree(
                         .is_none());
                     next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
-                [Value::Variable(lhs), Value::Variable(_)] => {
+                [Value::Variable(lhs), Value::Variable(rhs)] => {
+                    // ### TODO 123456
+                    // Following
+                    // ```
+                    // a = read 1
+                    // b = a
+                    // write 0 b
+                    // ```
+                    // you could remove `b` since it will be a copy of `a` since `a` is not changed
+                    // before `b` is used. But this optimization is more difficult to do, so is
+                    // currently unimplemented.
+
                     let variable_state = current
                         .as_ref()
                         .state
@@ -234,11 +280,23 @@ pub unsafe fn build_optimized_tree(
                         .clone();
 
                     match variable_state {
-                        TypeValue::Integer(TypeValueInteger::U8(range))
-                            if range.value().is_some() =>
-                        {
-                            // Removes node and sets next node.
-                            next_state_node = remove_node(current, &mut first_state_node);
+                        TypeValue::Integer(TypeValueInteger::U8(range)) => {
+                            if range.value().is_some() {
+                                // Removes node and sets next node.
+                                next_state_node = remove_node(current, &mut first_state_node);
+                            } else {
+                                read.insert(VariableAlias::from(rhs.clone()));
+
+                                // Set next node.
+                                debug_assert!(current
+                                    .as_ref()
+                                    .next
+                                    .0
+                                    .and(current.as_ref().next.1)
+                                    .is_none());
+                                next_state_node =
+                                    current.as_ref().next.0.or(current.as_ref().next.1);
+                            }
                         }
                         TypeValue::Reference(_) => {
                             // Removes node and sets next node.
@@ -524,57 +582,72 @@ pub unsafe fn build_optimized_tree(
                         .is_some());
                     next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
-                [Value::Register(_), Value::Variable(variable)] => {
-                    let Some(type_value) = current.as_ref().state.get(&TypeKey::from(variable))
-                    else {
+                [Value::Register(_), Value::Variable(rhs)] => {
+                    let Some(type_value) = current.as_ref().state.get(&TypeKey::from(rhs)) else {
                         todo!()
                     };
 
-                    let rhs = &mut current.as_mut().statement.as_mut().statement.arg[1];
-                    *rhs = match type_value {
-                        TypeValue::Integer(TypeValueInteger::U64(range))
-                            if let Some(integer) = range.value() =>
-                        {
-                            Value::Literal(Literal::Integer(integer as i128))
+                    let rhs_value = &mut current.as_mut().statement.as_mut().statement.arg[1];
+
+                    // See `// ### TODO 123456`
+                    match type_value {
+                        TypeValue::Integer(TypeValueInteger::U64(range)) => {
+                            if let Some(integer) = range.value() {
+                                *rhs_value = Value::Literal(Literal::Integer(integer as i128));
+                            } else {
+                                read.insert(VariableAlias::from(rhs.clone()));
+                            }
                         }
-                        TypeValue::Integer(TypeValueInteger::U32(range))
-                            if let Some(integer) = range.value() =>
-                        {
-                            Value::Literal(Literal::Integer(integer as i128))
+                        TypeValue::Integer(TypeValueInteger::U32(range)) => {
+                            if let Some(integer) = range.value() {
+                                *rhs_value = Value::Literal(Literal::Integer(integer as i128));
+                            } else {
+                                read.insert(VariableAlias::from(rhs.clone()));
+                            }
                         }
-                        TypeValue::Integer(TypeValueInteger::U16(range))
-                            if let Some(integer) = range.value() =>
-                        {
-                            Value::Literal(Literal::Integer(integer as i128))
+                        TypeValue::Integer(TypeValueInteger::U16(range)) => {
+                            if let Some(integer) = range.value() {
+                                *rhs_value = Value::Literal(Literal::Integer(integer as i128));
+                            } else {
+                                read.insert(VariableAlias::from(rhs.clone()));
+                            }
                         }
-                        TypeValue::Integer(TypeValueInteger::U8(range))
-                            if let Some(integer) = range.value() =>
-                        {
-                            Value::Literal(Literal::Integer(integer as i128))
+                        TypeValue::Integer(TypeValueInteger::U8(range)) => {
+                            if let Some(integer) = range.value() {
+                                *rhs_value = Value::Literal(Literal::Integer(integer as i128));
+                            } else {
+                                read.insert(VariableAlias::from(rhs.clone()));
+                            }
                         }
-                        TypeValue::Integer(TypeValueInteger::I64(range))
-                            if let Some(integer) = range.value() =>
-                        {
-                            Value::Literal(Literal::Integer(integer as i128))
+                        TypeValue::Integer(TypeValueInteger::I64(range)) => {
+                            if let Some(integer) = range.value() {
+                                *rhs_value = Value::Literal(Literal::Integer(integer as i128));
+                            } else {
+                                read.insert(VariableAlias::from(rhs.clone()));
+                            }
                         }
-                        TypeValue::Integer(TypeValueInteger::I32(range))
-                            if let Some(integer) = range.value() =>
-                        {
-                            Value::Literal(Literal::Integer(integer as i128))
+                        TypeValue::Integer(TypeValueInteger::I32(range)) => {
+                            if let Some(integer) = range.value() {
+                                *rhs_value = Value::Literal(Literal::Integer(integer as i128));
+                            } else {
+                                read.insert(VariableAlias::from(rhs.clone()));
+                            }
                         }
-                        TypeValue::Integer(TypeValueInteger::I16(range))
-                            if let Some(integer) = range.value() =>
-                        {
-                            Value::Literal(Literal::Integer(integer as i128))
+                        TypeValue::Integer(TypeValueInteger::I16(range)) => {
+                            if let Some(integer) = range.value() {
+                                *rhs_value = Value::Literal(Literal::Integer(integer as i128));
+                            } else {
+                                read.insert(VariableAlias::from(rhs.clone()));
+                            }
                         }
                         TypeValue::Reference(alias @ VariableAlias { identifier, index }) => {
                             read.insert(alias.clone());
 
-                            Value::Variable(Variable {
+                            *rhs_value = Value::Variable(Variable {
                                 addressing: Addressing::Reference,
                                 identifier: identifier.clone(),
                                 index: index.clone(),
-                            })
+                            });
                         }
                         x @ _ => todo!("{x:?}"),
                     };
@@ -659,6 +732,7 @@ pub unsafe fn finish_optimized_tree(
         match current.as_ref().statement.op {
             Op::Special(Special::Type) => match current.as_ref().statement.arg.as_slice() {
                 [Value::Variable(variable), Value::Type(_), Value::Literal(_)] => {
+                    // Remove if unused
                     if !read.contains(&VariableAlias::from(variable.clone())) {
                         match current.as_ref().preceding {
                             Some(Preceding::Parent(mut parent)) => {
@@ -668,10 +742,7 @@ pub unsafe fn finish_optimized_tree(
                                 previous.as_mut().next = current.as_ref().next;
                             }
                             None => {
-                                // dbg!("hit here");
                                 debug_assert_eq!(first, Some(current));
-                                // dbg!(&current.as_ref().child.unwrap().as_ref().statement);
-                                // dbg!(&current.as_ref().statement);
                                 first = current.as_ref().next;
                             }
                         }
@@ -682,14 +753,47 @@ pub unsafe fn finish_optimized_tree(
                         debug_assert!(current.as_ref().child.is_none());
 
                         alloc::dealloc(current.as_ptr().cast(), alloc::Layout::new::<NewNode>());
-                    } else {
+                    }
+                    // Else go to next statement
+                    else {
                         if let Some(next) = current.as_ref().next {
                             stack.push(next);
                         }
                         debug_assert!(current.as_ref().child.is_none());
                     }
                 }
-                _ => todo!(),
+                [Value::Variable(variable), Value::Type(_)] => {
+                    // Remove if unused
+                    if !read.contains(&VariableAlias::from(variable.clone())) {
+                        match current.as_ref().preceding {
+                            Some(Preceding::Parent(mut parent)) => {
+                                parent.as_mut().child = current.as_ref().next;
+                            }
+                            Some(Preceding::Previous(mut previous)) => {
+                                previous.as_mut().next = current.as_ref().next;
+                            }
+                            None => {
+                                debug_assert_eq!(first, Some(current));
+                                first = current.as_ref().next;
+                            }
+                        }
+                        if let Some(mut next) = current.as_ref().next {
+                            next.as_mut().preceding = current.as_ref().preceding;
+                            stack.push(next);
+                        }
+                        debug_assert!(current.as_ref().child.is_none());
+
+                        alloc::dealloc(current.as_ptr().cast(), alloc::Layout::new::<NewNode>());
+                    }
+                    // Else go to next statement
+                    else {
+                        if let Some(next) = current.as_ref().next {
+                            stack.push(next);
+                        }
+                        debug_assert!(current.as_ref().child.is_none());
+                    }
+                }
+                x @ _ => todo!("{x:?}"),
             },
             _ => {
                 if let Some(next) = current.as_ref().next {
@@ -1172,13 +1276,13 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
     )];
 
     while let Some((current, mut preceding, next_carry, variable_map)) = stack.pop() {
-        eprintln!("old ast:\n{}\n", crate::display_ast_addresses(node));
-        eprintln!(
-            "new ast:\n{}\n",
-            first
-                .map(|n| crate::display_ast_addresses(n))
-                .unwrap_or(String::new())
-        );
+        // eprintln!("old ast:\n{}\n", crate::display_ast_addresses(node));
+        // eprintln!(
+        //     "new ast:\n{}\n",
+        //     first
+        //         .map(|n| crate::display_ast_addresses(n))
+        //         .unwrap_or(String::new())
+        // );
 
         match current.as_ref().statement.op {
             // Function definition
@@ -1220,17 +1324,61 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
 
                     let head_iter = std::iter::once({
                         let lhs_alias = VariableAlias::from(lhs.clone());
-                        let existing = variable_map.borrow().get(&lhs_alias).cloned();
-                        let new_lhs = existing.unwrap_or_else(|| {
+                        let existing_opt = variable_map.borrow().get(&lhs_alias).cloned();
+
+                        let new_lhs = if let Some(existing) = existing_opt {
+                            existing
+                        } else {
+                            let new_variable_identiier = identifier_iterator.next().unwrap();
+                            // Create new node.
+                            let dst =
+                                alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
+                            std::ptr::write(
+                                dst,
+                                NewNode {
+                                    statement: Statement {
+                                        comptime: false,
+                                        op: Op::Special(Special::Type),
+                                        arg: vec![Value::Variable(Variable::from(
+                                            new_variable_identiier.clone(),
+                                        ))],
+                                    },
+                                    preceding,
+                                    child: None,
+                                    next: None,
+                                },
+                            );
+                            let new = NonNull::new(dst).unwrap();
+
+                            // Update preceding
+                            match preceding {
+                                Some(Preceding::Previous(mut previous)) => {
+                                    debug_assert!(previous.as_ref().next.is_none());
+                                    previous.as_mut().next = Some(new);
+                                }
+                                Some(Preceding::Parent(mut parent)) => {
+                                    debug_assert!(parent.as_ref().child.is_none());
+                                    parent.as_mut().child = Some(new);
+                                }
+                                None => {
+                                    first = Some(new);
+                                }
+                            }
+
+                            preceding = Some(Preceding::Previous(new));
+
+                            // Insert alias
                             let new_lhs = VariableAlias {
-                                identifier: identifier_iterator.next().unwrap(),
+                                identifier: new_variable_identiier,
                                 index: None,
                             };
                             variable_map
                                 .borrow_mut()
                                 .insert(lhs_alias.clone(), new_lhs.clone());
+
                             new_lhs
-                        });
+                        };
+
                         (
                             VariableAlias {
                                 identifier: Identifier::from("out"),
@@ -1895,6 +2043,20 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                     }
                 }
             }
+            [Value::Variable(variable)] => {
+                // Given an array can be any length there are technically an infinite number of
+                // possible types this variable can be and paths to follow, to avoid this when
+                // unspecified we restrict it to only integer.
+                // This could be updated to check array combinations up to a given length.
+                TypeValueInteger::any()
+                    .into_iter()
+                    .map(|t| {
+                        let mut new_state = state.clone();
+                        new_state.insert(TypeKey::from(variable), TypeValue::Integer(t));
+                        new_state
+                    })
+                    .collect()
+            }
             _ => todo!(),
         },
         Op::Intrinsic(Intrinsic::Assign) => match slice {
@@ -2249,52 +2411,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                 let Some(variable_state) = state.get(&TypeKey::from(variable)) else {
                     return Vec::new();
                 };
-
-                let value = match variable_state {
-                    TypeValue::Integer(TypeValueInteger::I8(range))
-                        if let Some(integer) = range.value() =>
-                    {
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(i64::from(integer))))
-                    }
-                    TypeValue::Integer(TypeValueInteger::I16(range))
-                        if let Some(integer) = range.value() =>
-                    {
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(i64::from(integer))))
-                    }
-                    TypeValue::Integer(TypeValueInteger::I32(range))
-                        if let Some(integer) = range.value() =>
-                    {
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(i64::from(integer))))
-                    }
-                    TypeValue::Integer(TypeValueInteger::I64(range))
-                        if let Some(integer) = range.value() =>
-                    {
-                        TypeValue::Integer(TypeValueInteger::I64(MyRange::from(i64::from(integer))))
-                    }
-                    TypeValue::Integer(TypeValueInteger::U8(range))
-                        if let Some(integer) = range.value() =>
-                    {
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(u64::from(integer))))
-                    }
-                    TypeValue::Integer(TypeValueInteger::U16(range))
-                        if let Some(integer) = range.value() =>
-                    {
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(u64::from(integer))))
-                    }
-                    TypeValue::Integer(TypeValueInteger::U32(range))
-                        if let Some(integer) = range.value() =>
-                    {
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(u64::from(integer))))
-                    }
-                    TypeValue::Integer(TypeValueInteger::U64(range))
-                        if let Some(integer) = range.value() =>
-                    {
-                        TypeValue::Integer(TypeValueInteger::U64(MyRange::from(u64::from(integer))))
-                    }
-                    reference @ TypeValue::Reference(_) => reference.clone(),
-                    x @ _ => todo!("{x:?}"),
-                };
-                new_state.insert(TypeKey::Register(register.clone()), value);
+                new_state.insert(TypeKey::Register(register.clone()), variable_state.clone());
                 vec![new_state]
             }
             _ => todo!(),
@@ -2325,6 +2442,8 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                     _ => todo!(),
                 };
                 let rhs_key = TypeKey::from(rhs.clone());
+                // eprintln!("lhs_key: {lhs_key:?}");
+                // eprintln!("state: {state:?}");
                 let size = Type::from(state.get(&lhs_key).unwrap().clone()).bytes();
                 match state.get(&rhs_key) {
                     // Iterates over the set of integer types which could contain `x`, returning a new state for each possibility.

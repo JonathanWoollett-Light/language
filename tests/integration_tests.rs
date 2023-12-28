@@ -130,7 +130,7 @@ fn read_write() {
     assert_eq!(res, std::mem::size_of::<u8>() as _);
 
     build_and_run(
-        format!("include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nx := read {read}\nwrite x\nexit 0").as_bytes(),
+        format!("include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nx := read {read}\nwrite {write} &x\nexit 0").as_bytes(),
         b"",
         0
     );
