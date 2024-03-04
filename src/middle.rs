@@ -23,6 +23,9 @@ const DEFAULT_LOOP_LIMIT: usize = 100;
 #[allow(dead_code)]
 const UNROLL_LIMIT: usize = 4096;
 
+#[cfg(debug_assertions)]
+use crate::LOOP_LIMIT;
+
 unsafe fn remove_node(
     current: NonNull<NewStateNode>,
     first_state_node: &mut Option<NonNull<NewStateNode>>,
@@ -156,7 +159,7 @@ pub unsafe fn build_optimized_tree(
         let slice = current.as_ref().statement.as_ref().statement.arg.as_slice();
         let op = &current.as_ref().statement.as_ref().statement.op;
         match op {
-            Op::Special(Special::Type) => match slice {
+            Op::Type => match slice {
                 [Value::Variable(variable)] => {
                     let variable_state = current
                         .as_ref()
@@ -191,7 +194,7 @@ pub unsafe fn build_optimized_tree(
                 }
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::Assign) => match slice {
+            Op::Assign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
                     let variable_state = current
                         .as_ref()
@@ -204,8 +207,7 @@ pub unsafe fn build_optimized_tree(
 
                     // If not already declared this declares the type of the variable.
                     if existing.is_none() {
-                        current.as_mut().statement.as_mut().statement.op =
-                            Op::Special(Special::Type);
+                        current.as_mut().statement.as_mut().statement.op = Op::Type;
                         current
                             .as_mut()
                             .statement
@@ -238,8 +240,7 @@ pub unsafe fn build_optimized_tree(
 
                     // If not already declared this declares the type of the variable.
                     if existing.is_none() {
-                        current.as_mut().statement.as_mut().statement.op =
-                            Op::Special(Special::Type);
+                        current.as_mut().statement.as_mut().statement.op = Op::Type;
                         current
                             .as_mut()
                             .statement
@@ -308,7 +309,7 @@ pub unsafe fn build_optimized_tree(
                 x @ _ => todo!("{x:?}"),
             },
             // On the linear path, these statements can simply be removed.
-            Op::Intrinsic(Intrinsic::AddAssign) => match slice {
+            Op::AddAssign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
                     let variable_state = current
                         .as_ref()
@@ -328,7 +329,7 @@ pub unsafe fn build_optimized_tree(
                 _ => todo!(),
             },
             // On the linear path, these statements can simply be removed.
-            Op::Intrinsic(Intrinsic::SubAssign) => match slice {
+            Op::SubAssign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
                     let variable_state = current
                         .as_ref()
@@ -348,7 +349,7 @@ pub unsafe fn build_optimized_tree(
                 _ => todo!(),
             },
             // On the linear path, these statements can simply be removed.
-            Op::Intrinsic(Intrinsic::MulAssign) => match slice {
+            Op::MulAssign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
                     let variable_state = current
                         .as_ref()
@@ -368,7 +369,7 @@ pub unsafe fn build_optimized_tree(
                 _ => todo!(),
             },
             // On the linear path, these statements can simply be removed.
-            Op::Intrinsic(Intrinsic::DivAssign) => match slice {
+            Op::DivAssign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
                     let variable_state = current
                         .as_ref()
@@ -387,7 +388,7 @@ pub unsafe fn build_optimized_tree(
                 }
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::AndAssign) => match slice {
+            Op::AndAssign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
                     let variable_state = current
                         .as_ref()
@@ -406,7 +407,7 @@ pub unsafe fn build_optimized_tree(
                 }
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::OrAssign) => match slice {
+            Op::OrAssign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
                     let variable_state = current
                         .as_ref()
@@ -425,7 +426,7 @@ pub unsafe fn build_optimized_tree(
                 }
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::XorAssign) => match slice {
+            Op::XorAssign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
                     let variable_state = current
                         .as_ref()
@@ -446,7 +447,7 @@ pub unsafe fn build_optimized_tree(
             },
             // `current` is not used after `current = prev;` but it may be in the future, and I
             // don't want to obfuscate this complex logic further.
-            Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => {
+            Op::If(Cmp::Eq) => {
                 debug_assert!(current
                     .as_ref()
                     .next
@@ -527,7 +528,7 @@ pub unsafe fn build_optimized_tree(
                 // Set next node.
                 next_state_node = Some(if_next_state_node);
             }
-            Op::Intrinsic(Intrinsic::Add) => match slice {
+            Op::Add => match slice {
                 [value @ Value::Variable(variable), Value::Variable(_), Value::Variable(_)] => {
                     // let variable_state = (
                     //     current.as_ref().state.get(out),
@@ -546,8 +547,7 @@ pub unsafe fn build_optimized_tree(
 
                             // If not already declared this declares the type of the variable.
                             if existing.is_none() {
-                                current.as_mut().statement.as_mut().statement.op =
-                                    Op::Special(Special::Type);
+                                current.as_mut().statement.as_mut().statement.op = Op::Type;
                                 current.as_mut().statement.as_mut().statement.arg = vec![
                                     value.clone(),
                                     Value::Type(variable_type),
@@ -571,7 +571,7 @@ pub unsafe fn build_optimized_tree(
                 }
                 _ => todo!(),
             },
-            Op::Assembly(Assembly::Mov) => match slice {
+            Op::Mov => match slice {
                 [Value::Register(_), Value::Literal(Literal::Integer(_))] => {
                     // Set next node.
                     debug_assert!(current
@@ -663,7 +663,7 @@ pub unsafe fn build_optimized_tree(
                 }
                 _ => todo!(),
             },
-            Op::Assembly(Assembly::Svc) => match slice {
+            Op::Svc => match slice {
                 [Value::Literal(Literal::Integer(_))] => {
                     // Set next node.
                     debug_assert!(current
@@ -676,7 +676,7 @@ pub unsafe fn build_optimized_tree(
                 }
                 _ => todo!(),
             },
-            Op::Special(Special::Unreachable) => {
+            Op::Unreachable => {
                 assert!(slice.is_empty());
                 // As execution ends, we return no valid states.
                 debug_assert!(current
@@ -698,7 +698,7 @@ pub unsafe fn build_optimized_tree(
                 // Set next node
                 next_state_node = None;
             }
-            Op::Special(Special::SizeOf) => {
+            Op::SizeOf => {
                 match slice {
                     [Value::Variable(variable), Value::Variable(_)] => {
                         // All type sizes should be known at compile time.
@@ -730,7 +730,7 @@ pub unsafe fn finish_optimized_tree(
     let mut stack = vec![new_nodes];
     while let Some(current) = stack.pop() {
         match current.as_ref().statement.op {
-            Op::Special(Special::Type) => match current.as_ref().statement.arg.as_slice() {
+            Op::Type => match current.as_ref().statement.arg.as_slice() {
                 [Value::Variable(variable), Value::Type(_), Value::Literal(_)] => {
                     // Remove if unused
                     if !read.contains(&VariableAlias::from(variable.clone())) {
@@ -818,7 +818,11 @@ pub unsafe fn optimize(graph: NonNull<NewStateNode>) -> NonNull<NewNode> {
     finish_optimized_tree(new_nodes.unwrap(), read).unwrap()
 }
 
-unsafe fn new_passback_end(mut node: NonNull<NewStateNode>, end: GraphNodeEnd) {
+/// Backpropagates the cost of the path at the leaf `node` up the tree and deallocates nodes which
+/// do not belong to the minimum cost path
+unsafe fn backpropagate(mut node: NonNull<NewStateNode>, end: GraphNodeEnd) {
+    eprintln!("here one");
+
     debug_assert!(node.as_ref().unexplored.0.is_empty());
     debug_assert!(node.as_ref().unexplored.1.is_empty());
     debug_assert!(node.as_ref().cost.is_none());
@@ -829,7 +833,13 @@ unsafe fn new_passback_end(mut node: NonNull<NewStateNode>, end: GraphNodeEnd) {
 
     // Backpropagate the cost to `node.prev`, deallocating nodes not in the lowest cost path.
     while let Some(mut prev) = node.as_ref().prev {
+        eprintln!("here two a: {}", unsafe { node.as_ref() });
+        eprintln!("here two b: {}", unsafe { prev.as_ref() });
         debug_assert!(prev.as_ref().cost.is_none());
+
+        use crate::draw_dag::draw_dag;
+        eprintln!("backprop trees a\n:{}", draw_dag(node, 2));
+        eprintln!("backprop trees b\n:{}", draw_dag(prev, 2));
 
         // If `node` is from `prev.unexplored.0`.
         if let Some((i, _)) = prev
@@ -840,23 +850,33 @@ unsafe fn new_passback_end(mut node: NonNull<NewStateNode>, end: GraphNodeEnd) {
             .enumerate()
             .find(|(_, &x)| x == node)
         {
+            eprintln!("here three");
+
             // Remove `node` from `prev.unexplored`.
             prev.as_mut().unexplored.0.remove(i);
 
             // If `prev` has previously explored another node.
             if let Some(next) = prev.as_ref().next.0 {
+                eprintln!("here thirteen");
+
                 // If the path following `node` is lower cost than the previously explored path
                 // following `next`. Set the next node as `node`.
                 if node.as_ref().cost.unwrap() < next.as_ref().cost.unwrap() {
+                    eprintln!("here fourteen");
+
                     prev.as_mut().next.0 = Some(node);
                     dealloc_tree(next);
                 }
                 // If the path following `node` is not lower cost than the previously explored path
                 // following `next`.
                 else {
+                    eprintln!("here fifteen");
+
                     dealloc_tree(node);
                 }
             } else {
+                eprintln!("here sixteen");
+
                 prev.as_mut().next.0 = Some(node);
             }
         }
@@ -869,31 +889,45 @@ unsafe fn new_passback_end(mut node: NonNull<NewStateNode>, end: GraphNodeEnd) {
             .enumerate()
             .find(|(_, &x)| x == node)
         {
+            eprintln!("here four");
+
             // Remove `node` from `prev.unexplored`.
             prev.as_mut().unexplored.1.remove(i);
 
             // If `prev` has previously explored another node.
             if let Some(next) = prev.as_ref().next.1 {
+                eprintln!("here nine");
+
                 // If the path following `node` is lower cost than the previously explored path
                 // following `next`. Set the next node as `node`.
                 if node.as_ref().cost.unwrap() < next.as_ref().cost.unwrap() {
+                    eprintln!("here ten");
+
                     prev.as_mut().next.1 = Some(node);
                     dealloc_tree(next);
                 }
                 // If the path following `node` is not lower cost than the previously explored path
                 // following `next`.
                 else {
+                    eprintln!("here eleven");
+
                     dealloc_tree(node);
                 }
             } else {
+                eprintln!("here twelve");
+
                 prev.as_mut().next.1 = Some(node);
             }
         } else {
             unreachable!()
         }
 
+        eprintln!("here five");
+
         // If all the paths following `prev` have been explored.
         if prev.as_ref().unexplored.0.is_empty() && prev.as_ref().unexplored.1.is_empty() {
+            eprintln!("here six");
+
             let prev_cost_next_one = prev
                 .as_ref()
                 .next
@@ -914,9 +948,11 @@ unsafe fn new_passback_end(mut node: NonNull<NewStateNode>, end: GraphNodeEnd) {
         }
         // If there remain unexplored paths following `prev`.
         else {
+            eprintln!("here seven");
             break;
         }
 
+        eprintln!("here eight");
         node = prev;
     }
 }
@@ -996,6 +1032,17 @@ pub struct NewStateNode {
     pub cost: Option<u64>,
 }
 
+impl std::fmt::Display for NewStateNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}: {}",
+            unsafe { &self.statement.as_ref().statement },
+            self.state
+        )
+    }
+}
+
 enum IfBool {
     True,
     False,
@@ -1028,9 +1075,23 @@ unsafe fn explore_if(
                 }
                 // If this AST node has no next, look for next node in parents.
                 else {
+                    #[cfg(debug_assertions)]
+                    let mut i = 0;
                     'outer: loop {
+                        #[cfg(debug_assertions)]
+                        {
+                            assert!(i < LOOP_LIMIT);
+                            i += 1;
+                        }
+
                         let mut preceding_opt = ast_node.preceding;
                         let parent = loop {
+                            #[cfg(debug_assertions)]
+                            {
+                                assert!(i < LOOP_LIMIT);
+                                i += 1;
+                            }
+
                             match preceding_opt {
                                 None => break 'outer Vec::new(),
                                 Some(Preceding::Previous(previous)) => {
@@ -1041,7 +1102,7 @@ unsafe fn explore_if(
                         };
 
                         // If this would exit a loop, the next statement is the 1st statement of the loop.
-                        if parent.as_ref().statement.op == Op::Intrinsic(Intrinsic::Loop) {
+                        if parent.as_ref().statement.op == Op::Loop {
                             debug_assert_eq!(
                                 current.as_ref().scope.unwrap().as_ref().statement,
                                 parent
@@ -1070,9 +1131,22 @@ unsafe fn explore_if(
                 }
                 // If this AST node has no next, look for next node in parents.
                 else {
+                    let mut i = 0;
                     'outer: loop {
+                        #[cfg(debug_assertions)]
+                        {
+                            assert!(i < LOOP_LIMIT);
+                            i += 1;
+                        }
+
                         let mut preceding_opt = ast_node.preceding;
                         let parent = loop {
+                            #[cfg(debug_assertions)]
+                            {
+                                assert!(i < LOOP_LIMIT);
+                                i += 1;
+                            }
+
                             match preceding_opt {
                                 None => break 'outer Vec::new(),
                                 Some(Preceding::Previous(previous)) => {
@@ -1083,7 +1157,7 @@ unsafe fn explore_if(
                         };
 
                         // If this would exit a loop, the next statement is the 1st statement of the loop.
-                        if parent.as_ref().statement.op == Op::Intrinsic(Intrinsic::Loop) {
+                        if parent.as_ref().statement.op == Op::Loop {
                             debug_assert_eq!(
                                 current.as_ref().scope.unwrap().as_ref().statement,
                                 parent
@@ -1129,6 +1203,20 @@ pub unsafe fn roots(node: NonNull<NewNode>) -> Vec<NonNull<NewStateNode>> {
 pub struct VariableAlias {
     pub identifier: Identifier,
     pub index: Option<Box<Index>>,
+}
+
+impl std::fmt::Display for VariableAlias {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}",
+            self.identifier,
+            self.index
+                .as_ref()
+                .map(|b| format!("[{b:?}]"))
+                .unwrap_or(String::new())
+        )
+    }
 }
 
 impl From<&str> for VariableAlias {
@@ -1210,7 +1298,7 @@ unsafe fn create_inline_variable<I: Iterator<Item = Identifier>>(
                 NewNode {
                     statement: Statement {
                         comptime: false,
-                        op: Op::Intrinsic(Intrinsic::Assign),
+                        op: Op::Assign,
                         arg: vec![
                             Value::Variable(Variable::from(new_variable_identiier.clone())),
                             new_value,
@@ -1286,7 +1374,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
 
         match current.as_ref().statement.op {
             // Function definition
-            Op::Intrinsic(Intrinsic::Def) => match current.as_ref().statement.arg.as_slice() {
+            Op::Def => match current.as_ref().statement.arg.as_slice() {
                 [Value::Variable(Variable {
                     addressing: Addressing::Direct,
                     identifier,
@@ -1305,7 +1393,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                 }
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::Assign) => match current.as_ref().statement.arg.as_slice() {
+            Op::Assign => match current.as_ref().statement.arg.as_slice() {
                 // Function call
                 [Value::Variable(
                     lhs @ Variable {
@@ -1338,7 +1426,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                                 NewNode {
                                     statement: Statement {
                                         comptime: false,
-                                        op: Op::Special(Special::Type),
+                                        op: Op::Type,
                                         arg: vec![Value::Variable(Variable::from(
                                             new_variable_identiier.clone(),
                                         ))],
@@ -1491,7 +1579,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                 }
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::Call) => match current.as_ref().statement.arg.as_slice() {
+            Op::Call => match current.as_ref().statement.arg.as_slice() {
                 [Value::Variable(Variable {
                     addressing: Addressing::Direct,
                     identifier: rhs,
@@ -1517,7 +1605,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                 }
                 _ => todo!(),
             },
-            Op::Special(Special::Type) => match current.as_ref().statement.arg.as_slice() {
+            Op::Type => match current.as_ref().statement.arg.as_slice() {
                 [Value::Variable(_), ..] => {
                     // Create new node.
                     let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
@@ -1598,7 +1686,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                 }
                 _ => todo!(),
             },
-            Op::Special(Special::SizeOf) => match current.as_ref().statement.arg.as_slice() {
+            Op::SizeOf => match current.as_ref().statement.arg.as_slice() {
                 [Value::Variable(_), Value::Variable(_)] => {
                     // TODO Support case where lhs already exists.
 
@@ -1765,6 +1853,8 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
     first.unwrap()
 }
 
+/// Evaluates the `current` node, appends new nodes to evaluate to the tree (to which `current`
+/// links), and pushes them to the `stack`.
 pub unsafe fn explore_node(
     mut current: NonNull<NewStateNode>,
     stack: &mut Vec<NonNull<NewStateNode>>,
@@ -1779,7 +1869,7 @@ pub unsafe fn explore_node(
     debug_assert!(current_ref.next.1.is_none());
 
     match statement.op {
-        Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => match statement.arg.as_slice() {
+        Op::If(Cmp::Eq) => match statement.arg.as_slice() {
             [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
                 let _scope = current_ref.scope;
                 let y = current_ref
@@ -1801,7 +1891,7 @@ pub unsafe fn explore_node(
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::If(Cmp::Lt)) => match statement.arg.as_slice() {
+        Op::If(Cmp::Lt) => match statement.arg.as_slice() {
             [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
                 let _scope = current_ref.scope;
                 let y = current_ref
@@ -1822,7 +1912,7 @@ pub unsafe fn explore_node(
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::Loop) => {
+        Op::Loop => {
             match statement.arg.as_slice() {
                 [] => {
                     current_ref.unexplored = (
@@ -1841,9 +1931,22 @@ pub unsafe fn explore_node(
                         }
                         // If this AST node has no next, look for next node in parents.
                         else {
+                            let mut i = 0;
                             'outer: loop {
+                                #[cfg(debug_assertions)]
+                                {
+                                    assert!(i < LOOP_LIMIT);
+                                    i += 1;
+                                }
+
                                 let mut preceding_opt = ast_node.preceding;
                                 let parent = loop {
+                                    #[cfg(debug_assertions)]
+                                    {
+                                        assert!(i < LOOP_LIMIT);
+                                        i += 1;
+                                    }
+
                                     match preceding_opt {
                                         None => break 'outer Vec::new(),
                                         Some(Preceding::Previous(previous)) => {
@@ -1854,7 +1957,7 @@ pub unsafe fn explore_node(
                                 };
 
                                 // If this would exit a loop, the next statement is the 1st statement of the loop.
-                                if parent.as_ref().statement.op == Op::Intrinsic(Intrinsic::Loop) {
+                                if parent.as_ref().statement.op == Op::Loop {
                                     debug_assert_eq!(
                                         current_ref.scope.unwrap().as_ref().statement,
                                         parent
@@ -1884,7 +1987,7 @@ pub unsafe fn explore_node(
                 _ => todo!(),
             }
         }
-        Op::Intrinsic(Intrinsic::Break) => match statement.arg.as_slice() {
+        Op::Break => match statement.arg.as_slice() {
             [] => {
                 let prev_scope_graph_node = current_ref.scope.unwrap();
                 let scope_node = prev_scope_graph_node.as_ref().statement;
@@ -1893,9 +1996,22 @@ pub unsafe fn explore_node(
                         let scope = prev_scope_graph_node.as_ref().scope;
                         new_append(current, scope, next, stack)
                     } else {
+                        let mut i = 0;
                         'outer: loop {
+                            #[cfg(debug_assertions)]
+                            {
+                                assert!(i < LOOP_LIMIT);
+                                i += 1;
+                            }
+
                             let mut preceding_opt = ast_node.preceding;
                             let parent = loop {
+                                #[cfg(debug_assertions)]
+                                {
+                                    assert!(i < LOOP_LIMIT);
+                                    i += 1;
+                                }
+
                                 match preceding_opt {
                                     None => break 'outer Vec::new(),
                                     Some(Preceding::Previous(previous)) => {
@@ -1906,7 +2022,7 @@ pub unsafe fn explore_node(
                             };
 
                             // If this would exit a loop, the next statement is the 1st statement of the loop.
-                            if parent.as_ref().statement.op == Op::Intrinsic(Intrinsic::Loop) {
+                            if parent.as_ref().statement.op == Op::Loop {
                                 debug_assert_eq!(
                                     current_ref.scope.unwrap().as_ref().statement,
                                     parent
@@ -1925,7 +2041,7 @@ pub unsafe fn explore_node(
             }
             _ => todo!(),
         },
-        Op::Special(Special::Unreachable) => {
+        Op::Unreachable => {
             assert!(statement.arg.is_empty());
             // As execution ends, we return no valid states.
         }
@@ -1940,26 +2056,14 @@ pub unsafe fn explore_node(
     }
 }
 
-pub unsafe fn close_path(current: NonNull<NewStateNode>) {
-    if current.as_ref().unexplored.0.is_empty() && current.as_ref().unexplored.1.is_empty() {
-        if current.as_ref().statement.as_ref().statement.op == Op::Special(Special::Unreachable) {
-            new_passback_end(current, GraphNodeEnd::Valid);
-        } else {
-            new_passback_end(current, GraphNodeEnd::Invalid);
-        }
-    } else if let Some(0) = current.as_ref().loop_limit.last() {
-        new_passback_end(current, GraphNodeEnd::Loop);
-    }
-}
-
 pub enum Explore {
     Finished(NonNull<NewStateNode>),
     Current(NonNull<NewStateNode>),
 }
 
 pub struct Explorer<'a> {
-    roots: &'a [NonNull<NewStateNode>],
-    stack: Vec<NonNull<NewStateNode>>,
+    pub roots: &'a [NonNull<NewStateNode>],
+    pub stack: Vec<NonNull<NewStateNode>>,
 }
 
 impl<'a> Explorer<'a> {
@@ -1972,7 +2076,26 @@ impl<'a> Explorer<'a> {
     pub unsafe fn next(&mut self) -> Explore {
         if let Some(current) = self.stack.pop() {
             explore_node(current, &mut self.stack);
-            close_path(current);
+
+            // Checks if conditions for `current` node being a leaf node are true, if true calls
+            // backpropagates up the tree.
+            let current_ref = current.as_ref();
+            let no_unexplored_nodes =
+                current_ref.unexplored.0.is_empty() && current_ref.unexplored.1.is_empty();
+            match (
+                no_unexplored_nodes,
+                &current_ref.statement.as_ref().statement.op,
+                current_ref.loop_limit.last(),
+            ) {
+                // The only valid node with no further nodes to explore is `unreachable`.
+                (true, Op::Unreachable, _) => backpropagate(current, GraphNodeEnd::Valid),
+                (true, ..) => backpropagate(current, GraphNodeEnd::Invalid),
+                // If hit the loop limit of this loop.
+                (.., Some(0)) => backpropagate(current, GraphNodeEnd::Loop),
+                (false, ..) => {}
+                _ => unreachable!(),
+            }
+
             Explore::Current(current)
         } else {
             Explore::Finished(pick_path(self.roots))
@@ -2031,7 +2154,7 @@ unsafe fn dealloc_tree(first: NonNull<NewStateNode>) {
 fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<TypeValueState> {
     let slice = statement.arg.as_slice();
     match statement.op {
-        Op::Special(Special::Type) => match slice {
+        Op::Type => match slice {
             [Value::Variable(variable), Value::Type(x)] => {
                 match state.get(&TypeKey::from(variable)) {
                     // You can't redefine a static.
@@ -2059,7 +2182,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::Assign) => match slice {
+        Op::Assign => match slice {
             [Value::Variable(rhs), Value::Literal(Literal::Integer(x))] => {
                 let key = TypeKey::from(rhs);
                 match state.get(&key) {
@@ -2185,7 +2308,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             x @ _ => todo!("{x:?}"),
         },
-        Op::Intrinsic(Intrinsic::SubAssign) => match slice {
+        Op::SubAssign => match slice {
             [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
                 let key = TypeKey::from(variable);
                 match state.get(&key) {
@@ -2202,7 +2325,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::AddAssign) => match slice {
+        Op::AddAssign => match slice {
             [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
                 let key = TypeKey::from(variable);
                 match state.get(&key) {
@@ -2219,7 +2342,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::MulAssign) => match slice {
+        Op::MulAssign => match slice {
             [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
                 let key = TypeKey::from(variable);
                 match state.get(&key) {
@@ -2236,7 +2359,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::DivAssign) => match slice {
+        Op::DivAssign => match slice {
             [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
                 let key = TypeKey::from(variable);
                 match state.get(&key) {
@@ -2253,7 +2376,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::AndAssign) => match slice {
+        Op::AndAssign => match slice {
             [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
                 let key = TypeKey::from(variable);
                 match state.get(&key) {
@@ -2270,7 +2393,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::OrAssign) => match slice {
+        Op::OrAssign => match slice {
             [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
                 let key = TypeKey::from(variable);
                 match state.get(&key) {
@@ -2287,7 +2410,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::XorAssign) => match slice {
+        Op::XorAssign => match slice {
             [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
                 let key = TypeKey::from(variable);
                 match state.get(&key) {
@@ -2304,7 +2427,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::If(_)) => match slice {
+        Op::If(_) => match slice {
             [Value::Literal(Literal::Integer(_)), Value::Variable(variable)]
             | [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
                 match state.get(&TypeKey::from(variable)) {
@@ -2314,7 +2437,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Special(Special::Require(Cmp::Ge)) => match slice {
+        Op::Require(Cmp::Ge) => match slice {
             [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
                 let key = TypeKey::from(variable);
                 match state.get(&key) {
@@ -2332,7 +2455,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Special(Special::Require(Cmp::Le)) => match slice {
+        Op::Require(Cmp::Le) => match slice {
             [Value::Variable(variable), Value::Literal(Literal::Integer(x))] => {
                 let key = TypeKey::from(variable);
                 match state.get(&key) {
@@ -2350,18 +2473,18 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::Loop) => match slice {
+        Op::Loop => match slice {
             [] => vec![state.clone()],
             [Value::Literal(Literal::Integer(integer))] if u64::try_from(*integer).is_ok() => {
                 vec![state.clone()]
             }
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::Break) => match slice {
+        Op::Break => match slice {
             [] => vec![state.clone()],
             _ => todo!(),
         },
-        Op::Intrinsic(Intrinsic::Add) => match slice {
+        Op::Add => match slice {
             [Value::Variable(out), Value::Variable(lhs), Value::Variable(rhs)] => match (
                 state.get(&TypeKey::from(out)),
                 state.get(&TypeKey::from(lhs)),
@@ -2393,7 +2516,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             },
             _ => todo!(),
         },
-        Op::Assembly(Assembly::Mov) => match slice {
+        Op::Mov => match slice {
             [Value::Register(register), Value::Literal(Literal::Integer(integer))] => {
                 let mut new_state = state.clone();
                 let value = if let Ok(unsigned) = u64::try_from(*integer) {
@@ -2416,9 +2539,9 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
             }
             _ => todo!(),
         },
-        Op::Assembly(Assembly::Svc) => vec![state.clone()],
-        Op::Special(Special::Unreachable) => vec![state.clone()],
-        Op::Special(Special::SizeOf) => match slice {
+        Op::Svc => vec![state.clone()],
+        Op::Unreachable => vec![state.clone()],
+        Op::SizeOf => match slice {
             [Value::Variable(rhs), Value::Variable(Variable {
                 addressing,
                 identifier,
@@ -2442,21 +2565,28 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                     _ => todo!(),
                 };
                 let rhs_key = TypeKey::from(rhs.clone());
-                // eprintln!("lhs_key: {lhs_key:?}");
-                // eprintln!("state: {state:?}");
                 let size = Type::from(state.get(&lhs_key).unwrap().clone()).bytes();
-                match state.get(&rhs_key) {
-                    // Iterates over the set of integer types which could contain `x`, returning a new state for each possibility.
-                    None => TypeValueInteger::possible(size as i128)
-                        .into_iter()
-                        .map(|p| {
-                            let mut new_state = state.clone();
-                            new_state.insert(rhs_key.clone(), TypeValue::Integer(p));
-                            new_state
-                        })
-                        .collect(),
-                    _ => todo!(),
-                }
+
+                let mut new_state = state.clone();
+                new_state.insert(
+                    rhs_key.clone(),
+                    TypeValue::Integer(TypeValueInteger::U64(MyRange::from(size as u64))),
+                );
+                vec![new_state]
+
+                // This is commented out becuase for now its easier if sizeof is always u64 and not any integer type that fits the size.
+                // match state.get(&rhs_key) {
+                //     // Iterates over the set of integer types which could contain `x`, returning a new state for each possibility.
+                //     None => TypeValueInteger::possible(size as i128)
+                //         .into_iter()
+                //         .map(|p| {
+                //             let mut new_state = state.clone();
+                //             new_state.insert(rhs_key.clone(), TypeValue::Integer(p));
+                //             new_state
+                //         })
+                //         .collect(),
+                //     _ => todo!(),
+                // }
             }
             _ => todo!(),
         },
@@ -2467,10 +2597,31 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeValueState(HashMap<TypeKey, TypeValue>);
 
+use std::fmt::Write;
+
+impl std::fmt::Display for TypeValueState {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let out = self.0.iter().fold(String::new(), |mut acc, (k, v)| {
+            write!(&mut acc, "{k}: {v}, ").unwrap();
+            acc
+        });
+        write!(f, "{{ {out} }}")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeKey {
     Register(Register),
     Variable(VariableAlias),
+}
+
+impl std::fmt::Display for TypeKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Register(r) => write!(f, "{r}"),
+            Self::Variable(v) => write!(f, "{v}"),
+        }
+    }
 }
 
 impl From<&str> for TypeKey {
@@ -2632,6 +2783,16 @@ pub enum TypeValue {
     Reference(VariableAlias),
 }
 
+impl std::fmt::Display for TypeValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Integer(i) => write!(f, "{i}"),
+            Self::Array(a) => write!(f, "{a}"),
+            Self::Reference(r) => write!(f, "{r}"),
+        }
+    }
+}
+
 impl TryFrom<i128> for TypeValue {
     type Error = ();
     fn try_from(x: i128) -> Result<Self, Self::Error> {
@@ -2743,6 +2904,16 @@ impl From<Type> for TypeValue {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeValueArray(pub Vec<TypeValue>);
 
+impl std::fmt::Display for TypeValueArray {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let out = self.0.iter().fold(String::new(), |mut acc, x| {
+            write!(&mut acc, "{x},").unwrap();
+            acc
+        });
+        write!(f, "[{out}]")
+    }
+}
+
 impl From<TypeValueArray> for Type {
     fn from(x: TypeValueArray) -> Self {
         Type::Array(Box::new(Array(x.0.into_iter().map(Type::from).collect())))
@@ -2759,6 +2930,21 @@ pub enum TypeValueInteger {
     I16(MyRange<i16>),
     I32(MyRange<i32>),
     I64(MyRange<i64>),
+}
+
+impl std::fmt::Display for TypeValueInteger {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::U8(x) => write!(f, "(u8,{x})"),
+            Self::U16(x) => write!(f, "(u16,{x})"),
+            Self::U32(x) => write!(f, "(u32,{x})"),
+            Self::U64(x) => write!(f, "(u64,{x})"),
+            Self::I8(x) => write!(f, "(i8,{x})"),
+            Self::I16(x) => write!(f, "(i16,{x})"),
+            Self::I32(x) => write!(f, "(i32,{x})"),
+            Self::I64(x) => write!(f, "(i64,{x})"),
+        }
+    }
 }
 
 impl TryFrom<i128> for TypeValueInteger {
@@ -3597,6 +3783,22 @@ pub struct MyRange<
     abs_min: Option<T>,
     max: Option<T>,
     transform: Vec<Transform<T>>,
+}
+
+impl<
+        T: std::fmt::Debug
+            + Copy
+            + Ord
+            + std::ops::Sub<Output = T>
+            + std::ops::Add<Output = T>
+            + Bounded
+            + Zero
+            + One,
+    > std::fmt::Display for MyRange<T>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self.domain)
+    }
 }
 
 impl<

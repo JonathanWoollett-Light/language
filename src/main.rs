@@ -22,11 +22,12 @@ mod middle;
 use middle::*;
 mod backend;
 use backend::*;
+mod draw_dag;
 
 use std::ffi::CString;
 
 #[cfg(debug_assertions)]
-const LOOP_LIMIT: usize = 200;
+const LOOP_LIMIT: usize = 1000;
 
 enum Args {
     Build(Option<PathBuf>),
@@ -51,7 +52,15 @@ fn sha256_digest<R: Read>(mut reader: R) -> std::io::Result<Digest> {
     let mut context = Context::new(&SHA256);
     let mut buffer = [0; 1024];
 
+    #[cfg(debug_assertions)]
+    let mut i = 0;
     loop {
+        #[cfg(debug_assertions)]
+        {
+            assert!(i < LOOP_LIMIT);
+            i += 1;
+        }
+
         let count = reader.read(&mut buffer)?;
         if count == 0 {
             break;
@@ -128,15 +137,95 @@ fn build(path: Option<PathBuf>) {
         &mut lock_file,
     );
 
+    // Exploration record
+    let exploration_dir = project_path.join(BUILD_DIR).join("exploration");
+    if !exploration_dir.exists() {
+        std::fs::create_dir(&exploration_dir).unwrap();
+    }
+
     // Explores states
     let roots = unsafe { roots(inlined) };
     let mut explorer = unsafe { Explorer::new(&roots) };
+
+    let mut i = 0;
     let path = loop {
+        debug_assert!(i < 50);
+
         match unsafe { explorer.next() } {
-            Explore::Current(_) => continue,
+            Explore::Current(x) => {
+                let exploration_debug_path = exploration_dir.join(i.to_string());
+                if !exploration_debug_path.exists() {
+                    std::fs::create_dir(&exploration_debug_path).unwrap();
+                }
+
+                // Output current
+                {
+                    let current_path = exploration_debug_path.join("current");
+                    let mut record = OpenOptions::new()
+                        .create(true)
+                        .truncate(true)
+                        .write(true)
+                        .open(current_path)
+                        .unwrap();
+                    record
+                        .write_all(
+                            format!("{:?}", unsafe { x.as_ref().statement.as_ref() }).as_bytes(),
+                        )
+                        .unwrap();
+                }
+
+                // Output stack node
+                {
+                    let stack_path = exploration_debug_path.join("stack");
+                    if !stack_path.exists() {
+                        std::fs::create_dir(&stack_path).unwrap();
+                    }
+
+                    for (i, x) in explorer.stack.iter().enumerate() {
+                        let mut current = x.clone();
+                        let mut output = String::new();
+                        output.push_str(&format!("{}\n", unsafe { current.as_ref() }));
+                        while let Some(prev) = unsafe { current.as_ref().prev } {
+                            current = prev;
+                            output.push_str(&format!("{}\n", unsafe { current.as_ref() }));
+                        }
+
+                        let mut record = OpenOptions::new()
+                            .create(true)
+                            .truncate(true)
+                            .write(true)
+                            .open(stack_path.join(i.to_string()))
+                            .unwrap();
+                        record.write_all(output.as_bytes()).unwrap();
+                    }
+                }
+
+                // Output roots
+                {
+                    let roots_path = exploration_debug_path.join("roots");
+                    if !roots_path.exists() {
+                        std::fs::create_dir(&roots_path).unwrap();
+                    }
+
+                    for (i, x) in explorer.roots.iter().enumerate() {
+                        let mut record = OpenOptions::new()
+                            .create(true)
+                            .truncate(true)
+                            .write(true)
+                            .open(roots_path.join(i.to_string()))
+                            .unwrap();
+                        record
+                            .write_all(draw_dag::draw_dag(x.clone(), 2).as_bytes())
+                            .unwrap();
+                    }
+                }
+            }
             Explore::Finished(x) => break x,
         }
+        i += 1;
     };
+    #[cfg(debug_assertions)]
+    eprintln!("check counter: {i}");
 
     // Optimize source
     let optimized = unsafe { optimize(path) };

@@ -1,0 +1,23 @@
+def exit
+    mov x8 93
+    mov x0 in[0]
+    svc 0
+    unreachable
+def write
+    fd := in[0]
+    ptr := in[1]
+    len := sizeof *ptr
+    mov x8 64
+    mov x0 fd
+    mov x1 ptr
+    mov x2 len
+    svc 0
+def read
+    fd := in[0]
+    ptr := &out
+    len := sizeof *ptr
+    mov x8 63
+    mov x0 fd
+    mov x1 ptr
+    mov x2 len
+    svc 0

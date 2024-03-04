@@ -359,6 +359,12 @@ pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Option<NonNull<NewN
             // Comment
             Some(b'#') => {
                 loop {
+                    #[cfg(debug_assertions)]
+                    {
+                        assert!(i < LOOP_LIMIT);
+                        i += 1;
+                    }
+
                     match bytes.next().map(Result::unwrap) {
                         Some(b'\n') | None => break,
                         Some(_) => continue,
@@ -443,7 +449,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
         // Loop
         (b"loop", None) => Statement {
             comptime,
-            op: Op::Intrinsic(Intrinsic::Loop),
+            op: Op::Loop,
             arg: get_values(bytes),
         },
         // If
@@ -451,7 +457,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             let lhs = get_value(bytes);
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
-            let op = Op::Intrinsic(Intrinsic::If(get_cmp(bytes)));
+            let op = Op::If(get_cmp(bytes));
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             let rhs = get_value(bytes);
             let arg = vec![lhs, rhs];
@@ -459,14 +465,14 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
         }
         (b"break", None) => Statement {
             comptime,
-            op: Op::Intrinsic(Intrinsic::Break),
+            op: Op::Break,
             arg: Vec::new(),
         },
         (b"require", None) => {
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             let lhs = get_value(bytes);
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
-            let op = Op::Special(Special::Require(get_cmp(bytes)));
+            let op = Op::Require(get_cmp(bytes));
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             let rhs = get_value(bytes);
             let arg = vec![lhs, rhs];
@@ -474,7 +480,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
         }
         (b"unreachable", None) => Statement {
             comptime,
-            op: Op::Special(Special::Unreachable),
+            op: Op::Unreachable,
             arg: Vec::new(),
         },
         (b"def", None) => {
@@ -482,7 +488,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             let ident = get_variable(bytes);
             Statement {
                 comptime,
-                op: Op::Intrinsic(Intrinsic::Def),
+                op: Op::Def,
                 arg: vec![Value::Variable(ident)],
             }
         }
@@ -490,7 +496,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             Statement {
                 comptime,
-                op: Op::Assembly(Assembly::Svc),
+                op: Op::Svc,
                 arg: get_values(bytes),
             }
         }
@@ -498,7 +504,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             Statement {
                 comptime,
-                op: Op::Assembly(Assembly::Mov),
+                op: Op::Mov,
                 arg: get_values(bytes),
             }
         }
@@ -521,7 +527,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
 
             match bytes.peek().map(|r| r.as_ref().unwrap()) {
                 // Add, Sub, Mul, Div, Rem
-                Some(p) if let Some(arithmetic) = Intrinsic::arithmetic_assign(*p) => {
+                Some(p) if let Some(arithmetic) = Op::arithmetic_assign(*p) => {
                     bytes.next().map(Result::unwrap);
                     assert_eq!(Some(b'='), bytes.next().map(Result::unwrap));
                     assert_eq!(Some(b' '), bytes.next().map(Result::unwrap));
@@ -529,7 +535,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                     let arg = vec![lhs, arg];
                     Statement {
                         comptime,
-                        op: Op::Intrinsic(arithmetic),
+                        op: arithmetic,
                         arg,
                     }
                 }
@@ -540,7 +546,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                             let variable_type = get_type(bytes);
                             Statement {
                                 comptime,
-                                op: Op::Special(Special::Type),
+                                op: Op::Type,
                                 arg: vec![lhs, Value::Type(variable_type)],
                             }
                         }
@@ -560,7 +566,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                                             let tail = get_values(bytes);
                                             Statement {
                                                 comptime,
-                                                op: Op::Special(Special::SizeOf),
+                                                op: Op::SizeOf,
                                                 arg: once(lhs)
                                                     .chain(tail.iter().cloned())
                                                     .collect(),
@@ -568,8 +574,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                                         }
                                         _ => match bytes.peek().map(|r| r.as_ref().unwrap()) {
                                             Some(p)
-                                                if let Some(arithmetic) =
-                                                    Intrinsic::arithmetic(*p) =>
+                                                if let Some(arithmetic) = Op::arithmetic(*p) =>
                                             {
                                                 bytes.next().unwrap().unwrap(); // Skip arithmetic operator.
                                                 assert_eq!(
@@ -587,7 +592,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                                                 let arg = vec![lhs, first, second];
                                                 Statement {
                                                     comptime,
-                                                    op: Op::Intrinsic(arithmetic),
+                                                    op: arithmetic,
                                                     arg,
                                                 }
                                             }
@@ -595,7 +600,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                                                 let tail = get_values(bytes);
                                                 Statement {
                                                     comptime,
-                                                    op: Op::Intrinsic(Intrinsic::Assign),
+                                                    op: Op::Assign,
                                                     arg: once(lhs)
                                                         .chain(once(first.clone()))
                                                         .chain(tail.iter().cloned())
@@ -607,7 +612,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                                 }
                                 Some(b'\n') => Statement {
                                     comptime,
-                                    op: Op::Intrinsic(Intrinsic::Assign),
+                                    op: Op::Assign,
                                     arg: once(lhs).chain(once(first.clone())).collect(),
                                 },
                                 _ => todo!(),
@@ -621,7 +626,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                 }
                 _ => Statement {
                     comptime,
-                    op: Op::Intrinsic(Intrinsic::Call),
+                    op: Op::Call,
                     arg: std::iter::once(lhs).chain(get_values(bytes)).collect(),
                 },
             }
@@ -631,7 +636,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
 
 pub fn get_includes(source: &mut Vec<u8>) {
     let mut i = 0;
-    const INCLUDE: &[u8] = b"include";
+    const INCLUDE: &[u8] = b"include ";
     while i < source.len() - INCLUDE.len() {
         let j = i + INCLUDE.len();
         if &source[i..j] == INCLUDE {
@@ -644,8 +649,19 @@ pub fn get_includes(source: &mut Vec<u8>) {
                     None => panic!(),
                 }
             }
-            let url = std::str::from_utf8(&source[j..k]).unwrap();
-            let text = reqwest::blocking::get(url).unwrap().text().unwrap();
+
+            // let paths = std::fs::read_dir("./").unwrap();
+            // for path in paths {
+            //     eprintln!("Name: {}", path.unwrap().path().display())
+            // }
+
+            let str = std::str::from_utf8(&source[j..k]).unwrap();
+            // eprintln!("str: {str:?}");
+            let text = if let Some(b"http") = source.get(j..j + 4) {
+                reqwest::blocking::get(str).unwrap().text().unwrap()
+            } else {
+                std::fs::read_to_string(str).unwrap()
+            };
             source.splice(i..k, text.bytes());
         } else {
             i += 1;

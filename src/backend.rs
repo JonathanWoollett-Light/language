@@ -101,7 +101,7 @@ pub unsafe fn instruction_from_node(
         // eprintln!("arg: {arg:?}");
 
         match statement.op {
-            Op::Special(Special::Type) => match arg {
+            Op::Type => match arg {
                 [Value::Variable(Variable { identifier, .. }), Value::Type(value_type)] => {
                     type_data.insert(identifier.clone(), value_type.clone());
                     writeln!(bss, "{identifier}: .skip {}", value_type.bytes()).unwrap();
@@ -185,7 +185,7 @@ pub unsafe fn instruction_from_node(
                 }
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::Assign) => match arg {
+            Op::Assign => match arg {
                 [Value::Variable(Variable {
                     addressing: Addressing::Direct,
                     identifier,
@@ -338,7 +338,7 @@ pub unsafe fn instruction_from_node(
                 },
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::AddAssign) => match arg {
+            Op::AddAssign => match arg {
                 [Value::Variable(Variable {
                     addressing: Addressing::Direct,
                     identifier,
@@ -370,7 +370,7 @@ pub unsafe fn instruction_from_node(
                 }
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::SubAssign) => match arg {
+            Op::SubAssign => match arg {
                 [Value::Variable(Variable {
                     addressing: Addressing::Direct,
                     identifier,
@@ -402,7 +402,7 @@ pub unsafe fn instruction_from_node(
                 }
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => match arg {
+            Op::If(Cmp::Eq) => match arg {
                 [Value::Variable(Variable {
                     addressing: Addressing::Direct,
                     identifier,
@@ -429,7 +429,7 @@ pub unsafe fn instruction_from_node(
                 }
                 _ => todo!(),
             },
-            Op::Assembly(Assembly::Mov) => match arg {
+            Op::Mov => match arg {
                 [Value::Register(register), Value::Literal(Literal::Integer(integer))] => {
                     writeln!(&mut assembly, "mov {register}, #{integer}").unwrap();
                 }
@@ -461,13 +461,13 @@ pub unsafe fn instruction_from_node(
                 }
                 x @ _ => todo!("{x:?}"),
             },
-            Op::Assembly(Assembly::Svc) => match arg {
+            Op::Svc => match arg {
                 [Value::Literal(Literal::Integer(integer))] => {
                     writeln!(&mut assembly, "svc #{integer}").unwrap();
                 }
                 _ => todo!(),
             },
-            Op::Special(Special::Unreachable) => {
+            Op::Unreachable => {
                 assert!(arg.is_empty());
             }
             _ => todo!(),

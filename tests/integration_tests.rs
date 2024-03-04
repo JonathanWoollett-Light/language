@@ -2,91 +2,117 @@ use std::fs::{remove_dir_all, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
+use std::str::from_utf8;
 use uuid::Uuid;
 
 const BINARY: &str = env!("CARGO_BIN_EXE_language");
 
 const SOURCE_FILE: &str = "source.abc";
-use std::str::from_utf8;
+
+const SYSCALLS: &str = "./syscalls.abc";
+// const SYSCALLS: &str = "https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.abc";
+
+macro_rules! source {
+    ($source: expr) => {
+        format!("include {SYSCALLS}\n{}", $source).as_bytes()
+    };
+}
 
 #[test]
 fn zero() {
-    build_and_run(
-        b"include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nexit 0",
-        b"",
-        0
-    );
+    build_and_run(source!("exit 0"), b"", 0);
 }
 
 #[test]
 fn one() {
-    build_and_run(
-        b"include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nexit 1",
-        b"",
-        1
-    );
+    build_and_run(source!("exit 1"), b"", 1);
 }
 
 #[test]
 fn twelve() {
-    build_and_run(
-        b"include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nexit 12",
-        b"",
-        12
-    );
+    build_and_run(source!("exit 12"), b"", 12);
 }
 
 #[test]
 fn one_two() {
     build_and_run(
-        b"include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nexit 1\nexit 2",
+        source!(
+            "\
+            exit 1\n\
+            exit 2"
+        ),
         b"",
-        1
+        1,
     );
 }
 
 #[test]
 fn zero_variable() {
     build_and_run(
-        b"include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nx := 1\nexit 0",
+        source!(
+            "\
+            x := 1\n\
+            exit 0"
+        ),
         b"",
-        0
+        0,
     );
 }
 
 #[test]
 fn variable() {
     build_and_run(
-        b"include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nx := 1\nexit x",
+        source!(
+            "\
+            x := 1\n\
+            exit x"
+        ),
         b"",
-        1
+        1,
     );
 }
 
 #[test]
 fn variable_addition() {
     build_and_run(
-        b"include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nx := 1\nx += 1\nexit x",
+        source!(
+            "\
+            x := 1\n\
+            x += 1\n\
+            exit x"
+        ),
         b"",
-        2
+        2,
     );
 }
 
 #[test]
 fn variable_if_false() {
     build_and_run(
-        b"include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nx := 1\nif x = 2\n    exit 1\nexit 0",
+        source!(
+            "\
+            x := 1\n\
+            if x = 2\n\
+            \x20   exit 1\n\
+            exit 0"
+        ),
         b"",
-        0
+        0,
     );
 }
 
 #[test]
 fn variable_if_true() {
     build_and_run(
-        b"include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nx := 2\nif x = 2\n    exit 1\nexit 0",
+        source!(
+            "\
+            x := 2\n\
+            if x = 2\n\
+            \x20   exit 1\n\
+            exit 0"
+        ),
         b"",
-        1
+        1,
     );
 }
 
@@ -103,11 +129,12 @@ fn read() {
     let res = unsafe { libc::write(write, bytes.as_ptr().cast(), std::mem::size_of::<u8>() as _) };
     assert_eq!(res, std::mem::size_of::<u8>() as _);
 
-    build_and_run(
-        format!("include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nx := read {read}\nexit x").as_bytes(),
-        b"",
-        27
+    let source_string = format!(
+        "\
+        x := read {read}\n\
+        exit x"
     );
+    build_and_run(source!(source_string), b"", 27);
 
     // Close pipe.
     unsafe {
@@ -129,11 +156,13 @@ fn read_write() {
     let res = unsafe { libc::write(write, bytes.as_ptr().cast(), std::mem::size_of::<u8>() as _) };
     assert_eq!(res, std::mem::size_of::<u8>() as _);
 
-    build_and_run(
-        format!("include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nx := read {read}\nwrite {write} &x\nexit 0").as_bytes(),
-        b"",
-        0
+    let source_string = format!(
+        "\
+        x := read {read}\n\
+        write {write} &x\n\
+        exit 0"
     );
+    build_and_run(source!(source_string), b"", 0);
 
     // Read u8 from pipe.
     let mut buffer = [0u8; std::mem::size_of::<u8>()];
@@ -156,23 +185,40 @@ fn read_write() {
 #[test]
 fn arithmetic() {
     build_and_run(
-        b"include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nx := 1\nx += 2\nx *= 3\nx /= 4\nx -= 5\nx &= 6\nx |= 7\nx ^= 8\nexit x",
+        source!(
+            "\
+            x := 1\n\
+            x += 2\n\
+            x *= 3\n\
+            x /= 4\n\
+            x -= 5\n\
+            x &= 6\n\
+            x |= 7\n\
+            x ^= 8\n\
+            exit x"
+        ),
         b"",
-        15
+        15,
     );
 }
 
 #[test]
 fn helloworld_new() {
     build_and_run(
-        b"include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\nx := \"Hello, World!\\n\"\nwrite 1 &x\nexit 0",
+        source!(
+            "\
+            x := \"Hello, World!\\n\"\n\
+            write 1 &x\n\
+            exit 0"
+        ),
         b"Hello, World!\n",
-        0
+        0,
     );
 }
 
 fn build_and_run(source: &[u8], expected_stdout: &[u8], expected_code: i32) {
     let directory = PathBuf::from(format!("/tmp/a{}", Uuid::new_v4()));
+    println!("directory: {}", directory.display());
     let output = Command::new(BINARY)
         .args(["new", &directory.display().to_string()])
         .output()
@@ -194,11 +240,14 @@ fn build_and_run(source: &[u8], expected_stdout: &[u8], expected_code: i32) {
         .unwrap();
 
     use std::fs::read_to_string;
+    // println!(
+    //     "--- included ---\n{}\n-----------",
+    //     read_to_string(directory.join("build").join("included.abc")).unwrap()
+    // );
     println!(
-        "--- included ---\n{}\n-----------",
-        read_to_string(directory.join("build").join("included.abc")).unwrap()
+        "--- inlined ---\n{}\n-----------",
+        read_to_string(directory.join("build").join("inlined.abc")).unwrap()
     );
-    // println!("--- inlined ---\n{}\n-----------",read_to_string(directory.join("build").join("inlined.abc")).unwrap());
     // println!("--- optimized ---\n{}\n-----------",read_to_string(directory.join("build").join("optimized.abc")).unwrap());
     // println!("--- assembly ---\n{}\n-----------",read_to_string(directory.join("build").join("assembly.s")).unwrap());
 

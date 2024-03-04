@@ -36,7 +36,7 @@ pub struct Statement {
 impl std::fmt::Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match &self.op {
-            Op::Intrinsic(Intrinsic::Assign) => match self.arg.as_slice() {
+            Op::Assign => match self.arg.as_slice() {
                 [Value::Variable(variable), tail @ ..] => {
                     write!(
                         f,
@@ -49,7 +49,7 @@ impl std::fmt::Display for Statement {
                 }
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::Call) => write!(
+            Op::Call => write!(
                 f,
                 "{}",
                 self.arg
@@ -58,20 +58,20 @@ impl std::fmt::Display for Statement {
                     .intersperse(String::from(" "))
                     .collect::<String>()
             ),
-            Op::Special(Special::SizeOf) => match self.arg.as_slice() {
+            Op::SizeOf => match self.arg.as_slice() {
                 [lhs, rhs] => write!(f, "{lhs} := sizeof {rhs}"),
                 _ => todo!(),
             },
-            Op::Assembly(Assembly::Mov) => match self.arg.as_slice() {
+            Op::Mov => match self.arg.as_slice() {
                 [lhs, rhs] => write!(f, "mov {lhs} {rhs}"),
                 _ => todo!(),
             },
-            Op::Assembly(Assembly::Svc) => match self.arg.as_slice() {
+            Op::Svc => match self.arg.as_slice() {
                 [value] => write!(f, "svc {value}"),
                 _ => todo!(),
             },
-            Op::Special(Special::Unreachable) => write!(f, "unreachable"),
-            Op::Special(Special::Type) => match self.arg.as_slice() {
+            Op::Unreachable => write!(f, "unreachable"),
+            Op::Type => match self.arg.as_slice() {
                 [rhs] => write!(f, "{rhs}"),
                 [rhs, rhs_type] => write!(f, "{rhs} : {rhs_type}"),
                 [rhs, rhs_type, lhs, tail @ ..] => write!(
@@ -85,67 +85,67 @@ impl std::fmt::Display for Statement {
                 ),
                 x @ _ => todo!("{x:?}"),
             },
-            Op::Intrinsic(Intrinsic::Def) => match self.arg.as_slice() {
+            Op::Def => match self.arg.as_slice() {
                 [x] => write!(f, "def {x}"),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::If(Cmp::Eq)) => match self.arg.as_slice() {
+            Op::If(Cmp::Eq) => match self.arg.as_slice() {
                 [lhs, rhs] => write!(f, "if {lhs} = {rhs}"),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::Add) => match self.arg.as_slice() {
+            Op::Add => match self.arg.as_slice() {
                 [a, b, c] => write!(f, "{a} := {b} + {c}"),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::Sub) => match self.arg.as_slice() {
+            Op::Sub => match self.arg.as_slice() {
                 [a, b, c] => write!(f, "{a} := {b} - {c}"),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::Div) => match self.arg.as_slice() {
+            Op::Div => match self.arg.as_slice() {
                 [a, b, c] => write!(f, "{a} := {b} / {c}"),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::Mul) => match self.arg.as_slice() {
+            Op::Mul => match self.arg.as_slice() {
                 [a, b, c] => write!(f, "{a} := {b} * {c}"),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::Or) => match self.arg.as_slice() {
+            Op::Or => match self.arg.as_slice() {
                 [a, b, c] => write!(f, "{a} := {b} | {c}"),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::And) => match self.arg.as_slice() {
+            Op::And => match self.arg.as_slice() {
                 [a, b, c] => write!(f, "{a} := {b} & {c}"),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::Xor) => match self.arg.as_slice() {
+            Op::Xor => match self.arg.as_slice() {
                 [a, b, c] => write!(f, "{a} := {b} ^ {c}"),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::AddAssign) => match self.arg.as_slice() {
+            Op::AddAssign => match self.arg.as_slice() {
                 [a, b] => write!(f, "{a} += {b}"),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::SubAssign) => match self.arg.as_slice() {
+            Op::SubAssign => match self.arg.as_slice() {
                 [a, b] => write!(f, "{a} -= {b}"),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::DivAssign) => match self.arg.as_slice() {
+            Op::DivAssign => match self.arg.as_slice() {
                 [a, b] => write!(f, "{a} /= {b}"),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::MulAssign) => match self.arg.as_slice() {
+            Op::MulAssign => match self.arg.as_slice() {
                 [a, b] => write!(f, "{a} *= {b}"),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::OrAssign) => match self.arg.as_slice() {
+            Op::OrAssign => match self.arg.as_slice() {
                 [a, b] => write!(f, "{a} |= {b}"),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::AndAssign) => match self.arg.as_slice() {
+            Op::AndAssign => match self.arg.as_slice() {
                 [a, b] => write!(f, "{a} &= {b}"),
                 _ => todo!(),
             },
-            Op::Intrinsic(Intrinsic::XorAssign) => match self.arg.as_slice() {
+            Op::XorAssign => match self.arg.as_slice() {
                 [a, b] => write!(f, "{a} ^= {b}"),
                 _ => todo!(),
             },
@@ -568,34 +568,7 @@ impl std::fmt::Display for Offset {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Default, Clone)]
-pub enum Intrinsic {
-    #[default]
-    Assign,
-    AddAssign,
-    SubAssign,
-    MulAssign,
-    DivAssign,
-    RemAssign,
-    AndAssign,
-    OrAssign,
-    XorAssign,
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-    And,
-    Or,
-    Xor,
-    If(Cmp),
-    Loop,
-    Break,
-    Def,
-    Call,
-}
-
-impl Intrinsic {
+impl Op {
     pub fn arithmetic_assign(x: u8) -> Option<Self> {
         match x {
             b'+' => Some(Self::AddAssign),
@@ -621,21 +594,6 @@ impl Intrinsic {
             b'^' => Some(Self::Xor),
             _ => None,
         }
-    }
-}
-
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub enum Special {
-    Assume(Cmp),
-    Require(Cmp),
-    Type, // Type,
-    Unreachable,
-    SizeOf,
-}
-
-impl Default for Special {
-    fn default() -> Self {
-        Self::Assume(Default::default())
     }
 }
 
@@ -722,26 +680,36 @@ pub enum Cmp {
     Le,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum Op {
-    Intrinsic(Intrinsic),
-    Special(Special),
-    Assembly(Assembly),
-}
-
-impl Default for Op {
-    fn default() -> Self {
-        Self::Intrinsic(Default::default())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Assembly {
+    #[default]
+    Assign,
+    AddAssign,
+    SubAssign,
+    MulAssign,
+    DivAssign,
+    RemAssign,
+    AndAssign,
+    OrAssign,
+    XorAssign,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    And,
+    Or,
+    Xor,
+    If(Cmp),
+    Loop,
+    Break,
+    Def,
+    Call,
+    Assume(Cmp),
+    Require(Cmp),
+    Type, // Type,
+    Unreachable,
+    SizeOf,
     Svc,
     Mov,
-}
-impl Default for Assembly {
-    fn default() -> Self {
-        Self::Svc
-    }
 }
