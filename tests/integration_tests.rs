@@ -19,12 +19,12 @@ macro_rules! source {
 }
 
 #[test]
-fn zero() {
+fn zero_exit() {
     build_and_run(source!("exit 0"), b"", 0);
 }
 
 #[test]
-fn one() {
+fn one_exit() {
     build_and_run(source!("exit 1"), b"", 1);
 }
 
@@ -166,13 +166,7 @@ fn read_write() {
 
     // Read u8 from pipe.
     let mut buffer = [0u8; std::mem::size_of::<u8>()];
-    let res = unsafe {
-        libc::read(
-            read,
-            buffer.as_mut_ptr().cast(),
-            std::mem::size_of::<u8>() as _,
-        )
-    };
+    let res = unsafe { libc::read(read, buffer.as_mut_ptr().cast(), std::mem::size_of::<u8>() as _) };
     assert_eq!(res, std::mem::size_of::<u8>() as _);
     assert_eq!(buffer, bytes);
     // Close pipe.
@@ -240,24 +234,25 @@ fn build_and_run(source: &[u8], expected_stdout: &[u8], expected_code: i32) {
         .unwrap();
 
     use std::fs::read_to_string;
-    // println!(
-    //     "--- included ---\n{}\n-----------",
-    //     read_to_string(directory.join("build").join("included.abc")).unwrap()
-    // );
+    println!(
+        "--- included ---\n{}\n-----------",
+        read_to_string(directory.join("build").join("included.abc")).unwrap()
+    );
     println!(
         "--- inlined ---\n{}\n-----------",
         read_to_string(directory.join("build").join("inlined.abc")).unwrap()
     );
-    // println!("--- optimized ---\n{}\n-----------",read_to_string(directory.join("build").join("optimized.abc")).unwrap());
-    // println!("--- assembly ---\n{}\n-----------",read_to_string(directory.join("build").join("assembly.s")).unwrap());
+    // println!(
+    //     "--- optimized ---\n{}\n-----------",
+    //     read_to_string(directory.join("build").join("optimized.abc")).unwrap()
+    // );
+    // println!(
+    //     "--- assembly ---\n{}\n-----------",
+    //     read_to_string(directory.join("build").join("assembly.s")).unwrap()
+    // );
 
     assert_eq!(output.stderr, &[], "{}", from_utf8(&output.stderr).unwrap());
-    assert_eq!(
-        output.stdout,
-        expected_stdout,
-        "{}",
-        from_utf8(&output.stdout).unwrap()
-    );
+    assert_eq!(output.stdout, expected_stdout, "{}", from_utf8(&output.stdout).unwrap());
     assert_eq!(output.status.code(), Some(expected_code));
 
     remove_dir_all(directory).unwrap();

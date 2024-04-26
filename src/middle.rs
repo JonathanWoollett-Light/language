@@ -12,9 +12,13 @@ use num_traits::ops::overflowing::OverflowingSub;
 use num_traits::Signed;
 use num_traits::Unsigned;
 use std::alloc;
+use std::alloc::alloc;
+use std::alloc::dealloc;
+use std::alloc::Layout;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::iter::once;
 use std::ptr;
 use std::ptr::NonNull;
 use std::rc::Rc;
@@ -37,14 +41,10 @@ unsafe fn remove_node(
 
             // Update previous value of next state node and syntax node.
             next_node.as_mut().prev = current.as_ref().prev;
-            next_node.as_mut().statement.as_mut().preceding =
-                current.as_ref().statement.as_ref().preceding;
+            next_node.as_mut().statement.as_mut().preceding = current.as_ref().statement.as_ref().preceding;
 
             // Update next value of previous state node and syntax node.
-            match (
-                current.as_ref().statement.as_ref().preceding,
-                current.as_ref().prev,
-            ) {
+            match (current.as_ref().statement.as_ref().preceding, current.as_ref().prev) {
                 (Some(Preceding::Parent(mut parent)), Some(mut prev_node)) => {
                     debug_assert_eq!(prev_node.as_ref().statement, parent);
                     prev_node.as_mut().next = (Some(next_node), None);
@@ -68,10 +68,7 @@ unsafe fn remove_node(
         // This is checked before this function is called.
         (Some(_), Some(_)) => unreachable!(),
         (None, None) => {
-            match (
-                current.as_ref().statement.as_ref().preceding,
-                current.as_ref().prev,
-            ) {
+            match (current.as_ref().statement.as_ref().preceding, current.as_ref().prev) {
                 (Some(Preceding::Parent(mut parent)), Some(mut prev_node)) => {
                     debug_assert_eq!(prev_node.as_ref().statement, parent);
                     prev_node.as_mut().next = (None, None);
@@ -98,17 +95,12 @@ unsafe fn remove_node(
         current.as_ref().statement.as_ptr().cast(),
         alloc::Layout::new::<NewNode>(),
     );
-    alloc::dealloc(
-        current.as_ptr().cast(),
-        alloc::Layout::new::<NewStateNode>(),
-    );
+    alloc::dealloc(current.as_ptr().cast(), alloc::Layout::new::<NewStateNode>());
 
     rtn
 }
 
-pub unsafe fn build_optimized_tree(
-    graph: NonNull<NewStateNode>,
-) -> (Option<NonNull<NewNode>>, HashSet<VariableAlias>) {
+pub unsafe fn build_optimized_tree(graph: NonNull<NewStateNode>) -> (Option<NonNull<NewNode>>, HashSet<VariableAlias>) {
     let mut types = HashMap::<Variable, Type>::new();
     let mut read = HashSet::<VariableAlias>::new();
 
@@ -127,12 +119,7 @@ pub unsafe fn build_optimized_tree(
         }
 
         // Assert only 1 possible next;
-        debug_assert!(current
-            .as_ref()
-            .next
-            .0
-            .and(current.as_ref().next.1)
-            .is_none());
+        debug_assert!(current.as_ref().next.0.and(current.as_ref().next.1).is_none());
 
         // println!("------------checking optimization input------------");
         // let mut check_stack = vec![first_state_node.unwrap()];
@@ -161,12 +148,7 @@ pub unsafe fn build_optimized_tree(
         match op {
             Op::Type => match slice {
                 [Value::Variable(variable)] => {
-                    let variable_state = current
-                        .as_ref()
-                        .state
-                        .get(&TypeKey::from(variable))
-                        .unwrap()
-                        .clone();
+                    let variable_state = current.as_ref().state.get(&TypeKey::from(variable)).unwrap().clone();
                     let variable_type = Type::from(variable_state);
 
                     let existing = types.insert(variable.clone(), variable_type.clone());
@@ -184,24 +166,14 @@ pub unsafe fn build_optimized_tree(
                         .push(Value::Type(variable_type));
 
                     // Set next node.
-                    debug_assert!(current
-                        .as_ref()
-                        .next
-                        .0
-                        .and(current.as_ref().next.1)
-                        .is_none());
+                    debug_assert!(current.as_ref().next.0.and(current.as_ref().next.1).is_none());
                     next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
                 _ => todo!(),
             },
             Op::Assign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current
-                        .as_ref()
-                        .state
-                        .get(&TypeKey::from(variable))
-                        .unwrap()
-                        .clone();
+                    let variable_state = current.as_ref().state.get(&TypeKey::from(variable)).unwrap().clone();
                     let variable_type = Type::from(variable_state);
                     let existing = types.insert(variable.clone(), variable_type.clone());
 
@@ -220,21 +192,11 @@ pub unsafe fn build_optimized_tree(
                     }
 
                     // Set next node.
-                    debug_assert!(current
-                        .as_ref()
-                        .next
-                        .0
-                        .and(current.as_ref().next.1)
-                        .is_none());
+                    debug_assert!(current.as_ref().next.0.and(current.as_ref().next.1).is_none());
                     next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
                 [Value::Variable(variable), Value::Literal(Literal::String(_))] => {
-                    let variable_state = current
-                        .as_ref()
-                        .state
-                        .get(&TypeKey::from(variable))
-                        .unwrap()
-                        .clone();
+                    let variable_state = current.as_ref().state.get(&TypeKey::from(variable)).unwrap().clone();
                     let variable_type = Type::from(variable_state);
                     let existing = types.insert(variable.clone(), variable_type.clone());
 
@@ -253,12 +215,7 @@ pub unsafe fn build_optimized_tree(
                     }
 
                     // Set next node.
-                    debug_assert!(current
-                        .as_ref()
-                        .next
-                        .0
-                        .and(current.as_ref().next.1)
-                        .is_none());
+                    debug_assert!(current.as_ref().next.0.and(current.as_ref().next.1).is_none());
                     next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
                 [Value::Variable(lhs), Value::Variable(rhs)] => {
@@ -273,12 +230,7 @@ pub unsafe fn build_optimized_tree(
                     // before `b` is used. But this optimization is more difficult to do, so is
                     // currently unimplemented.
 
-                    let variable_state = current
-                        .as_ref()
-                        .state
-                        .get(&TypeKey::from(lhs))
-                        .unwrap()
-                        .clone();
+                    let variable_state = current.as_ref().state.get(&TypeKey::from(lhs)).unwrap().clone();
 
                     match variable_state {
                         TypeValue::Integer(TypeValueInteger::U8(range)) => {
@@ -289,14 +241,8 @@ pub unsafe fn build_optimized_tree(
                                 read.insert(VariableAlias::from(rhs.clone()));
 
                                 // Set next node.
-                                debug_assert!(current
-                                    .as_ref()
-                                    .next
-                                    .0
-                                    .and(current.as_ref().next.1)
-                                    .is_none());
-                                next_state_node =
-                                    current.as_ref().next.0.or(current.as_ref().next.1);
+                                debug_assert!(current.as_ref().next.0.and(current.as_ref().next.1).is_none());
+                                next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                             }
                         }
                         TypeValue::Reference(_) => {
@@ -311,15 +257,9 @@ pub unsafe fn build_optimized_tree(
             // On the linear path, these statements can simply be removed.
             Op::AddAssign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current
-                        .as_ref()
-                        .state
-                        .get(&TypeKey::from(variable))
-                        .unwrap();
+                    let variable_state = current.as_ref().state.get(&TypeKey::from(variable)).unwrap();
                     match variable_state {
-                        TypeValue::Integer(TypeValueInteger::U8(range))
-                            if range.value().is_some() =>
-                        {
+                        TypeValue::Integer(TypeValueInteger::U8(range)) if range.value().is_some() => {
                             // Removes node and sets next node.
                             next_state_node = remove_node(current, &mut first_state_node);
                         }
@@ -331,15 +271,9 @@ pub unsafe fn build_optimized_tree(
             // On the linear path, these statements can simply be removed.
             Op::SubAssign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current
-                        .as_ref()
-                        .state
-                        .get(&TypeKey::from(variable))
-                        .unwrap();
+                    let variable_state = current.as_ref().state.get(&TypeKey::from(variable)).unwrap();
                     match variable_state {
-                        TypeValue::Integer(TypeValueInteger::U8(range))
-                            if range.value().is_some() =>
-                        {
+                        TypeValue::Integer(TypeValueInteger::U8(range)) if range.value().is_some() => {
                             // Removes node and sets next node.
                             next_state_node = remove_node(current, &mut first_state_node);
                         }
@@ -351,15 +285,9 @@ pub unsafe fn build_optimized_tree(
             // On the linear path, these statements can simply be removed.
             Op::MulAssign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current
-                        .as_ref()
-                        .state
-                        .get(&TypeKey::from(variable))
-                        .unwrap();
+                    let variable_state = current.as_ref().state.get(&TypeKey::from(variable)).unwrap();
                     match variable_state {
-                        TypeValue::Integer(TypeValueInteger::U8(range))
-                            if range.value().is_some() =>
-                        {
+                        TypeValue::Integer(TypeValueInteger::U8(range)) if range.value().is_some() => {
                             // Removes node and sets next node.
                             next_state_node = remove_node(current, &mut first_state_node);
                         }
@@ -371,15 +299,9 @@ pub unsafe fn build_optimized_tree(
             // On the linear path, these statements can simply be removed.
             Op::DivAssign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current
-                        .as_ref()
-                        .state
-                        .get(&TypeKey::from(variable))
-                        .unwrap();
+                    let variable_state = current.as_ref().state.get(&TypeKey::from(variable)).unwrap();
                     match variable_state {
-                        TypeValue::Integer(TypeValueInteger::U8(range))
-                            if range.value().is_some() =>
-                        {
+                        TypeValue::Integer(TypeValueInteger::U8(range)) if range.value().is_some() => {
                             // Removes node and sets next node.
                             next_state_node = remove_node(current, &mut first_state_node);
                         }
@@ -390,15 +312,9 @@ pub unsafe fn build_optimized_tree(
             },
             Op::AndAssign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current
-                        .as_ref()
-                        .state
-                        .get(&TypeKey::from(variable))
-                        .unwrap();
+                    let variable_state = current.as_ref().state.get(&TypeKey::from(variable)).unwrap();
                     match variable_state {
-                        TypeValue::Integer(TypeValueInteger::U8(range))
-                            if range.value().is_some() =>
-                        {
+                        TypeValue::Integer(TypeValueInteger::U8(range)) if range.value().is_some() => {
                             // Removes node and sets next node.
                             next_state_node = remove_node(current, &mut first_state_node);
                         }
@@ -409,15 +325,9 @@ pub unsafe fn build_optimized_tree(
             },
             Op::OrAssign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current
-                        .as_ref()
-                        .state
-                        .get(&TypeKey::from(variable))
-                        .unwrap();
+                    let variable_state = current.as_ref().state.get(&TypeKey::from(variable)).unwrap();
                     match variable_state {
-                        TypeValue::Integer(TypeValueInteger::U8(range))
-                            if range.value().is_some() =>
-                        {
+                        TypeValue::Integer(TypeValueInteger::U8(range)) if range.value().is_some() => {
                             // Removes node and sets next node.
                             next_state_node = remove_node(current, &mut first_state_node);
                         }
@@ -428,15 +338,9 @@ pub unsafe fn build_optimized_tree(
             },
             Op::XorAssign => match slice {
                 [Value::Variable(variable), Value::Literal(Literal::Integer(_))] => {
-                    let variable_state = current
-                        .as_ref()
-                        .state
-                        .get(&TypeKey::from(variable))
-                        .unwrap();
+                    let variable_state = current.as_ref().state.get(&TypeKey::from(variable)).unwrap();
                     match variable_state {
-                        TypeValue::Integer(TypeValueInteger::U8(range))
-                            if range.value().is_some() =>
-                        {
+                        TypeValue::Integer(TypeValueInteger::U8(range)) if range.value().is_some() => {
                             // Removes node and sets next node.
                             next_state_node = remove_node(current, &mut first_state_node);
                         }
@@ -448,15 +352,9 @@ pub unsafe fn build_optimized_tree(
             // `current` is not used after `current = prev;` but it may be in the future, and I
             // don't want to obfuscate this complex logic further.
             Op::If(Cmp::Eq) => {
-                debug_assert!(current
-                    .as_ref()
-                    .next
-                    .0
-                    .and(current.as_ref().next.1)
-                    .is_none());
+                debug_assert!(current.as_ref().next.0.and(current.as_ref().next.1).is_none());
                 // We can unwrap here since it would be an error for an if to be the last node.
-                let mut if_next_state_node =
-                    current.as_ref().next.0.or(current.as_ref().next.1).unwrap();
+                let mut if_next_state_node = current.as_ref().next.0.or(current.as_ref().next.1).unwrap();
 
                 // Update syntax node
                 {
@@ -467,16 +365,8 @@ pub unsafe fn build_optimized_tree(
                                 current.as_ref().statement.as_ref().next,
                             ) {
                                 (Some(x), None) | (None, Some(x)) => x,
-                                (Some(x), Some(_))
-                                    if x == if_next_state_node.as_ref().statement =>
-                                {
-                                    x
-                                }
-                                (Some(_), Some(x))
-                                    if x == if_next_state_node.as_ref().statement =>
-                                {
-                                    x
-                                }
+                                (Some(x), Some(_)) if x == if_next_state_node.as_ref().statement => x,
+                                (Some(_), Some(x)) if x == if_next_state_node.as_ref().statement => x,
                                 _ => unreachable!(),
                             };
                             parent.as_mut().child = Some(following);
@@ -487,16 +377,8 @@ pub unsafe fn build_optimized_tree(
                                 current.as_ref().statement.as_ref().next,
                             ) {
                                 (Some(x), None) | (None, Some(x)) => x,
-                                (Some(x), Some(_))
-                                    if x == if_next_state_node.as_ref().statement =>
-                                {
-                                    x
-                                }
-                                (Some(_), Some(x))
-                                    if x == if_next_state_node.as_ref().statement =>
-                                {
-                                    x
-                                }
+                                (Some(x), Some(_)) if x == if_next_state_node.as_ref().statement => x,
+                                (Some(_), Some(x)) if x == if_next_state_node.as_ref().statement => x,
                                 _ => unreachable!(),
                             };
                             previous.as_mut().next = Some(following);
@@ -519,10 +401,7 @@ pub unsafe fn build_optimized_tree(
                 {
                     if_next_state_node.as_mut().prev = current.as_ref().prev;
                     current.as_ref().prev.unwrap().as_mut().next = (Some(if_next_state_node), None);
-                    alloc::dealloc(
-                        current.as_ptr().cast(),
-                        alloc::Layout::new::<NewStateNode>(),
-                    );
+                    alloc::dealloc(current.as_ptr().cast(), alloc::Layout::new::<NewStateNode>());
                 }
 
                 // Set next node.
@@ -535,11 +414,7 @@ pub unsafe fn build_optimized_tree(
                     //     current.as_ref().state.get(rhs).unwrap(),
                     //     current.as_ref().state.get(lhs).unwrap()
                     // );
-                    let variable_state = current
-                        .as_ref()
-                        .state
-                        .get(&TypeKey::from(variable))
-                        .unwrap();
+                    let variable_state = current.as_ref().state.get(&TypeKey::from(variable)).unwrap();
                     let variable_type = Type::from(variable_state.clone());
                     match variable_state {
                         TypeValue::Integer(TypeValueInteger::U8(a)) if let Some(x) = a.value() => {
@@ -558,12 +433,7 @@ pub unsafe fn build_optimized_tree(
                             }
 
                             // Set next node.
-                            debug_assert!(current
-                                .as_ref()
-                                .next
-                                .0
-                                .and(current.as_ref().next.1)
-                                .is_none());
+                            debug_assert!(current.as_ref().next.0.and(current.as_ref().next.1).is_none());
                             next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                         }
                         _ => todo!(),
@@ -574,12 +444,7 @@ pub unsafe fn build_optimized_tree(
             Op::Mov => match slice {
                 [Value::Register(_), Value::Literal(Literal::Integer(_))] => {
                     // Set next node.
-                    debug_assert!(current
-                        .as_ref()
-                        .next
-                        .0
-                        .or(current.as_ref().next.1)
-                        .is_some());
+                    debug_assert!(current.as_ref().next.0.or(current.as_ref().next.1).is_some());
                     next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
                 [Value::Register(_), Value::Variable(rhs)] => {
@@ -647,18 +512,14 @@ pub unsafe fn build_optimized_tree(
                                 addressing: Addressing::Reference,
                                 identifier: identifier.clone(),
                                 index: index.clone(),
+                                cast: None,
                             });
                         }
                         x @ _ => todo!("{x:?}"),
                     };
 
                     // Set next node.
-                    debug_assert!(current
-                        .as_ref()
-                        .next
-                        .0
-                        .or(current.as_ref().next.1)
-                        .is_some());
+                    debug_assert!(current.as_ref().next.0.or(current.as_ref().next.1).is_some());
                     next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
                 _ => todo!(),
@@ -666,12 +527,7 @@ pub unsafe fn build_optimized_tree(
             Op::Svc => match slice {
                 [Value::Literal(Literal::Integer(_))] => {
                     // Set next node.
-                    debug_assert!(current
-                        .as_ref()
-                        .next
-                        .0
-                        .or(current.as_ref().next.1)
-                        .is_some());
+                    debug_assert!(current.as_ref().next.0.or(current.as_ref().next.1).is_some());
                     next_state_node = current.as_ref().next.0.or(current.as_ref().next.1);
                 }
                 _ => todo!(),
@@ -679,12 +535,7 @@ pub unsafe fn build_optimized_tree(
             Op::Unreachable => {
                 assert!(slice.is_empty());
                 // As execution ends, we return no valid states.
-                debug_assert!(current
-                    .as_ref()
-                    .next
-                    .0
-                    .and(current.as_ref().next.1)
-                    .is_none());
+                debug_assert!(current.as_ref().next.0.and(current.as_ref().next.1).is_none());
                 // Exits mark the end of execution, their shouldn't be a following node.
                 debug_assert_eq!(current.as_ref().next, (None, None));
 
@@ -842,14 +693,7 @@ unsafe fn backpropagate(mut node: NonNull<NewStateNode>, end: GraphNodeEnd) {
         eprintln!("backprop trees b\n:{}", draw_dag(prev, 2));
 
         // If `node` is from `prev.unexplored.0`.
-        if let Some((i, _)) = prev
-            .as_ref()
-            .unexplored
-            .0
-            .iter()
-            .enumerate()
-            .find(|(_, &x)| x == node)
-        {
+        if let Some((i, _)) = prev.as_ref().unexplored.0.iter().enumerate().find(|(_, &x)| x == node) {
             eprintln!("here three");
 
             // Remove `node` from `prev.unexplored`.
@@ -881,14 +725,7 @@ unsafe fn backpropagate(mut node: NonNull<NewStateNode>, end: GraphNodeEnd) {
             }
         }
         // If `node` is from `prev.unexplored.1`.
-        else if let Some((i, _)) = prev
-            .as_ref()
-            .unexplored
-            .1
-            .iter()
-            .enumerate()
-            .find(|(_, &x)| x == node)
-        {
+        else if let Some((i, _)) = prev.as_ref().unexplored.1.iter().enumerate().find(|(_, &x)| x == node) {
             eprintln!("here four");
 
             // Remove `node` from `prev.unexplored`.
@@ -928,22 +765,10 @@ unsafe fn backpropagate(mut node: NonNull<NewStateNode>, end: GraphNodeEnd) {
         if prev.as_ref().unexplored.0.is_empty() && prev.as_ref().unexplored.1.is_empty() {
             eprintln!("here six");
 
-            let prev_cost_next_one = prev
-                .as_ref()
-                .next
-                .0
-                .and_then(|i| i.as_ref().cost)
-                .unwrap_or(0);
-            let prev_cost_next_two = prev
-                .as_ref()
-                .next
-                .1
-                .and_then(|i| i.as_ref().cost)
-                .unwrap_or(0);
+            let prev_cost_next_one = prev.as_ref().next.0.and_then(|i| i.as_ref().cost).unwrap_or(0);
+            let prev_cost_next_two = prev.as_ref().next.1.and_then(|i| i.as_ref().cost).unwrap_or(0);
             // Add the cost of the paths plus 1 for the length.
-            let prev_cost = prev_cost_next_one
-                .saturating_add(prev_cost_next_two)
-                .saturating_add(1);
+            let prev_cost = prev_cost_next_one.saturating_add(prev_cost_next_two).saturating_add(1);
             prev.as_mut().cost = Some(prev_cost);
         }
         // If there remain unexplored paths following `prev`.
@@ -1034,12 +859,7 @@ pub struct NewStateNode {
 
 impl std::fmt::Display for NewStateNode {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}: {}",
-            unsafe { &self.statement.as_ref().statement },
-            self.state
-        )
+        write!(f, "{}: {}", unsafe { &self.statement.as_ref().statement }, self.state)
     }
 }
 
@@ -1103,10 +923,7 @@ unsafe fn explore_if(
 
                         // If this would exit a loop, the next statement is the 1st statement of the loop.
                         if parent.as_ref().statement.op == Op::Loop {
-                            debug_assert_eq!(
-                                current.as_ref().scope.unwrap().as_ref().statement,
-                                parent
-                            );
+                            debug_assert_eq!(current.as_ref().scope.unwrap().as_ref().statement, parent);
                             let parent_child = parent.as_ref().child.unwrap();
                             break new_append(current, scope, parent_child, stack);
                         }
@@ -1158,10 +975,7 @@ unsafe fn explore_if(
 
                         // If this would exit a loop, the next statement is the 1st statement of the loop.
                         if parent.as_ref().statement.op == Op::Loop {
-                            debug_assert_eq!(
-                                current.as_ref().scope.unwrap().as_ref().statement,
-                                parent
-                            );
+                            debug_assert_eq!(current.as_ref().scope.unwrap().as_ref().statement, parent);
                             let parent_child = parent.as_ref().child.unwrap();
                             break new_append(current, scope, parent_child, stack);
                         }
@@ -1211,10 +1025,7 @@ impl std::fmt::Display for VariableAlias {
             f,
             "{}{}",
             self.identifier,
-            self.index
-                .as_ref()
-                .map(|b| format!("[{b:?}]"))
-                .unwrap_or(String::new())
+            self.index.as_ref().map(|b| format!("[{b:?}]")).unwrap_or(String::new())
         )
     }
 }
@@ -1243,6 +1054,7 @@ impl From<VariableAlias> for Variable {
             addressing: Addressing::Direct,
             identifier: alias.identifier,
             index: alias.index,
+            cast: None,
         }
     }
 }
@@ -1274,6 +1086,7 @@ unsafe fn create_inline_variable<I: Iterator<Item = Identifier>>(
                     addressing,
                     identifier,
                     index,
+                    cast: _,
                 }) => {
                     let VariableAlias { identifier, index } = variable_map
                         .get(&VariableAlias {
@@ -1286,6 +1099,7 @@ unsafe fn create_inline_variable<I: Iterator<Item = Identifier>>(
                         addressing: addressing.clone(),
                         identifier,
                         index,
+                        cast: None,
                     })
                 }
                 _ => todo!(),
@@ -1297,7 +1111,6 @@ unsafe fn create_inline_variable<I: Iterator<Item = Identifier>>(
                 dst,
                 NewNode {
                     statement: Statement {
-                        comptime: false,
                         op: Op::Assign,
                         arg: vec![
                             Value::Variable(Variable::from(new_variable_identiier.clone())),
@@ -1340,12 +1153,15 @@ unsafe fn create_inline_variable<I: Iterator<Item = Identifier>>(
 }
 
 pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
-    let mut first = None;
+    let mut first = node;
 
-    // The map from function identifiers their first node.
+    // The map from function identifiers to the first node of their definition.
     let mut functions = HashMap::new();
 
-    // An iterator yielding unique identifiers.
+    // We collect the function definitions we find to ultimately dealloc.
+    let mut definitions = Vec::new();
+
+    // Generates unique identifiers.
     const N: u8 = b'z' - b'a';
     let mut identifier_iterator = (0..).map(|index| {
         Identifier(
@@ -1356,509 +1172,196 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
         )
     });
 
-    let mut stack = vec![(
-        node,
-        None,
-        None,
-        Rc::new(RefCell::new(HashMap::<VariableAlias, VariableAlias>::new())),
-    )];
+    let mut stack = vec![node];
+    let mut carry = Vec::new();
+    let mut maps = vec![HashMap::new()];
+    while let Some(mut current) = stack.pop() {
+        // When reaching the node after the last node from an inlined function the context switches back.
+        if let Some(last) = carry.last()
+            && *last == Some(current)
+        {
+            carry.pop().unwrap();
+            maps.pop().unwrap();
+            stack.push(current);
+            continue;
+        }
 
-    while let Some((current, mut preceding, next_carry, variable_map)) = stack.pop() {
-        // eprintln!("old ast:\n{}\n", crate::display_ast_addresses(node));
-        // eprintln!(
-        //     "new ast:\n{}\n",
-        //     first
-        //         .map(|n| crate::display_ast_addresses(n))
-        //         .unwrap_or(String::new())
-        // );
+        let current_ref = current.as_mut();
+        let args = current_ref.statement.arg.as_mut_slice();
 
-        match current.as_ref().statement.op {
-            // Function definition
-            Op::Def => match current.as_ref().statement.arg.as_slice() {
-                [Value::Variable(Variable {
+        // Update first node.
+        if let None = current.as_ref().preceding {
+            first = current;
+        }
+
+        // Update variables.
+        for variable in args.iter_mut().filter_map(Value::variable_mut) {
+            let variable_map = &mut maps[carry.len()];
+            let new_identifier = variable_map
+                .entry(variable.identifier.clone())
+                .or_insert(identifier_iterator.next().unwrap());
+            variable.identifier = new_identifier.clone();
+        }
+
+        // Handle continuation.
+        match current_ref.statement.op {
+            Op::Def => {
+                // Definition statements should only contain a function identifier.
+                let [Value::Variable(Variable {
                     addressing: Addressing::Direct,
                     identifier,
                     index: None,
-                })] => {
-                    // dbg!("hit this one");
-                    // Insert function definition.
-                    let pre_existing =
-                        functions.insert(identifier, current.as_ref().child.unwrap());
-                    assert!(pre_existing.is_none());
+                    cast: None,
+                })] = args
+                else {
+                    todo!()
+                };
+                // Update the function map.
+                functions.insert(identifier.clone(), current);
 
-                    if let Some(mut next) = current.as_ref().next {
-                        next.as_mut().preceding = current.as_ref().preceding;
-                        stack.push((next, preceding, next_carry, variable_map));
+                // Record the definition to later dealloc.
+                definitions.push(current);
+
+                // Remove links to the definition.
+                if let Some(preceding) = current_ref.preceding {
+                    match preceding {
+                        Preceding::Previous(mut previous) => {
+                            previous.as_mut().child = current_ref.next;
+                        }
+                        Preceding::Parent(mut parent) => {
+                            parent.as_mut().next = current_ref.next;
+                        }
                     }
                 }
-                _ => todo!(),
-            },
-            Op::Assign => match current.as_ref().statement.arg.as_slice() {
-                // Function call
-                [Value::Variable(
-                    lhs @ Variable {
-                        addressing: Addressing::Direct,
-                        ..
-                    },
-                ), Value::Variable(Variable {
+
+                if let Some(mut next) = current_ref.next.take() {
+                    next.as_mut().preceding = current_ref.preceding;
+                    stack.push(next);
+                }
+            }
+            Op::Call => {
+                // A function call will always be a function identifier followed by a tail of values.
+                let [Value::Variable(Variable {
                     addressing: Addressing::Direct,
-                    identifier: rhs,
+                    identifier: fn_ident,
                     index: None,
-                }), tail @ ..]
-                    if let Some(def) = functions.get(rhs) =>
-                {
-                    debug_assert!(next_carry.is_none());
-                    let function = functions.get(rhs).unwrap();
+                    cast: _,
+                }), tail @ ..] = args
+                else {
+                    todo!()
+                };
+                let fn_def = functions.get(fn_ident).unwrap();
 
-                    let head_iter = std::iter::once({
-                        let lhs_alias = VariableAlias::from(lhs.clone());
-                        let existing_opt = variable_map.borrow().get(&lhs_alias).cloned();
+                assert_eq!(current_ref.child, None);
 
-                        let new_lhs = if let Some(existing) = existing_opt {
-                            existing
-                        } else {
-                            let new_variable_identiier = identifier_iterator.next().unwrap();
-                            // Create new node.
-                            let dst =
-                                alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
-                            std::ptr::write(
-                                dst,
-                                NewNode {
-                                    statement: Statement {
-                                        comptime: false,
-                                        op: Op::Type,
-                                        arg: vec![Value::Variable(Variable::from(
-                                            new_variable_identiier.clone(),
-                                        ))],
-                                    },
-                                    preceding,
-                                    child: None,
-                                    next: None,
-                                },
-                            );
-                            let new = NonNull::new(dst).unwrap();
-
-                            // Update preceding
-                            match preceding {
-                                Some(Preceding::Previous(mut previous)) => {
-                                    debug_assert!(previous.as_ref().next.is_none());
-                                    previous.as_mut().next = Some(new);
-                                }
-                                Some(Preceding::Parent(mut parent)) => {
-                                    debug_assert!(parent.as_ref().child.is_none());
-                                    parent.as_mut().child = Some(new);
-                                }
-                                None => {
-                                    first = Some(new);
-                                }
-                            }
-
-                            preceding = Some(Preceding::Previous(new));
-
-                            // Insert alias
-                            let new_lhs = VariableAlias {
-                                identifier: new_variable_identiier,
-                                index: None,
-                            };
-                            variable_map
-                                .borrow_mut()
-                                .insert(lhs_alias.clone(), new_lhs.clone());
-
-                            new_lhs
-                        };
-
-                        (
-                            VariableAlias {
-                                identifier: Identifier::from("out"),
-                                index: None,
-                            },
-                            new_lhs,
-                        )
-                    });
-                    let tail_variables = create_inline_variable(
-                        tail,
-                        &variable_map.borrow(),
-                        &mut first,
-                        &mut preceding,
-                        &mut identifier_iterator,
-                    );
-
-                    let new_variable_map = Rc::new(RefCell::new(
-                        head_iter.chain(tail_variables.into_iter()).collect(),
-                    ));
-                    stack.push((
-                        *function,
-                        preceding,
-                        current.as_ref().next.map(|n| (n, variable_map.clone())),
-                        new_variable_map,
-                    ));
-                }
-                [Value::Variable(Variable {
-                    addressing: Addressing::Direct,
-                    ..
-                }), ..] => {
-                    // Create new node.
-                    let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
-                    ptr::write(
-                        dst,
-                        NewNode {
-                            statement: current.as_ref().statement.clone(),
-                            preceding,
-                            child: None,
-                            next: None,
-                        },
-                    );
-                    let mut new = NonNull::new(dst).unwrap();
-
-                    let [Value::Variable(variable), tail @ ..] =
-                        new.as_mut().statement.arg.as_mut_slice()
-                    else {
-                        unreachable!()
-                    };
-
-                    // Update new preceding.
-                    match preceding {
-                        Some(Preceding::Parent(mut parent)) => {
-                            debug_assert!(parent.as_ref().child.is_none());
-                            parent.as_mut().child = Some(new);
-                        }
-                        Some(Preceding::Previous(mut previous)) => {
-                            debug_assert!(previous.as_ref().next.is_none());
-                            previous.as_mut().next = Some(new);
-                        }
-                        None => {
-                            first = Some(new);
-                        }
-                    }
-
-                    // Update new variable
-                    let new_identifier = identifier_iterator.next().unwrap();
-                    let new_variable = VariableAlias {
-                        identifier: new_identifier,
-                        index: None,
-                    };
-                    let res = variable_map
-                        .borrow_mut()
-                        .insert(VariableAlias::from(variable.clone()), new_variable.clone());
-                    assert!(res.is_none()); // Assert isn't pre-existing
-                    *variable = Variable {
-                        addressing: Addressing::Direct,
-                        identifier: new_variable.identifier,
-                        index: None,
-                    };
-
-                    // Update existing variables
-                    for tail_variable in tail.iter_mut().filter_map(Value::variable_mut) {
-                        let VariableAlias { identifier, index } = variable_map
-                            .borrow()
-                            .get(&VariableAlias::from(tail_variable.clone()))
-                            .unwrap()
-                            .clone();
-                        *tail_variable = Variable {
-                            addressing: tail_variable.addressing.clone(),
-                            identifier,
-                            index,
-                        };
-                    }
-
-                    debug_assert!(current.as_ref().child.is_none());
-                    if let Some(next) = current.as_ref().next {
-                        stack.push((
-                            next,
-                            Some(Preceding::Previous(new)),
-                            next_carry,
-                            variable_map,
-                        ));
-                        new.as_mut().next = None;
-                    } else if let Some((next, old_variable_map)) = next_carry {
-                        stack.push((next, Some(Preceding::Previous(new)), None, old_variable_map));
-                        new.as_mut().next = None;
-                    }
-                    debug_assert_eq!(new.as_ref().next, None);
-                    debug_assert_eq!(new.as_ref().child, None);
-                }
-                _ => todo!(),
-            },
-            Op::Call => match current.as_ref().statement.arg.as_slice() {
-                [Value::Variable(Variable {
-                    addressing: Addressing::Direct,
-                    identifier: rhs,
-                    index: None,
-                }), tail @ ..] => {
-                    debug_assert!(next_carry.is_none());
-                    let function = functions.get(rhs).unwrap();
-
-                    let map = create_inline_variable(
-                        tail,
-                        &variable_map.borrow(),
-                        &mut first,
-                        &mut preceding,
-                        &mut identifier_iterator,
-                    );
-                    let new_variable_map = Rc::new(RefCell::new(map));
-                    stack.push((
-                        *function,
-                        preceding,
-                        current.as_ref().next.map(|n| (n, variable_map.clone())),
-                        new_variable_map,
-                    ));
-                }
-                _ => todo!(),
-            },
-            Op::Type => match current.as_ref().statement.arg.as_slice() {
-                [Value::Variable(_), ..] => {
-                    // Create new node.
-                    let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
-                    ptr::write(
-                        dst,
-                        NewNode {
-                            statement: current.as_ref().statement.clone(),
-                            preceding,
-                            child: None,
-                            next: None,
-                        },
-                    );
-                    let mut new = NonNull::new(dst).unwrap();
-
-                    let [Value::Variable(variable), tail @ ..] =
-                        new.as_mut().statement.arg.as_mut_slice()
-                    else {
-                        unreachable!()
-                    };
-
-                    // Update new preceding.
-                    match preceding {
-                        Some(Preceding::Parent(mut parent)) => {
-                            debug_assert!(parent.as_ref().child.is_none());
-                            parent.as_mut().child = Some(new);
-                        }
-                        Some(Preceding::Previous(mut previous)) => {
-                            debug_assert!(previous.as_ref().next.is_none());
-                            previous.as_mut().next = Some(new);
-                        }
-                        None => {
-                            first = Some(new);
-                        }
-                    }
-
-                    // Update new variable
-                    let new_identifier = identifier_iterator.next().unwrap();
-                    let new_variable = VariableAlias {
-                        identifier: new_identifier,
-                        index: None,
-                    };
-                    let res = variable_map
-                        .borrow_mut()
-                        .insert(VariableAlias::from(variable.clone()), new_variable.clone());
-                    assert!(res.is_none()); // Assert isn't pre-existing
-                    *variable = Variable::from(new_variable);
-
-                    // Update existing variables
-                    for tail_variable in tail.iter_mut().filter_map(Value::variable_mut) {
-                        let VariableAlias { identifier, index } = variable_map
-                            .borrow()
-                            .get(&VariableAlias::from(tail_variable.clone()))
-                            .unwrap()
-                            .clone();
-                        *tail_variable = Variable {
-                            addressing: tail_variable.addressing.clone(),
-                            identifier,
-                            index,
-                        };
-                    }
-
-                    // Update child/next.
-                    debug_assert!(current.as_ref().child.is_none());
-                    if let Some(next) = current.as_ref().next {
-                        stack.push((
-                            next,
-                            Some(Preceding::Previous(new)),
-                            next_carry,
-                            variable_map,
-                        ));
-                        new.as_mut().next = None;
-                    } else if let Some((next, old_variable_map)) = next_carry {
-                        stack.push((next, Some(Preceding::Previous(new)), None, old_variable_map));
-                        new.as_mut().next = None;
-                    }
-                    debug_assert_eq!(new.as_ref().next, None);
-                    debug_assert_eq!(new.as_ref().child, None);
-                }
-                _ => todo!(),
-            },
-            Op::SizeOf => match current.as_ref().statement.arg.as_slice() {
-                [Value::Variable(_), Value::Variable(_)] => {
-                    // TODO Support case where lhs already exists.
-
-                    // Create new node.
-                    let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
-                    ptr::write(
-                        dst,
-                        NewNode {
-                            statement: current.as_ref().statement.clone(),
-                            preceding,
-                            child: None,
-                            next: None,
-                        },
-                    );
-                    let mut new = NonNull::new(dst).unwrap();
-
-                    let [Value::Variable(lhs), Value::Variable(Variable {
-                        addressing: _,
-                        identifier: rhs_identifier,
-                        index: rhs_index,
-                    })] = new.as_mut().statement.arg.as_mut_slice()
-                    else {
-                        unreachable!()
-                    };
-
-                    // Update new preceding.
-                    match preceding {
-                        Some(Preceding::Parent(mut parent)) => {
-                            debug_assert!(parent.as_ref().child.is_none());
-                            parent.as_mut().child = Some(new);
-                        }
-                        Some(Preceding::Previous(mut previous)) => {
-                            debug_assert!(previous.as_ref().next.is_none());
-                            previous.as_mut().next = Some(new);
-                        }
-                        None => {
-                            first = Some(new);
-                        }
-                    }
-
-                    // Update new variable
-                    let new_identifier = identifier_iterator.next().unwrap();
-                    let new_variable = VariableAlias {
-                        identifier: new_identifier,
-                        index: None,
-                    };
-                    let res = variable_map
-                        .borrow_mut()
-                        .insert(VariableAlias::from(lhs.clone()), new_variable.clone());
-                    assert!(res.is_none()); // Assert isn't pre-existing
-                    *lhs = Variable::from(new_variable);
-
-                    // Update right hande side
-                    let VariableAlias { identifier, index } = variable_map
-                        .borrow()
-                        .get(&VariableAlias {
-                            identifier: rhs_identifier.clone(),
-                            index: rhs_index.clone(),
-                        })
-                        .unwrap()
-                        .clone();
-                    *rhs_identifier = identifier;
-                    *rhs_index = index;
-
-                    // Go next statement.
-                    debug_assert!(current.as_ref().child.is_none());
-                    if let Some(next) = current.as_ref().next {
-                        stack.push((
-                            next,
-                            Some(Preceding::Previous(new)),
-                            next_carry,
-                            variable_map,
-                        ));
-                        new.as_mut().next = None;
-                    } else if let Some((next, old_variable_map)) = next_carry {
-                        stack.push((next, Some(Preceding::Previous(new)), None, old_variable_map));
-                        new.as_mut().next = None;
-                    }
-                    debug_assert_eq!(new.as_ref().next, None);
-                    debug_assert_eq!(new.as_ref().child, None);
-                }
-                x @ _ => todo!("{x:?}"),
-            },
-            // Else
-            _ => {
-                // Create new node.
-                let dst = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
+                // Create the entry node (e.g. `write 2 b` creates `in = 2 b`).
+                let fn_entry_ptr = alloc(Layout::new::<NewNode>()).cast();
                 ptr::write(
-                    dst,
+                    fn_entry_ptr,
                     NewNode {
-                        statement: current.as_ref().statement.clone(),
-                        preceding,
+                        statement: Statement {
+                            op: Op::Assign,
+                            arg: once(Value::Variable(Variable {
+                                addressing: Addressing::Direct,
+                                identifier: Identifier::fn_in(),
+                                index: None,
+                                cast: None,
+                            }))
+                            .chain(tail.iter().cloned())
+                            .collect(),
+                        },
+                        preceding: Some(Preceding::Previous(current)),
                         child: None,
-                        next: None,
+                        next: fn_def.as_ref().child,
                     },
                 );
-                let mut new = NonNull::new(dst).unwrap();
+                let fn_entry = NonNull::new(fn_entry_ptr).unwrap();
 
-                // Update new preceding.
-                match preceding {
-                    Some(Preceding::Parent(mut parent)) => {
-                        debug_assert!(parent.as_ref().child.is_none());
-                        parent.as_mut().child = Some(new);
+                // Push next node to the carry.
+                carry.push(current_ref.next);
+                maps.push(HashMap::new());
+                stack.push(fn_entry);
+
+                // Replace the next node leading into the function.
+                let outer_next = current_ref.next.replace(fn_entry);
+
+                // The function stack contains clones of the functions nodes that are inlined.
+                let mut fn_stack = vec![(fn_entry, 0)];
+                while let Some((mut fn_node, fn_depth)) = fn_stack.pop() {
+                    if let Some(child) = fn_node.as_ref().child {
+                        // Clone child node.
+                        let new_child_ptr = alloc(Layout::new::<NewNode>()).cast();
+                        ptr::copy_nonoverlapping(child.as_ptr(), new_child_ptr, 1);
+                        let mut new_child = NonNull::new(new_child_ptr).unwrap();
+                        // Point to new child.
+                        fn_node.as_mut().child = Some(new_child);
+                        // Update preceding.
+                        new_child.as_mut().preceding = Some(Preceding::Parent(fn_node));
+                        // Push child to fn stack.
+                        fn_stack.push((new_child, fn_depth + 1));
                     }
-                    Some(Preceding::Previous(mut previous)) => {
-                        debug_assert!(previous.as_ref().next.is_none());
-                        previous.as_mut().next = Some(new);
+                    if let Some(next) = fn_node.as_ref().next {
+                        // Clone next node.
+                        let new_next_ptr = alloc(Layout::new::<NewNode>()).cast();
+                        ptr::copy_nonoverlapping(next.as_ptr(), new_next_ptr, 1);
+                        let mut new_next = NonNull::new(new_next_ptr).unwrap();
+                        // Point to new next.
+                        fn_node.as_mut().next = Some(new_next);
+                        // Update preceding.
+                        new_next.as_mut().preceding = Some(Preceding::Previous(fn_node));
+                        // Push next to fn stack.
+                        fn_stack.push((new_next, fn_depth));
+                    } else if fn_depth == 0 {
+                        assert_eq!(fn_stack, []);
+                        fn_node.as_mut().next = outer_next;
                     }
-                    None => {
-                        first = Some(new);
+                }
+
+                // Remove the call node
+                if let Some(preceding) = current_ref.preceding {
+                    match preceding {
+                        Preceding::Previous(mut previous) => {
+                            previous.as_mut().child = current_ref.next;
+                        }
+                        Preceding::Parent(mut parent) => {
+                            parent.as_mut().next = current_ref.next;
+                        }
                     }
                 }
-
-                // Update existing variables.
-                for variable in new
-                    .as_mut()
-                    .statement
-                    .arg
-                    .iter_mut()
-                    .filter_map(Value::variable_mut)
-                {
-                    let var = VariableAlias::from(variable.clone());
-
-                    let VariableAlias { identifier, index } =
-                        variable_map.borrow().get(&var).unwrap().clone();
-                    *variable = Variable {
-                        addressing: variable.addressing.clone(),
-                        identifier,
-                        index,
-                    };
+                if let Some(mut next) = current_ref.next {
+                    next.as_mut().preceding = current_ref.preceding;
                 }
-
-                // Update child/next.
-                if let Some(child) = current.as_ref().child {
-                    stack.push((
-                        child,
-                        Some(Preceding::Parent(new)),
-                        None,
-                        variable_map.clone(),
-                    ));
-                    new.as_mut().child = None;
+                dealloc(current.as_ptr().cast(), Layout::new::<NewNode>());
+            }
+            _ => {
+                if let Some(child) = current_ref.child {
+                    stack.push(child);
                 }
-                if let Some(next) = current.as_ref().next {
-                    stack.push((
-                        next,
-                        Some(Preceding::Previous(new)),
-                        next_carry,
-                        variable_map,
-                    ));
-                    new.as_mut().next = None;
-                } else if let Some((next, old_variable_map)) = next_carry {
-                    stack.push((next, Some(Preceding::Previous(new)), None, old_variable_map));
-                    new.as_mut().next = None;
+                if let Some(next) = current_ref.next {
+                    stack.push(next);
                 }
-                debug_assert_eq!(new.as_ref().next, None);
-                debug_assert_eq!(new.as_ref().child, None);
             }
         }
     }
 
-    // Dealloc old tree
-    dealloc_syntax(node);
-
-    first.unwrap()
+    for definition in definitions {
+        let mut def_stack = vec![definition];
+        while let Some(def_node) = def_stack.pop() {
+            if let Some(child) = def_node.as_ref().child {
+                def_stack.push(child);
+            }
+            if let Some(next) = def_node.as_ref().next {
+                def_stack.push(next);
+            }
+            dealloc(def_node.as_ptr().cast(), Layout::new::<NewNode>());
+        }
+    }
+    first
 }
 
 /// Evaluates the `current` node, appends new nodes to evaluate to the tree (to which `current`
 /// links), and pushes them to the `stack`.
-pub unsafe fn explore_node(
-    mut current: NonNull<NewStateNode>,
-    stack: &mut Vec<NonNull<NewStateNode>>,
-) {
+pub unsafe fn explore_node(mut current: NonNull<NewStateNode>, stack: &mut Vec<NonNull<NewStateNode>>) {
     let current_ref = current.as_mut();
     let ast_node = current_ref.statement.as_ref();
     let statement = &ast_node.statement;
@@ -1958,26 +1461,13 @@ pub unsafe fn explore_node(
 
                                 // If this would exit a loop, the next statement is the 1st statement of the loop.
                                 if parent.as_ref().statement.op == Op::Loop {
-                                    debug_assert_eq!(
-                                        current_ref.scope.unwrap().as_ref().statement,
-                                        parent
-                                    );
+                                    debug_assert_eq!(current_ref.scope.unwrap().as_ref().statement, parent);
                                     let parent_child = parent.as_ref().child.unwrap();
-                                    break new_append(
-                                        current,
-                                        current_ref.scope,
-                                        parent_child,
-                                        stack,
-                                    );
+                                    break new_append(current, current_ref.scope, parent_child, stack);
                                 }
                                 // Else if this wouldn't exit a loop, the next statement is the next statement of this parent if there is a next.
                                 else if let Some(parent_next) = parent.as_ref().next {
-                                    break new_append(
-                                        current,
-                                        current_ref.scope,
-                                        parent_next,
-                                        stack,
-                                    );
+                                    break new_append(current, current_ref.scope, parent_next, stack);
                                 }
                             }
                         },
@@ -2023,10 +1513,7 @@ pub unsafe fn explore_node(
 
                             // If this would exit a loop, the next statement is the 1st statement of the loop.
                             if parent.as_ref().statement.op == Op::Loop {
-                                debug_assert_eq!(
-                                    current_ref.scope.unwrap().as_ref().statement,
-                                    parent
-                                );
+                                debug_assert_eq!(current_ref.scope.unwrap().as_ref().statement, parent);
                                 let parent_child = parent.as_ref().child.unwrap();
                                 break new_append(current, current_ref.scope, parent_child, stack);
                             }
@@ -2048,10 +1535,7 @@ pub unsafe fn explore_node(
         // See 1 & 2
         _ => {
             let scope = current_ref.scope;
-            current_ref.unexplored = (
-                new_append(current, scope, ast_node.next.unwrap(), stack),
-                Vec::new(),
-            );
+            current_ref.unexplored = (new_append(current, scope, ast_node.next.unwrap(), stack), Vec::new());
         }
     }
 }
@@ -2080,8 +1564,7 @@ impl<'a> Explorer<'a> {
             // Checks if conditions for `current` node being a leaf node are true, if true calls
             // backpropagates up the tree.
             let current_ref = current.as_ref();
-            let no_unexplored_nodes =
-                current_ref.unexplored.0.is_empty() && current_ref.unexplored.1.is_empty();
+            let no_unexplored_nodes = current_ref.unexplored.0.is_empty() && current_ref.unexplored.1.is_empty();
             match (
                 no_unexplored_nodes,
                 &current_ref.statement.as_ref().statement.op,
@@ -2093,7 +1576,6 @@ impl<'a> Explorer<'a> {
                 // If hit the loop limit of this loop.
                 (.., Some(0)) => backpropagate(current, GraphNodeEnd::Loop),
                 (false, ..) => {}
-                _ => unreachable!(),
             }
 
             Explore::Current(current)
@@ -2127,10 +1609,7 @@ unsafe fn dealloc_syntax(first: NonNull<NewNode>) {
         if let Some(next) = current.as_ref().next {
             stack.push(next);
         }
-        alloc::dealloc(
-            current.as_ptr().cast(),
-            alloc::Layout::new::<NewStateNode>(),
-        );
+        alloc::dealloc(current.as_ptr().cast(), alloc::Layout::new::<NewStateNode>());
     }
 }
 
@@ -2199,9 +1678,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                 }
             }
             [Value::Variable(variable), tail @ ..]
-                if tail
-                    .iter()
-                    .all(|t| matches!(t, Value::Literal(Literal::Integer(_)))) =>
+                if tail.iter().all(|t| matches!(t, Value::Literal(Literal::Integer(_)))) =>
             {
                 let key = TypeKey::from(variable);
                 match state.get(&key) {
@@ -2209,18 +1686,14 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                         // An array of 2 literal can be `u8 u8`, `u8 u16`, `u8 u32` etc.
                         let possible = tail
                             .iter()
-                            .map(|t| {
-                                TypeValueInteger::possible(*t.literal().unwrap().integer().unwrap())
-                            })
+                            .map(|t| TypeValueInteger::possible(*t.literal().unwrap().integer().unwrap()))
                             .multi_cartesian_product();
                         possible
                             .map(|set| {
                                 let mut new_state = state.clone();
                                 new_state.insert(
                                     key.clone(),
-                                    TypeValue::Array(TypeValueArray(
-                                        set.into_iter().map(TypeValue::Integer).collect(),
-                                    )),
+                                    TypeValue::Array(TypeValueArray(set.into_iter().map(TypeValue::Integer).collect())),
                                 );
                                 new_state
                             })
@@ -2279,9 +1752,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                 },
             )] => {
                 let key = TypeKey::from(lhs.clone());
-                let rhs_state = state
-                    .get(&TypeKey::from(rhs.clone()))
-                    .expect(&format!("{:?}", rhs));
+                let rhs_state = state.get(&TypeKey::from(rhs.clone())).expect(&format!("{:?}", rhs));
                 match state.get(&key) {
                     None => {
                         let mut new_state = state.clone();
@@ -2295,6 +1766,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                 addressing: Addressing::Reference,
                 identifier,
                 index,
+                cast: _,
             })] => {
                 let mut new_state = state.clone();
                 new_state.insert(
@@ -2490,28 +1962,24 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                 state.get(&TypeKey::from(lhs)),
                 state.get(&TypeKey::from(rhs)),
             ) {
-                (
-                    Some(TypeValue::Integer(a)),
-                    Some(TypeValue::Integer(b)),
-                    Some(TypeValue::Integer(c)),
-                ) => match a.checked_add(b).and_then(|ab| ab.checked_add(c)) {
-                    Ok(z) => {
-                        let mut new_state = state.clone();
-                        *new_state.get_mut(&TypeKey::from(out)).unwrap() = TypeValue::Integer(z);
-                        vec![new_state]
-                    }
-                    _ => todo!(),
-                },
-                (None, Some(TypeValue::Integer(b)), Some(TypeValue::Integer(c))) => {
-                    match b.checked_add(c) {
+                (Some(TypeValue::Integer(a)), Some(TypeValue::Integer(b)), Some(TypeValue::Integer(c))) => {
+                    match a.checked_add(b).and_then(|ab| ab.checked_add(c)) {
                         Ok(z) => {
                             let mut new_state = state.clone();
-                            new_state.insert(TypeKey::from(out), TypeValue::Integer(z));
+                            *new_state.get_mut(&TypeKey::from(out)).unwrap() = TypeValue::Integer(z);
                             vec![new_state]
                         }
-                        _ => Vec::new(),
+                        _ => todo!(),
                     }
                 }
+                (None, Some(TypeValue::Integer(b)), Some(TypeValue::Integer(c))) => match b.checked_add(c) {
+                    Ok(z) => {
+                        let mut new_state = state.clone();
+                        new_state.insert(TypeKey::from(out), TypeValue::Integer(z));
+                        vec![new_state]
+                    }
+                    _ => Vec::new(),
+                },
                 _ => todo!(),
             },
             _ => todo!(),
@@ -2546,6 +2014,7 @@ fn get_possible_states(statement: &Statement, state: &TypeValueState) -> Vec<Typ
                 addressing,
                 identifier,
                 index,
+                cast: _,
             })] => {
                 let lhs_key = TypeKey::Variable(VariableAlias {
                     identifier: identifier.clone(),
@@ -2733,9 +2202,7 @@ impl TypeState {
         self.0.insert(key, value)
     }
     fn cost(&self) -> u64 {
-        self.0
-            .iter()
-            .fold(0, |acc, (_, x)| acc.saturating_add(x.cost()))
+        self.0.iter().fold(0, |acc, (_, x)| acc.saturating_add(x.cost()))
     }
 }
 
@@ -2894,9 +2361,9 @@ impl From<Type> for TypeValue {
             Type::I16 => TypeValue::Integer(TypeValueInteger::I16(MyRange::any())),
             Type::I32 => TypeValue::Integer(TypeValueInteger::I32(MyRange::any())),
             Type::I64 => TypeValue::Integer(TypeValueInteger::I64(MyRange::any())),
-            Type::Array(box Array(vec)) => TypeValue::Array(TypeValueArray(
-                vec.into_iter().map(TypeValue::from).collect(),
-            )),
+            Type::Array(box Array(vec)) => {
+                TypeValue::Array(TypeValueArray(vec.into_iter().map(TypeValue::from).collect()))
+            }
         }
     }
 }
@@ -3690,10 +3157,7 @@ impl TypeValueInteger {
 
         match x {
             I64_MIN..I32_MIN => vec![Self::I64(MyRange::from(x as i64))],
-            I32_MIN..I16_MIN => vec![
-                Self::I64(MyRange::from(x as i64)),
-                Self::I32(MyRange::from(x as i32)),
-            ],
+            I32_MIN..I16_MIN => vec![Self::I64(MyRange::from(x as i64)), Self::I32(MyRange::from(x as i32))],
             I16_MIN..I8_MIN => vec![
                 Self::I64(MyRange::from(x as i64)),
                 Self::I32(MyRange::from(x as i32)),
@@ -3750,10 +3214,7 @@ impl TypeValueInteger {
                 Self::U64(MyRange::from(x as u64)),
                 Self::U32(MyRange::from(x as u32)),
             ],
-            U64_EDGE..U64_MAX => vec![
-                Self::I64(MyRange::from(x as i64)),
-                Self::U64(MyRange::from(x as u64)),
-            ],
+            U64_EDGE..U64_MAX => vec![Self::I64(MyRange::from(x as i64)), Self::U64(MyRange::from(x as u64))],
             U64_MAX => vec![Self::U64(MyRange::from(x as u64))],
             _ => panic!(),
         }
@@ -3775,9 +3236,7 @@ impl TypeValueInteger {
 
 // An inclusive range that supports wrapping around.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MyRange<
-    T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
-> {
+pub struct MyRange<T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One> {
     domain: std::ops::RangeInclusive<T>,
     min: Option<T>,
     abs_min: Option<T>,
@@ -3786,14 +3245,7 @@ pub struct MyRange<
 }
 
 impl<
-        T: std::fmt::Debug
-            + Copy
-            + Ord
-            + std::ops::Sub<Output = T>
-            + std::ops::Add<Output = T>
-            + Bounded
-            + Zero
-            + One,
+        T: std::fmt::Debug + Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
     > std::fmt::Display for MyRange<T>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -3801,16 +3253,8 @@ impl<
     }
 }
 
-impl<
-        T: Copy
-            + Ord
-            + std::ops::Sub<Output = T>
-            + std::ops::Add<Output = T>
-            + Bounded
-            + Zero
-            + One
-            + CheckedDiv,
-    > MyRange<T>
+impl<T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One + CheckedDiv>
+    MyRange<T>
 {
     fn checked_div(&self, other: Self) -> Result<Self, ()> {
         match (self.transform.is_empty(), other.transform.is_empty()) {
@@ -3832,16 +3276,8 @@ impl<
     }
 }
 
-impl<
-        T: Copy
-            + Ord
-            + std::ops::Sub<Output = T>
-            + std::ops::Add<Output = T>
-            + Bounded
-            + Zero
-            + One
-            + OverflowingAdd,
-    > std::ops::Add<Self> for MyRange<T>
+impl<T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One + OverflowingAdd>
+    std::ops::Add<Self> for MyRange<T>
 {
     type Output = Self;
 
@@ -3865,16 +3301,8 @@ impl<
     }
 }
 
-impl<
-        T: Copy
-            + Ord
-            + std::ops::Sub<Output = T>
-            + std::ops::Add<Output = T>
-            + Bounded
-            + Zero
-            + One
-            + OverflowingAdd,
-    > std::ops::Add<T> for MyRange<T>
+impl<T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One + OverflowingAdd>
+    std::ops::Add<T> for MyRange<T>
 {
     type Output = Self;
 
@@ -3895,16 +3323,8 @@ impl<
     }
 }
 
-impl<
-        T: Copy
-            + Ord
-            + std::ops::Sub<Output = T>
-            + std::ops::Add<Output = T>
-            + Bounded
-            + Zero
-            + One
-            + OverflowingMul,
-    > std::ops::Mul for MyRange<T>
+impl<T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One + OverflowingMul>
+    std::ops::Mul for MyRange<T>
 {
     type Output = Self;
 
@@ -3928,16 +3348,8 @@ impl<
     }
 }
 
-impl<
-        T: Copy
-            + Ord
-            + std::ops::Sub<Output = T>
-            + std::ops::Add<Output = T>
-            + Bounded
-            + Zero
-            + One
-            + OverflowingSub,
-    > std::ops::Sub for MyRange<T>
+impl<T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One + OverflowingSub>
+    std::ops::Sub for MyRange<T>
 {
     type Output = Self;
 
@@ -4061,9 +3473,7 @@ impl<
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Transform<
-    T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
-> {
+pub struct Transform<T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One> {
     op: TransformOp,
     rhs: MyRange<T>,
 }
@@ -4076,9 +3486,8 @@ pub enum TransformOp {
     Mul,
 }
 
-impl<
-        T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
-    > From<T> for MyRange<T>
+impl<T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One> From<T>
+    for MyRange<T>
 {
     fn from(x: T) -> Self {
         Self {
@@ -4091,17 +3500,7 @@ impl<
     }
 }
 
-impl<
-        T: Copy
-            + Ord
-            + std::ops::Sub<Output = T>
-            + std::ops::Add<Output = T>
-            + Bounded
-            + Zero
-            + One
-            + Signed,
-    > MyRange<T>
-{
+impl<T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One + Signed> MyRange<T> {
     fn from_signed(domain: std::ops::RangeInclusive<T>) -> MyRange<T> {
         Self {
             domain: domain.clone(),
@@ -4115,16 +3514,8 @@ impl<
         }
     }
 }
-impl<
-        T: Copy
-            + Ord
-            + std::ops::Sub<Output = T>
-            + std::ops::Add<Output = T>
-            + Bounded
-            + Zero
-            + One
-            + Unsigned,
-    > MyRange<T>
+impl<T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One + Unsigned>
+    MyRange<T>
 {
     fn from_unsigned(domain: std::ops::RangeInclusive<T>) -> MyRange<T> {
         Self {
@@ -4138,10 +3529,7 @@ impl<
 }
 
 #[allow(dead_code)]
-impl<
-        T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One,
-    > MyRange<T>
-{
+impl<T: Copy + Ord + std::ops::Sub<Output = T> + std::ops::Add<Output = T> + Bounded + Zero + One> MyRange<T> {
     fn len(&self) -> T {
         *self.domain.end() - *self.domain.start()
     }

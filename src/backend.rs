@@ -73,7 +73,7 @@ pub unsafe fn instruction_from_node(
     data: &mut String,
     bss: &mut String,
     block_counter: &mut usize,
-    empty: &mut bool,
+    _empty: &mut bool,
     type_data: &mut HashMap<Identifier, Type>,
 ) -> String {
     let mut assembly = String::new();
@@ -106,8 +106,7 @@ pub unsafe fn instruction_from_node(
                     type_data.insert(identifier.clone(), value_type.clone());
                     writeln!(bss, "{identifier}: .skip {}", value_type.bytes()).unwrap();
                 }
-                [Value::Variable(Variable { identifier, .. }), Value::Type(value_type), Value::Literal(literal)] =>
-                {
+                [Value::Variable(Variable { identifier, .. }), Value::Type(value_type), Value::Literal(literal)] => {
                     type_data.insert(identifier.clone(), value_type.clone());
                     let data_value = match value_type {
                         Type::U8 => format!(".byte {}", literal.integer().unwrap()),
@@ -152,9 +151,7 @@ pub unsafe fn instruction_from_node(
                                     .collect::<String>()
                             )
                         }
-                        Type::Array(box Array(vec))
-                            if vec.iter().all(|t: &Type| *t == Type::U16) =>
-                        {
+                        Type::Array(box Array(vec)) if vec.iter().all(|t: &Type| *t == Type::U16) => {
                             format!(
                                 ".2byte {}",
                                 iter.map(|l| l.integer().unwrap().to_string())
@@ -190,34 +187,34 @@ pub unsafe fn instruction_from_node(
                     addressing: Addressing::Direct,
                     identifier,
                     index: None,
-                }), Value::Literal(Literal::Integer(y))] => {
-                    match type_data.get(identifier).unwrap() {
-                        Type::U8 => write!(
-                            assembly,
-                            "\
+                    cast: _,
+                }), Value::Literal(Literal::Integer(y))] => match type_data.get(identifier).unwrap() {
+                    Type::U8 => write!(
+                        assembly,
+                        "\
                             ldr x0, ={identifier}\n\
                             mov w1, #{y}\n\
                             strb w1, [x0]\n\
                         "
-                        )
-                        .unwrap(),
-                        Type::U64 => write!(
-                            assembly,
-                            "\
+                    )
+                    .unwrap(),
+                    Type::U64 => write!(
+                        assembly,
+                        "\
                             ldr x0, ={identifier}\n\
                             mov x1, #{y}\n\
                             str x1, [x0]\n\
                         "
-                        )
-                        .unwrap(),
-                        _ => todo!(),
-                    }
-                }
+                    )
+                    .unwrap(),
+                    _ => todo!(),
+                },
 
                 [Value::Variable(Variable {
                     addressing: Addressing::Direct,
                     identifier,
                     index: None,
+                    cast: _,
                 }), Value::Literal(Literal::String(string))] => {
                     let bytes = string.as_bytes();
                     let Type::Array(box Array(vec)) = type_data.get(identifier).unwrap() else {
@@ -265,10 +262,12 @@ pub unsafe fn instruction_from_node(
                     addressing: Addressing::Direct,
                     identifier: lhs_identifier,
                     index: None,
+                    cast: _,
                 }), Value::Variable(Variable {
                     addressing: Addressing::Direct,
                     identifier: rhs_identifier,
                     index: None,
+                    cast: _,
                 })] => {
                     let rhs_type = type_data.get(rhs_identifier).unwrap();
                     match rhs_type {
@@ -294,6 +293,7 @@ pub unsafe fn instruction_from_node(
                     addressing: Addressing::Direct,
                     identifier,
                     index: None,
+                    cast: _,
                 }), rest @ ..] => match type_data.get(identifier).unwrap() {
                     Type::Array(box Array(vec)) if vec.iter().all(|t| *t == Type::U8) => {
                         assert_eq!(vec.len(), rest.len());
@@ -343,31 +343,30 @@ pub unsafe fn instruction_from_node(
                     addressing: Addressing::Direct,
                     identifier,
                     index: None,
-                }), Value::Literal(Literal::Integer(y))] => {
-                    match type_data.get(identifier).unwrap() {
-                        Type::U8 => write!(
-                            &mut assembly,
-                            "\
+                    cast: _,
+                }), Value::Literal(Literal::Integer(y))] => match type_data.get(identifier).unwrap() {
+                    Type::U8 => write!(
+                        &mut assembly,
+                        "\
                             ldr x0, ={identifier}\n\
                             ldr w1, [x0]\n\
                             add w1, w1, #{y}\n\
                             strb w1, [x0]\n\
                         "
-                        )
-                        .unwrap(),
-                        Type::U64 => write!(
-                            &mut assembly,
-                            "\
+                    )
+                    .unwrap(),
+                    Type::U64 => write!(
+                        &mut assembly,
+                        "\
                             ldr x0, ={identifier}\n\
                             ldr x1, [x0]\n\
                             add x1, x1, #{y}\n\
                             str x1, [x0]\n\
                         "
-                        )
-                        .unwrap(),
-                        _ => todo!(),
-                    }
-                }
+                    )
+                    .unwrap(),
+                    _ => todo!(),
+                },
                 _ => todo!(),
             },
             Op::SubAssign => match arg {
@@ -375,31 +374,30 @@ pub unsafe fn instruction_from_node(
                     addressing: Addressing::Direct,
                     identifier,
                     index: None,
-                }), Value::Literal(Literal::Integer(y))] => {
-                    match type_data.get(identifier).unwrap() {
-                        Type::U8 => write!(
-                            &mut assembly,
-                            "\
+                    cast: _,
+                }), Value::Literal(Literal::Integer(y))] => match type_data.get(identifier).unwrap() {
+                    Type::U8 => write!(
+                        &mut assembly,
+                        "\
                             ldr x0, ={identifier}\n\
                             ldr w1, [x0]\n\
                             sub w1, w1, #{y}\n\
                             strb w1, [x0]\n\
                         "
-                        )
-                        .unwrap(),
-                        Type::U64 => write!(
-                            &mut assembly,
-                            "\
+                    )
+                    .unwrap(),
+                    Type::U64 => write!(
+                        &mut assembly,
+                        "\
                             ldr x0, ={identifier}\n\
                             ldr x1, [x0]\n\
                             sub x1, x1, #{y}\n\
                             str x1, [x0]\n\
                         "
-                        )
-                        .unwrap(),
-                        _ => todo!(),
-                    }
-                }
+                    )
+                    .unwrap(),
+                    _ => todo!(),
+                },
                 _ => todo!(),
             },
             Op::If(Cmp::Eq) => match arg {
@@ -407,6 +405,7 @@ pub unsafe fn instruction_from_node(
                     addressing: Addressing::Direct,
                     identifier,
                     index: None,
+                    cast: _,
                 }), Value::Literal(Literal::Integer(y))] => {
                     write!(
                         &mut assembly,
@@ -437,6 +436,7 @@ pub unsafe fn instruction_from_node(
                     addressing: Addressing::Direct,
                     identifier,
                     index: None,
+                    cast: _,
                 })] => match type_data.get(identifier).unwrap() {
                     Type::U8 => {
                         // Load data and store data in new location.
@@ -456,6 +456,7 @@ pub unsafe fn instruction_from_node(
                     addressing: Addressing::Reference,
                     identifier,
                     index: None,
+                    cast: _,
                 })] => {
                     writeln!(&mut assembly, "ldr {register}, ={identifier}",).unwrap();
                 }

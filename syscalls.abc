@@ -1,6 +1,6 @@
 def exit
     mov x8 93
-    mov x0 in[0]
+    mov x0 in
     svc 0
     unreachable
 def write

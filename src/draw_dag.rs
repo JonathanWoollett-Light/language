@@ -46,13 +46,7 @@ pub fn draw_dag(node: NonNull<crate::NewStateNode>, width_spacing: usize) -> Str
         prev_depth = Some(depth);
 
         // Add coordinates of the node
-        coordinates.insert(
-            Coordinate {
-                x: column,
-                y: depth,
-            },
-            next,
-        );
+        coordinates.insert(Coordinate { x: column, y: depth }, next);
 
         // Add new nodes to stack.
         if let Some(n) = unsafe { next.as_ref().next.0 } {
@@ -106,9 +100,7 @@ pub fn draw_dag(node: NonNull<crate::NewStateNode>, width_spacing: usize) -> Str
                         while let Some(first_following) = below_iter.next() {
                             if let Some(second_following) = below_iter.peek() {
                                 output.push('┬');
-                                output.extend(
-                                    repeat('─').take(second_following.x - first_following.x - 1),
-                                );
+                                output.extend(repeat('─').take(second_following.x - first_following.x - 1));
                             } else {
                                 output.push('┐');
                                 last = first_following.x + 1;

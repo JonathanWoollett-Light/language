@@ -28,7 +28,6 @@ impl NewNode {
 
 #[derive(Debug, Eq, PartialEq, Default, Clone)]
 pub struct Statement {
-    pub comptime: bool,
     pub op: Op,
     pub arg: Arg,
 }
@@ -359,6 +358,7 @@ impl TryFrom<&Variable> for Register {
             addressing,
             identifier,
             index,
+            cast: _,
         }: &Variable,
     ) -> Result<Self, Self::Error> {
         if *addressing == Addressing::Direct
@@ -418,9 +418,14 @@ impl Default for Literal {
 
 #[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
 pub struct Variable {
+    /// The `&`, `*` or `` in `&x`, `*x` or `x`.
     pub addressing: Addressing,
+    /// The variable identifier e.g `x` in `&x`.
     pub identifier: Identifier,
+    /// The index operation e.g. `[1]` in `x[1]`.
     pub index: Option<Box<Index>>,
+    /// The cast e.g. `:i32` in `x:i32`.
+    pub cast: Option<Cast>,
 }
 
 impl From<Identifier> for Variable {
@@ -429,6 +434,7 @@ impl From<Identifier> for Variable {
             addressing: Addressing::Direct,
             identifier,
             index: None,
+            cast: None,
         }
     }
 }
@@ -458,13 +464,11 @@ impl std::fmt::Display for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{}{}{}",
+            "{}{}{}{}",
             self.addressing,
             self.identifier,
-            self.index
-                .as_ref()
-                .map(|v| format!("[{v}]"))
-                .unwrap_or(String::new())
+            self.index.as_ref().map(|v| format!("[{v}]")).unwrap_or(String::new()),
+            self.cast.as_ref().map(|t| format!(": {t}")).unwrap_or(String::new())
         )
     }
 }
@@ -475,6 +479,7 @@ impl From<&str> for Variable {
             addressing: Addressing::Direct,
             identifier: Identifier::from(s),
             index: None,
+            cast: None,
         }
     }
 }
@@ -488,6 +493,12 @@ impl PartialEq<&str> for Identifier {
 }
 
 impl Identifier {
+    pub fn fn_in() -> Self {
+        Self(Vec::from(b"in"))
+    }
+    pub fn fn_out() -> Self {
+        Self(Vec::from(b"out"))
+    }
     pub fn new() -> Self {
         Self(Vec::new())
     }
@@ -597,7 +608,31 @@ impl Op {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Cast {
+    /// E.g. `x: i32`
+    As(Type),
+    /// E.g. `x: ?`
+    ///
+    /// Casts to the previous cast.
+    /// ```text
+    /// x:i32
+    /// x:u8
+    /// x:^ // Is identical to `x:i32`
+    /// ```
+    Prev,
+}
+
+impl std::fmt::Display for Cast {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::As(cast_type) => write!(f, "{cast_type}"),
+            Self::Prev => write!(f, "^"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub enum Type {
     #[default]
     U8,
@@ -647,7 +682,7 @@ impl std::fmt::Display for Type {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct Array(pub Vec<Type>);
 
 impl Array {
@@ -705,7 +740,7 @@ pub enum Op {
     Break,
     Def,
     Call,
-    Assume(Cmp),
+    // Assume(Cmp),
     Require(Cmp),
     Type, // Type,
     Unreachable,

@@ -49,8 +49,23 @@ pub fn get_type<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Type {
     }
 }
 
+#[cfg_attr(test, instrument(level = "TRACE", skip(bytes)))]
+pub fn get_cast<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Cast {
+    match bytes.peek().map(|r| r.as_ref().unwrap()) {
+        Some(b'^') => {
+            bytes.next().unwrap().unwrap();
+            Cast::Prev
+        }
+        _ => Cast::As(get_type(bytes)),
+    }
+}
+
 #[cfg_attr(test, instrument(level = "TRACE", skip(bytes), ret))]
 pub fn get_variable<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Variable {
+    let mut cast = None;
+
+    let mut index = None;
+
     // Get identifier
     let mut identifier = Identifier::new();
 
@@ -83,37 +98,14 @@ pub fn get_variable<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Variable {
             i += 1;
         }
 
-        match bytes.peek().map(|r| r.as_ref().unwrap()) {
-            Some(b'a'..=b'z' | b'_' | b'0'..=b'9') => {
+        let byte = bytes.peek().map(|r| r.as_ref().unwrap());
+        match (byte, index.is_some(), cast.is_some()) {
+            (Some(b'a'..=b'z' | b'_' | b'0'..=b'9'), false, false) => {
                 let b = bytes.next().unwrap().unwrap();
                 identifier.push(b);
             }
-            // End of line
-            Some(b' ') | Some(b'\n') | None => {
-                break Variable {
-                    addressing,
-                    identifier,
-                    index: None,
-                }
-            }
-            // Slice start
-            Some(b'.') => {
-                break Variable {
-                    addressing,
-                    identifier,
-                    index: None,
-                }
-            }
-            // Slice end
-            Some(b']') => {
-                break Variable {
-                    addressing,
-                    identifier,
-                    index: None,
-                }
-            }
             // Index start
-            Some(b'[') => {
+            (Some(b'['), false, false) => {
                 bytes.next().unwrap().unwrap();
                 let start = get_offset(bytes);
                 match bytes.next().map(Result::unwrap) {
@@ -122,21 +114,27 @@ pub fn get_variable<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Variable {
                         assert_eq!(bytes.next().map(Result::unwrap), Some(b'.'));
                         let stop = get_offset(bytes);
                         assert_eq!(bytes.next().map(Result::unwrap), Some(b']'));
-                        break Variable {
-                            addressing,
-                            identifier,
-                            index: Some(Box::new(Index::Slice(Slice { start, stop }))),
-                        };
+                        index = Some(Box::new(Index::Slice(Slice { start, stop })));
                     }
                     // Offset
                     Some(b']') => {
-                        break Variable {
-                            addressing,
-                            identifier,
-                            index: Some(Box::new(Index::Offset(start.unwrap()))),
-                        }
+                        index = Some(Box::new(Index::Offset(start.unwrap())));
                     }
                     _ => panic!(),
+                }
+            }
+            // Cast start
+            (Some(b':'), _, false) => {
+                bytes.next().unwrap().unwrap();
+                cast = Some(get_cast(bytes));
+            }
+            // End of line
+            (Some(b' ') | Some(b'\n') | None, _, _) => {
+                break Variable {
+                    addressing,
+                    identifier,
+                    index,
+                    cast,
                 }
             }
             _ => panic!(
@@ -274,9 +272,7 @@ pub fn get_value<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Value {
                     _ => panic!(),
                 }
             }
-            Value::Literal(Literal::String(
-                std::str::from_utf8(&string).unwrap().to_string(),
-            ))
+            Value::Literal(Literal::String(std::str::from_utf8(&string).unwrap().to_string()))
         }
         _ => panic!(
             "unexpected: {:?}",
@@ -336,11 +332,7 @@ pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Option<NonNull<NewN
             // Indent
             Some(b' ') => {
                 bytes.next().unwrap().unwrap();
-                let remaining = bytes
-                    .by_ref()
-                    .take(3)
-                    .map(Result::unwrap)
-                    .collect::<Vec<_>>();
+                let remaining = bytes.by_ref().take(3).map(Result::unwrap).collect::<Vec<_>>();
                 debug_assert_eq!(remaining.len(), b"   ".len());
                 assert_eq!(
                     remaining.as_slice(),
@@ -436,19 +428,9 @@ pub fn get_cmp<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Cmp {
 pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
     let variable = get_variable(bytes);
 
-    // Check if statement should only be evaluated at runtime.
-    let comptime = false;
-    // if variable.identifier == "comptime" {
-    //     assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
-
-    //     variable = get_variable(bytes);
-    //     comptime = true;
-    // }
-
     match (variable.identifier.0.as_slice(), &variable.index) {
         // Loop
         (b"loop", None) => Statement {
-            comptime,
             op: Op::Loop,
             arg: get_values(bytes),
         },
@@ -461,10 +443,9 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             let rhs = get_value(bytes);
             let arg = vec![lhs, rhs];
-            Statement { comptime, op, arg }
+            Statement { op, arg }
         }
         (b"break", None) => Statement {
-            comptime,
             op: Op::Break,
             arg: Vec::new(),
         },
@@ -476,10 +457,9 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             let rhs = get_value(bytes);
             let arg = vec![lhs, rhs];
-            Statement { comptime, op, arg }
+            Statement { op, arg }
         }
         (b"unreachable", None) => Statement {
-            comptime,
             op: Op::Unreachable,
             arg: Vec::new(),
         },
@@ -487,7 +467,6 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             let ident = get_variable(bytes);
             Statement {
-                comptime,
                 op: Op::Def,
                 arg: vec![Value::Variable(ident)],
             }
@@ -495,7 +474,6 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
         (b"svc", None) => {
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             Statement {
-                comptime,
                 op: Op::Svc,
                 arg: get_values(bytes),
             }
@@ -503,7 +481,6 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
         (b"mov", None) => {
             assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
             Statement {
-                comptime,
                 op: Op::Mov,
                 arg: get_values(bytes),
             }
@@ -519,7 +496,6 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
 
             // if let Ok(syscall) = Syscall::try_from(lhs.variable().unwrap().identifier.as_slice()) {
             //     return Statement {
-            //         comptime,
             //         op: Op::Syscall(syscall),
             //         arg: get_values(bytes),
             //     };
@@ -533,11 +509,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                     assert_eq!(Some(b' '), bytes.next().map(Result::unwrap));
                     let arg = get_value(bytes);
                     let arg = vec![lhs, arg];
-                    Statement {
-                        comptime,
-                        op: arithmetic,
-                        arg,
-                    }
+                    Statement { op: arithmetic, arg }
                 }
                 Some(b':') => {
                     bytes.next().map(Result::unwrap);
@@ -545,7 +517,6 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                         Some(b' ') => {
                             let variable_type = get_type(bytes);
                             Statement {
-                                comptime,
                                 op: Op::Type,
                                 arg: vec![lhs, Value::Type(variable_type)],
                             }
@@ -562,44 +533,31 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                                             addressing: Addressing::Direct,
                                             identifier,
                                             index: None,
+                                            ..
                                         }) if identifier == "sizeof" => {
                                             let tail = get_values(bytes);
                                             Statement {
-                                                comptime,
                                                 op: Op::SizeOf,
-                                                arg: once(lhs)
-                                                    .chain(tail.iter().cloned())
-                                                    .collect(),
+                                                arg: once(lhs).chain(tail.iter().cloned()).collect(),
                                             }
                                         }
                                         _ => match bytes.peek().map(|r| r.as_ref().unwrap()) {
-                                            Some(p)
-                                                if let Some(arithmetic) = Op::arithmetic(*p) =>
-                                            {
+                                            Some(p) if let Some(arithmetic) = Op::arithmetic(*p) => {
                                                 bytes.next().unwrap().unwrap(); // Skip arithmetic operator.
                                                 assert_eq!(
                                                     bytes.next().map(Result::unwrap),
                                                     Some(b' '),
                                                     "{:?}",
-                                                    std::str::from_utf8(
-                                                        &bytes
-                                                            .map(Result::unwrap)
-                                                            .collect::<Vec<_>>()
-                                                    )
+                                                    std::str::from_utf8(&bytes.map(Result::unwrap).collect::<Vec<_>>())
                                                 );
 
                                                 let second = get_value(bytes);
                                                 let arg = vec![lhs, first, second];
-                                                Statement {
-                                                    comptime,
-                                                    op: arithmetic,
-                                                    arg,
-                                                }
+                                                Statement { op: arithmetic, arg }
                                             }
                                             _ => {
                                                 let tail = get_values(bytes);
                                                 Statement {
-                                                    comptime,
                                                     op: Op::Assign,
                                                     arg: once(lhs)
                                                         .chain(once(first.clone()))
@@ -611,7 +569,6 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                                     }
                                 }
                                 Some(b'\n') => Statement {
-                                    comptime,
                                     op: Op::Assign,
                                     arg: once(lhs).chain(once(first.clone())).collect(),
                                 },
@@ -625,7 +582,6 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                     }
                 }
                 _ => Statement {
-                    comptime,
                     op: Op::Call,
                     arg: std::iter::once(lhs).chain(get_values(bytes)).collect(),
                 },

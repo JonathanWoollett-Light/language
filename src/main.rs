@@ -24,7 +24,7 @@ mod backend;
 use backend::*;
 mod draw_dag;
 
-use std::ffi::CString;
+mod new_middle;
 
 #[cfg(debug_assertions)]
 const LOOP_LIMIT: usize = 1000;
@@ -92,9 +92,7 @@ fn write_file(dir: &PathBuf, file: PathBuf, bytes: &[u8], lock_file: &mut std::f
 
 fn build(path: Option<PathBuf>) {
     let project_path = path.unwrap_or(PathBuf::from("./"));
-    let source_path = project_path
-        .join("source")
-        .with_extension(LANGUAGE_EXTENSION);
+    let source_path = project_path.join("source").with_extension(LANGUAGE_EXTENSION);
     let source = std::fs::read_to_string(source_path).unwrap();
 
     // Create build directory
@@ -143,102 +141,37 @@ fn build(path: Option<PathBuf>) {
         std::fs::create_dir(&exploration_dir).unwrap();
     }
 
-    // Explores states
-    let roots = unsafe { roots(inlined) };
-    let mut explorer = unsafe { Explorer::new(&roots) };
-
+    let mut explorer = unsafe { new_middle::Explorer::new(inlined) };
     let mut i = 0;
-    let path = loop {
-        debug_assert!(i < 50);
+    let explored = loop {
+        explorer = match unsafe { explorer.next() } {
+            new_middle::ExplorationResult::Continue(e) => e,
+            new_middle::ExplorationResult::Done(e) => break e,
+        };
 
-        match unsafe { explorer.next() } {
-            Explore::Current(x) => {
-                let exploration_debug_path = exploration_dir.join(i.to_string());
-                if !exploration_debug_path.exists() {
-                    std::fs::create_dir(&exploration_debug_path).unwrap();
-                }
-
-                // Output current
-                {
-                    let current_path = exploration_debug_path.join("current");
-                    let mut record = OpenOptions::new()
-                        .create(true)
-                        .truncate(true)
-                        .write(true)
-                        .open(current_path)
-                        .unwrap();
-                    record
-                        .write_all(
-                            format!("{:?}", unsafe { x.as_ref().statement.as_ref() }).as_bytes(),
-                        )
-                        .unwrap();
-                }
-
-                // Output stack node
-                {
-                    let stack_path = exploration_debug_path.join("stack");
-                    if !stack_path.exists() {
-                        std::fs::create_dir(&stack_path).unwrap();
-                    }
-
-                    for (i, x) in explorer.stack.iter().enumerate() {
-                        let mut current = x.clone();
-                        let mut output = String::new();
-                        output.push_str(&format!("{}\n", unsafe { current.as_ref() }));
-                        while let Some(prev) = unsafe { current.as_ref().prev } {
-                            current = prev;
-                            output.push_str(&format!("{}\n", unsafe { current.as_ref() }));
-                        }
-
-                        let mut record = OpenOptions::new()
-                            .create(true)
-                            .truncate(true)
-                            .write(true)
-                            .open(stack_path.join(i.to_string()))
-                            .unwrap();
-                        record.write_all(output.as_bytes()).unwrap();
-                    }
-                }
-
-                // Output roots
-                {
-                    let roots_path = exploration_debug_path.join("roots");
-                    if !roots_path.exists() {
-                        std::fs::create_dir(&roots_path).unwrap();
-                    }
-
-                    for (i, x) in explorer.roots.iter().enumerate() {
-                        let mut record = OpenOptions::new()
-                            .create(true)
-                            .truncate(true)
-                            .write(true)
-                            .open(roots_path.join(i.to_string()))
-                            .unwrap();
-                        record
-                            .write_all(draw_dag::draw_dag(x.clone(), 2).as_bytes())
-                            .unwrap();
-                    }
-                }
-            }
-            Explore::Finished(x) => break x,
-        }
         i += 1;
+        assert!(i < 50);
     };
-    #[cfg(debug_assertions)]
-    eprintln!("check counter: {i}");
-
-    // Optimize source
-    let optimized = unsafe { optimize(path) };
-    let optimized_string = display_ast(optimized);
+    let explored_string = display_ast(explored);
     write_file(
         &project_path,
-        PathBuf::from("optimized").with_extension(LANGUAGE_EXTENSION),
-        optimized_string.as_bytes(),
+        PathBuf::from("explored").with_extension(LANGUAGE_EXTENSION),
+        explored_string.as_bytes(),
         &mut lock_file,
     );
 
+    // Optimize source
+    // let optimized = unsafe { optimize(explored) };
+    // let optimized_string = display_ast(optimized);
+    // write_file(
+    //     &project_path,
+    //     PathBuf::from("optimized").with_extension(LANGUAGE_EXTENSION),
+    //     optimized_string.as_bytes(),
+    //     &mut lock_file,
+    // );
+
     // Construct assembly
-    let assembly = assembly_from_node(optimized);
+    let assembly = assembly_from_node(explored);
     let assembly_path = PathBuf::from("assembly").with_extension("s");
     write_file(
         &project_path,
@@ -248,19 +181,12 @@ fn build(path: Option<PathBuf>) {
     );
 
     // Make object file
-    let object_path = project_path
-        .join("build")
-        .join("object")
-        .with_extension("o");
+    let object_path = project_path.join("build").join("object").with_extension("o");
     let object_output = std::process::Command::new("as")
         .args([
             "-o",
             &object_path.display().to_string(),
-            &project_path
-                .join("build")
-                .join(assembly_path)
-                .display()
-                .to_string(),
+            &project_path.join("build").join(assembly_path).display().to_string(),
         ])
         .output()
         .unwrap();
@@ -283,12 +209,7 @@ fn build(path: Option<PathBuf>) {
     object_file.read_to_end(&mut object_buffer).unwrap();
     let object_hash = HEXUPPER.encode(sha256_digest(object_buffer.as_slice()).unwrap().as_ref());
     let object_file_name = object_path.file_stem().unwrap();
-    writeln!(
-        &mut lock_file,
-        "{},{object_hash}",
-        object_file_name.to_str().unwrap()
-    )
-    .unwrap();
+    writeln!(&mut lock_file, "{},{object_hash}", object_file_name.to_str().unwrap()).unwrap();
 
     // Make binary file
     let binary_path = project_path.join("build").join("binary");
@@ -320,22 +241,17 @@ fn build(path: Option<PathBuf>) {
     binary_file.read_to_end(&mut binary_buffer).unwrap();
     let binary_hash = HEXUPPER.encode(sha256_digest(binary_buffer.as_slice()).unwrap().as_ref());
     let binary_file_name = binary_path.file_stem().unwrap();
-    writeln!(
-        &mut lock_file,
-        "{},{binary_hash}",
-        binary_file_name.to_str().unwrap()
-    )
-    .unwrap();
+    writeln!(&mut lock_file, "{},{binary_hash}", binary_file_name.to_str().unwrap()).unwrap();
 }
 
 fn run(path: Option<PathBuf>) {
     build(path.clone());
-    let project_path = path.unwrap_or(PathBuf::from("./"));
-    let binary_path = project_path.join("build").join("binary");
-    let binary_path_cstring = CString::new(binary_path.display().to_string()).unwrap();
-    unsafe {
-        libc::execv(binary_path_cstring.into_raw(), std::ptr::null());
-    }
+    // let project_path = path.unwrap_or(PathBuf::from("./"));
+    // let binary_path = project_path.join("build").join("binary");
+    // let binary_path_cstring = std::ffi::CString::new(binary_path.display().to_string()).unwrap();
+    // unsafe {
+    //     libc::execv(binary_path_cstring.into_raw(), std::ptr::null());
+    // }
 }
 
 #[allow(unreachable_code)]
@@ -352,12 +268,16 @@ fn main() {
                 .write(true)
                 .open(path.join("source").with_extension(LANGUAGE_EXTENSION))
                 .unwrap();
-            source.write_all(b"\
+            source
+                .write_all(
+                    b"\
                 include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang\n\
                 x := \"Hello, World!\\n\"\n\
                 write 1 x\n\
                 exit 0\n\
-            ").unwrap();
+            ",
+                )
+                .unwrap();
         }
         Args::Build(path) => build(path),
         Args::Run(path) => run(path),
@@ -371,13 +291,7 @@ fn display_ast(node: std::ptr::NonNull<crate::ast::NewNode>) -> String {
         let mut stack = vec![(node, 0)];
         let mut string = String::new();
         while let Some((current, indent)) = stack.pop() {
-            writeln!(
-                &mut string,
-                "{}{}",
-                "    ".repeat(indent),
-                current.as_ref().statement
-            )
-            .unwrap();
+            writeln!(&mut string, "{}{}", "    ".repeat(indent), current.as_ref().statement).unwrap();
 
             if let Some(next) = current.as_ref().next {
                 stack.push((next, indent));
@@ -523,10 +437,7 @@ mod tests {
                     statement: Statement {
                         comptime: false,
                         op: Op::Intrinsic(Intrinsic::Assign),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(0)),
-                        ],
+                        arg: vec![Value::Variable(Variable::new("x")), Value::Literal(Literal::Integer(0)),],
                     },
                     child: None,
                     next: Some(1),
@@ -535,10 +446,7 @@ mod tests {
                     statement: Statement {
                         comptime: false,
                         op: Op::Intrinsic(Intrinsic::SubAssign),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(1)),
-                        ],
+                        arg: vec![Value::Variable(Variable::new("x")), Value::Literal(Literal::Integer(1)),],
                     },
                     child: None,
                     next: Some(2),
@@ -547,10 +455,7 @@ mod tests {
                     statement: Statement {
                         comptime: false,
                         op: Op::Intrinsic(Intrinsic::If(Cmp::Lt)),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(0)),
-                        ],
+                        arg: vec![Value::Variable(Variable::new("x")), Value::Literal(Literal::Integer(0)),],
                     },
                     child: Some(3),
                     next: Some(5),
@@ -620,10 +525,7 @@ mod tests {
                     statement: Statement {
                         comptime: false,
                         op: Op::Intrinsic(Intrinsic::SubAssign),
-                        arg: vec![
-                            Value::Variable(Variable::new("x")),
-                            Value::Literal(Literal::Integer(1))
-                        ]
+                        arg: vec![Value::Variable(Variable::new("x")), Value::Literal(Literal::Integer(1))]
                     },
                     child: None,
                     next: Some(2)
@@ -1154,9 +1056,7 @@ exit 1"#
                         Value::Variable(Variable::new("diff")),
                         Value::Variable(Variable {
                             identifier: vec![b'b', b'u', b'f'],
-                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
-                                "pos",
-                            ))))),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new("pos"))))),
                         }),
                         Value::Variable(Variable::new("target")),
                     ],
@@ -1184,9 +1084,7 @@ exit 1"#
                     arg: vec![
                         Value::Variable(Variable {
                             identifier: vec![b'm', b'e', b'm'],
-                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
-                                "diff_offset",
-                            ))))),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new("diff_offset"))))),
                         }),
                         Value::Literal(Literal::Integer(-1)),
                     ],
@@ -1203,9 +1101,7 @@ exit 1"#
                         Value::Literal(Literal::Integer(output_write as _)),
                         Value::Variable(Variable {
                             identifier: vec![b'm', b'e', b'm'],
-                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
-                                "diff_offset",
-                            ))))),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new("diff_offset"))))),
                         }),
                     ],
                 },
@@ -1242,9 +1138,7 @@ exit 1"#
                         Value::Variable(Variable::new("buff_offset")),
                         Value::Variable(Variable {
                             identifier: vec![b'b', b'u', b'f'],
-                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
-                                "pos",
-                            ))))),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new("pos"))))),
                         }),
                         Value::Variable(Variable::new("target_min")),
                     ],
@@ -1259,9 +1153,7 @@ exit 1"#
                     arg: vec![
                         Value::Variable(Variable {
                             identifier: vec![b'm', b'e', b'm'],
-                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
-                                "buff_offset",
-                            ))))),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new("buff_offset"))))),
                         }),
                         Value::Variable(Variable::new("index")),
                     ],
@@ -1361,9 +1253,7 @@ exit 1"#
                         Value::Variable(Variable::new("diff")),
                         Value::Variable(Variable {
                             identifier: vec![b'b', b'u', b'f'],
-                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
-                                "pos",
-                            ))))),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new("pos"))))),
                         }),
                         Value::Variable(Variable::new("target")),
                     ],
@@ -1391,9 +1281,7 @@ exit 1"#
                     arg: vec![
                         Value::Variable(Variable {
                             identifier: vec![b'm', b'e', b'm'],
-                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
-                                "diff_offset",
-                            ))))),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new("diff_offset"))))),
                         }),
                         Value::Literal(Literal::Integer(-1)),
                     ],
@@ -1410,9 +1298,7 @@ exit 1"#
                         Value::Literal(Literal::Integer(output_write as _)),
                         Value::Variable(Variable {
                             identifier: vec![b'm', b'e', b'm'],
-                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
-                                "diff_offset",
-                            ))))),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new("diff_offset"))))),
                         }),
                     ],
                 },
@@ -1449,9 +1335,7 @@ exit 1"#
                         Value::Variable(Variable::new("buff_offset")),
                         Value::Variable(Variable {
                             identifier: vec![b'b', b'u', b'f'],
-                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
-                                "pos",
-                            ))))),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new("pos"))))),
                         }),
                         Value::Variable(Variable::new("target_min")),
                     ],
@@ -1466,9 +1350,7 @@ exit 1"#
                     arg: vec![
                         Value::Variable(Variable {
                             identifier: vec![b'm', b'e', b'm'],
-                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new(
-                                "buff_offset",
-                            ))))),
+                            index: Some(Box::new(Index::Offset(Offset::Variable(Variable::new("buff_offset"))))),
                         }),
                         Value::Variable(Variable::new("index")),
                     ],
