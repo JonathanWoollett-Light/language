@@ -94,11 +94,82 @@ pub struct Explorer {
     front: NonNull<ExploreBranch>,
 }
 
-/// Finds the type for a variable by searching backwards through the exploration tree.
-unsafe fn find_variable_cast(start: NonNull<TreeEdge>) -> Option<Type> {
-    todo!()
+enum Link {
+    Type(Type),
+    Variable(Identifier),
 }
 
+/// Finds the type for a variable by searching backwards through the exploration tree.
+unsafe fn find_variable_cast(start: NonNull<TreeEdge>, identifier: &Identifier) -> Option<Type> {
+    fn check_map(map: &HashMap<Identifier, Link>, mut ident: Identifier) -> Option<Type> {
+        loop {
+            ident = match map.get(&ident) {
+                None => break None,
+                Some(Link::Type(cast_type)) => break Some(cast_type.clone()),
+                Some(Link::Variable(variable_type)) => variable_type.clone(),
+            }
+        }
+    }
+    unsafe fn type_statement(statement: &Statement, ident: &Identifier, map: &mut HashMap<Identifier, Link>) {
+        let slice = statement.arg.as_slice();
+        match statement.op {
+            Op::Assign => match slice {
+                [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
+                    identifier,
+                    index: None,
+                    cast: Some(Cast::As(cast_type)),
+                })] => {
+                    map.insert(identifier.clone(), Link::Type(cast_type.clone()));
+                }
+                [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
+                    identifier: lhs_identifier,
+                    index: None,
+                    cast: None,
+                }), Value::Variable(Variable {
+                    addressing: Addressing::Direct,
+                    identifier: rhs_identifier,
+                    index: None,
+                    cast: None,
+                })] => {
+                    map.insert(lhs_identifier.clone(), Link::Variable(rhs_identifier.clone()));
+                }
+                [Value::Variable(_), Value::Literal(_)] => {}
+                _ => todo!(),
+            },
+            Op::Mov => {}
+            Op::Svc => {}
+            Op::Unreachable => {}
+            Op::AddAssign => match slice {
+                [Value::Variable(_), Value::Literal(Literal::Integer(_))] => {}
+                _ => todo!(),
+            },
+            _ => todo!(),
+        }
+    }
+
+    let mut edge_opt = Some(start);
+    let mut map = HashMap::new();
+    while let Some(edge) = edge_opt {
+        if let Some(precond) = &edge.as_ref().precond {
+            type_statement(precond, identifier, &mut map);
+            if let Some(t) = check_map(&map, identifier.clone()) {
+                return Some(t);
+            }
+        }
+
+        let branch = edge.as_ref().prev;
+        type_statement(&branch.as_ref().asn.as_ref().statement, identifier, &mut map);
+        if let Some(t) = check_map(&map, identifier.clone()) {
+            return Some(t);
+        }
+        edge_opt = branch.as_ref().prev;
+    }
+    None
+}
+
+#[derive(Debug, Eq, PartialEq)]
 enum IntegerType {
     U8,
     U16,
@@ -158,6 +229,22 @@ impl From<IntegerType> for Type {
         }
     }
 }
+impl TryFrom<Type> for IntegerType {
+    type Error = ();
+    fn try_from(x: Type) -> Result<Self, Self::Error> {
+        match x {
+            Type::U8 => Ok(IntegerType::U8),
+            Type::U16 => Ok(IntegerType::U16),
+            Type::U32 => Ok(IntegerType::U32),
+            Type::U64 => Ok(IntegerType::U64),
+            Type::I8 => Ok(IntegerType::I8),
+            Type::I16 => Ok(IntegerType::I16),
+            Type::I32 => Ok(IntegerType::I32),
+            Type::I64 => Ok(IntegerType::I64),
+            _ => Err(()),
+        }
+    }
+}
 
 pub enum ExplorationResult {
     Continue(Explorer),
@@ -181,6 +268,7 @@ impl Explorer {
             front: nonnull,
         }
     }
+
     pub unsafe fn next(mut self) -> ExplorationResult {
         let Some(mut leaf_ptr) = self.stack.pop() else { todo!() };
 
@@ -192,16 +280,17 @@ impl Explorer {
                 assert_eq!(leaf.asn.as_ref().child, None);
                 match slice {
                     [Value::Variable(
-                        rhs @ Variable {
-                            addressing: Addressing::Direct | Addressing::Dereference,
+                        lhs @ Variable {
+                            addressing: Addressing::Direct,
+                            identifier,
                             ..
                         },
                     ), Value::Literal(Literal::Integer(x))] => {
                         // Gets the type the variable has been previously cast as.
-                        let cast_opt = match &rhs.cast {
+                        let cast_opt = match &lhs.cast {
                             Some(Cast::As(cast_type)) => Some(cast_type.clone()),
                             Some(Cast::Prev) => todo!(),
-                            None => leaf.prev.and_then(|p| find_variable_cast(p)),
+                            None => leaf.prev.and_then(|p| find_variable_cast(p, identifier)),
                         };
                         // Based on the variables casted type
                         let new_leaves = match cast_opt {
@@ -223,7 +312,7 @@ impl Explorer {
                                             op: Op::Assign,
                                             arg: vec![Value::Variable(Variable {
                                                 cast: Some(Cast::As(Type::from(p))),
-                                                ..rhs.clone()
+                                                ..lhs.clone()
                                             })],
                                         };
 
@@ -260,13 +349,41 @@ impl Explorer {
                         };
                         self.stack.extend(new_leaves);
                     }
-                    _ => todo!(),
+                    [Value::Variable(
+                        lhs @ Variable {
+                            addressing: Addressing::Direct,
+                            identifier: lhs_identifier,
+                            ..
+                        },
+                    ), Value::Variable(
+                        rhs @ Variable {
+                            addressing: Addressing::Direct,
+                            identifier: rhs_identifier,
+                            ..
+                        },
+                    )] => {
+                        // TODO: If this fails at some point maybe it should be
+                        // `find_variable_cast(p, lhs_identifier)`.
+                        //
+                        // There will be a type at this point, we can check this but it doesn't
+                        // require any pre-conditional statement.
+                        assert!(match &lhs.cast {
+                            Some(Cast::As(cast_type)) => Some(cast_type.clone()),
+                            Some(Cast::Prev) => todo!(),
+                            None => leaf.prev.and_then(|p| find_variable_cast(p, rhs_identifier)),
+                        }
+                        .is_some());
+
+                        let new_leaf = handle_no_precond(leaf_ptr);
+                        self.stack.push(new_leaf);
+                    }
+                    x @ _ => todo!("{x:?}"),
                 }
                 ExplorationResult::Continue(self)
             }
             Op::Mov => {
                 assert_eq!(leaf.asn.as_ref().child, None);
-                let new_leaves = match slice {
+                let new_leaf = match slice {
                     [Value::Register(_), Value::Literal(_)] => handle_no_precond(leaf_ptr),
                     [Value::Register(_), Value::Variable(Variable {
                         addressing: Addressing::Direct,
@@ -276,12 +393,11 @@ impl Explorer {
                     })] => handle_no_precond(leaf_ptr),
                     _ => todo!(),
                 };
-                self.stack.push(new_leaves);
+                self.stack.push(new_leaf);
                 ExplorationResult::Continue(self)
             }
             Op::Unreachable => {
                 assert_eq!(slice, &[]);
-                todo!();
                 // To get this working, the cost function is 1 or 0. The 1st valid complete path
                 // found will be used.
 
@@ -331,21 +447,22 @@ impl Explorer {
                             next: Some(edge_next),
                             child: None,
                         } => {
-                            assert_eq!(edge_next, leaf_ptr);
-                            let parent_ptr = edge.prev;
+                            // assert_eq!(edge_next, leaf_ptr);
+                            let mut parent_ptr = edge.prev;
                             let parent = parent_ptr.as_mut();
 
                             // All edges that are invalid are removed from the next list, and edges
-                            // are explored in the order they are in the next list.
-                            // So here the 1st edge in the next list will be this edge.
-                            assert_eq!(parent.next.unwrap().pop(), Some(edge_ptr));
+                            // are explored in reverse order they are in the next list.
+                            // So here the last edge in the next list will be this edge.
+                            let parent_nexts = parent.next.as_mut().unwrap();
+                            assert_eq!(parent_nexts.last(), Some(&edge_ptr));
 
                             // We pick the 1st valid discovered edge. So here we discard the
                             // unexplored edges, removing them from the next list, removing their
                             // leaf nodes from the stack and deallocating these.
-                            for unexplored_edge_ptr in parent.next.unwrap().drain(..).rev() {
+                            for unexplored_edge_ptr in parent_nexts.drain(..parent_nexts.len() - 1).rev() {
                                 let unexplored_edge = unexplored_edge_ptr.as_ref();
-                                assert_eq!(unexplored_edge.precond, None);
+                                // assert_eq!(unexplored_edge.precond, None);
                                 assert_eq!(unexplored_edge.prev, parent_ptr);
 
                                 match unexplored_edge.next {
@@ -392,11 +509,77 @@ impl Explorer {
                 // If we reach an edge with no precursors in backprop we have a full tree.
                 ExplorationResult::Done(self.resolve())
             }
-            // This should be removed when inlining.
+            // This should be removed when inlining so should never be encountered here.
             Op::Def => unreachable!(),
+            Op::Svc => match slice {
+                [Value::Literal(Literal::Integer(0))] => {
+                    let new_leaf = handle_no_precond(leaf_ptr);
+                    self.stack.push(new_leaf);
+                    ExplorationResult::Continue(self)
+                }
+                _ => todo!(),
+            },
+            Op::AddAssign => match slice {
+                [Value::Variable(
+                    lhs @ Variable {
+                        addressing: Addressing::Direct,
+                        identifier,
+                        ..
+                    },
+                ), Value::Literal(Literal::Integer(x))] => {
+                    // Gets the type the variable has been previously cast as.
+                    let cast_opt = match &lhs.cast {
+                        Some(Cast::As(cast_type)) => Some(cast_type.clone()),
+                        Some(Cast::Prev) => todo!(),
+                        None => leaf.prev.and_then(|p| find_variable_cast(p, identifier)),
+                    }
+                    .unwrap();
+
+                    let possible = containing_types(*x);
+                    match IntegerType::try_from(cast_opt).map(|t| possible.contains(&t)) {
+                        Ok(true) => {
+                            let new_leaf = handle_no_precond(leaf_ptr);
+                            self.stack.push(new_leaf);
+                        }
+                        Ok(false) | Err(_) => todo!(),
+                    }
+                    ExplorationResult::Continue(self)
+                }
+                [Value::Variable(
+                    lhs @ Variable {
+                        addressing: Addressing::Direct,
+                        identifier: lhs_identifier,
+                        ..
+                    },
+                ), Value::Variable(
+                    rhs @ Variable {
+                        addressing: Addressing::Direct,
+                        identifier: rhs_identifier,
+                        ..
+                    },
+                )] => {
+                    // TODO: If this fails at some point maybe it should be
+                    // `find_variable_cast(p, lhs_identifier)`.
+                    //
+                    // There will be a type at this point, we can check this but it doesn't
+                    // require any pre-conditional statement.
+                    assert!(match &lhs.cast {
+                        Some(Cast::As(cast_type)) => Some(cast_type.clone()),
+                        Some(Cast::Prev) => todo!(),
+                        None => leaf.prev.and_then(|p| find_variable_cast(p, rhs_identifier)),
+                    }
+                    .is_some());
+
+                    let new_leaf = handle_no_precond(leaf_ptr);
+                    self.stack.push(new_leaf);
+                    ExplorationResult::Continue(self)
+                }
+                _ => todo!(),
+            },
             x @ _ => todo!("{x:?}"),
         }
     }
+
     unsafe fn resolve(self) -> NonNull<NewNode> {
         let Self { stack, front } = self;
         assert_eq!(stack, []);
@@ -404,7 +587,11 @@ impl Explorer {
         let mut stack = vec![front];
         while let Some(mut next_ptr) = stack.pop() {
             let mut next = next_ptr.as_mut();
-            let mut edges = next.next.as_mut().unwrap();
+
+            let Some(mut edges) = next.next.as_mut() else {
+                assert_eq!(next.asn.as_ref().statement.op, Op::Unreachable);
+                continue;
+            };
             let edge_ptr = edges.pop().unwrap();
             assert_eq!(edges, &[]);
 

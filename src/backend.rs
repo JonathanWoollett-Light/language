@@ -3,7 +3,6 @@ use crate::LOOP_LIMIT;
 use std::collections::HashMap;
 use std::fmt::Write;
 
-use std::iter::once;
 use std::ptr::NonNull;
 
 pub fn assembly_from_node(nodes: NonNull<NewNode>) -> String {
@@ -70,7 +69,7 @@ pub fn assembly_from_node(nodes: NonNull<NewNode>) -> String {
 
 pub unsafe fn instruction_from_node(
     nodes: NonNull<NewNode>,
-    data: &mut String,
+    _data: &mut String,
     bss: &mut String,
     block_counter: &mut usize,
     _empty: &mut bool,
@@ -101,88 +100,20 @@ pub unsafe fn instruction_from_node(
         // eprintln!("arg: {arg:?}");
 
         match statement.op {
-            Op::Type => match arg {
-                [Value::Variable(Variable { identifier, .. }), Value::Type(value_type)] => {
-                    type_data.insert(identifier.clone(), value_type.clone());
-                    writeln!(bss, "{identifier}: .skip {}", value_type.bytes()).unwrap();
-                }
-                [Value::Variable(Variable { identifier, .. }), Value::Type(value_type), Value::Literal(literal)] => {
-                    type_data.insert(identifier.clone(), value_type.clone());
-                    let data_value = match value_type {
-                        Type::U8 => format!(".byte {}", literal.integer().unwrap()),
-                        Type::U16 => format!(".2byte {}", literal.integer().unwrap()),
-                        Type::U32 => format!(".4byte {}", literal.integer().unwrap()),
-                        Type::U64 => format!(".8byte {}", literal.integer().unwrap()),
-                        Type::Array(box Array(vec)) if vec.iter().all(|t| *t == Type::U8) => {
-                            let string = literal.string().unwrap();
-                            assert_eq!(string.as_bytes().len(), vec.len());
-
-                            format!(
-                                ".byte {}",
-                                string
-                                    .as_bytes()
-                                    .iter()
-                                    .map(|b| b.to_string())
-                                    .intersperse(String::from(","))
-                                    .collect::<String>()
-                            )
-                        }
-                        // TODO I'm pretty sure this is wrong.
-                        Type::I8 => format!(".byte {}", literal.integer().unwrap()),
-                        Type::I16 => format!(".2byte {}", literal.integer().unwrap()),
-                        Type::I32 => format!(".4byte {}", literal.integer().unwrap()),
-                        Type::I64 => format!(".8byte {}", literal.integer().unwrap()),
-                        _ => todo!(),
-                    };
-
-                    writeln!(data, "{identifier}: {data_value}").unwrap();
-                }
-                [Value::Variable(Variable { identifier, .. }), Value::Type(value_type), Value::Literal(literal), tail @ ..] =>
-                {
-                    type_data.insert(identifier.clone(), value_type.clone());
-                    let iter = once(literal).chain(tail.iter().map(|v| v.literal().unwrap()));
-
-                    let data_value = match value_type {
-                        Type::Array(box Array(vec)) if vec.iter().all(|t| *t == Type::U8) => {
-                            format!(
-                                ".byte {}",
-                                iter.map(|l| l.integer().unwrap().to_string())
-                                    .intersperse(String::from(","))
-                                    .collect::<String>()
-                            )
-                        }
-                        Type::Array(box Array(vec)) if vec.iter().all(|t: &Type| *t == Type::U16) => {
-                            format!(
-                                ".2byte {}",
-                                iter.map(|l| l.integer().unwrap().to_string())
-                                    .intersperse(String::from(","))
-                                    .collect::<String>()
-                            )
-                        }
-                        Type::Array(box Array(vec)) if vec.iter().all(|t| *t == Type::U32) => {
-                            format!(
-                                ".4byte {}",
-                                iter.map(|l| l.integer().unwrap().to_string())
-                                    .intersperse(String::from(","))
-                                    .collect::<String>()
-                            )
-                        }
-                        Type::Array(box Array(vec)) if vec.iter().all(|t| *t == Type::U64) => {
-                            format!(
-                                ".8byte {}",
-                                iter.map(|l| l.integer().unwrap().to_string())
-                                    .intersperse(String::from(","))
-                                    .collect::<String>()
-                            )
-                        }
-                        _ => todo!(),
-                    };
-
-                    writeln!(data, "{identifier}: {data_value}").unwrap();
-                }
-                _ => todo!(),
-            },
             Op::Assign => match arg {
+                [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
+                    identifier,
+                    index: None,
+                    cast: Some(cast),
+                })] => {
+                    let type_cast = match cast {
+                        Cast::As(type_cast) => type_cast,
+                        Cast::Prev => todo!(),
+                    };
+                    type_data.insert(identifier.clone(), type_cast.clone());
+                    writeln!(bss, "{identifier}: .skip {}", type_cast.bytes()).unwrap();
+                }
                 [Value::Variable(Variable {
                     addressing: Addressing::Direct,
                     identifier,
@@ -209,7 +140,6 @@ pub unsafe fn instruction_from_node(
                     .unwrap(),
                     _ => todo!(),
                 },
-
                 [Value::Variable(Variable {
                     addressing: Addressing::Direct,
                     identifier,

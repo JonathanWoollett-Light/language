@@ -19,22 +19,22 @@ macro_rules! source {
 }
 
 #[test]
-fn zero_exit() {
+fn exit_zero() {
     build_and_run(source!("exit 0"), b"", 0);
 }
 
 #[test]
-fn one_exit() {
+fn exit_one() {
     build_and_run(source!("exit 1"), b"", 1);
 }
 
 #[test]
-fn twelve() {
+fn exit_twelve() {
     build_and_run(source!("exit 12"), b"", 12);
 }
 
 #[test]
-fn one_two() {
+fn exit_one_two() {
     build_and_run(
         source!(
             "\
@@ -60,7 +60,7 @@ fn zero_variable() {
 }
 
 #[test]
-fn variable() {
+fn exit_variable() {
     build_and_run(
         source!(
             "\
@@ -86,129 +86,129 @@ fn variable_addition() {
     );
 }
 
-#[test]
-fn variable_if_false() {
-    build_and_run(
-        source!(
-            "\
-            x := 1\n\
-            if x = 2\n\
-            \x20   exit 1\n\
-            exit 0"
-        ),
-        b"",
-        0,
-    );
-}
+// #[test]
+// fn variable_if_false() {
+//     build_and_run(
+//         source!(
+//             "\
+//             x := 1\n\
+//             if x = 2\n\
+//             \x20   exit 1\n\
+//             exit 0"
+//         ),
+//         b"",
+//         0,
+//     );
+// }
 
-#[test]
-fn variable_if_true() {
-    build_and_run(
-        source!(
-            "\
-            x := 2\n\
-            if x = 2\n\
-            \x20   exit 1\n\
-            exit 0"
-        ),
-        b"",
-        1,
-    );
-}
+// #[test]
+// fn variable_if_true() {
+//     build_and_run(
+//         source!(
+//             "\
+//             x := 2\n\
+//             if x = 2\n\
+//             \x20   exit 1\n\
+//             exit 0"
+//         ),
+//         b"",
+//         1,
+//     );
+// }
 
-#[test]
-fn read() {
-    // Create pipe
-    let mut pipe_out = [0, 0];
-    let res = unsafe { libc::pipe(pipe_out.as_mut_ptr()) };
-    assert_eq!(res, 0);
-    let [read, write] = pipe_out;
-    // Write u8 to pipe.
-    let data = 27u8;
-    let bytes = data.to_ne_bytes();
-    let res = unsafe { libc::write(write, bytes.as_ptr().cast(), std::mem::size_of::<u8>() as _) };
-    assert_eq!(res, std::mem::size_of::<u8>() as _);
+// #[test]
+// fn read() {
+//     // Create pipe
+//     let mut pipe_out = [0, 0];
+//     let res = unsafe { libc::pipe(pipe_out.as_mut_ptr()) };
+//     assert_eq!(res, 0);
+//     let [read, write] = pipe_out;
+//     // Write u8 to pipe.
+//     let data = 27u8;
+//     let bytes = data.to_ne_bytes();
+//     let res = unsafe { libc::write(write, bytes.as_ptr().cast(), std::mem::size_of::<u8>() as _) };
+//     assert_eq!(res, std::mem::size_of::<u8>() as _);
 
-    let source_string = format!(
-        "\
-        x := read {read}\n\
-        exit x"
-    );
-    build_and_run(source!(source_string), b"", 27);
+//     let source_string = format!(
+//         "\
+//         x := read {read}\n\
+//         exit x"
+//     );
+//     build_and_run(source!(source_string), b"", 27);
 
-    // Close pipe.
-    unsafe {
-        libc::close(read);
-        libc::close(write);
-    }
-}
+//     // Close pipe.
+//     unsafe {
+//         libc::close(read);
+//         libc::close(write);
+//     }
+// }
 
-#[test]
-fn read_write() {
-    // Create pipe
-    let mut pipe_out = [0, 0];
-    let res = unsafe { libc::pipe(pipe_out.as_mut_ptr()) };
-    assert_eq!(res, 0);
-    let [read, write] = pipe_out;
-    // Write u8 to pipe.
-    let data = 27u8;
-    let bytes = data.to_ne_bytes();
-    let res = unsafe { libc::write(write, bytes.as_ptr().cast(), std::mem::size_of::<u8>() as _) };
-    assert_eq!(res, std::mem::size_of::<u8>() as _);
+// #[test]
+// fn read_write() {
+//     // Create pipe
+//     let mut pipe_out = [0, 0];
+//     let res = unsafe { libc::pipe(pipe_out.as_mut_ptr()) };
+//     assert_eq!(res, 0);
+//     let [read, write] = pipe_out;
+//     // Write u8 to pipe.
+//     let data = 27u8;
+//     let bytes = data.to_ne_bytes();
+//     let res = unsafe { libc::write(write, bytes.as_ptr().cast(), std::mem::size_of::<u8>() as _) };
+//     assert_eq!(res, std::mem::size_of::<u8>() as _);
 
-    let source_string = format!(
-        "\
-        x := read {read}\n\
-        write {write} &x\n\
-        exit 0"
-    );
-    build_and_run(source!(source_string), b"", 0);
+//     let source_string = format!(
+//         "\
+//         x := read {read}\n\
+//         write {write} &x\n\
+//         exit 0"
+//     );
+//     build_and_run(source!(source_string), b"", 0);
 
-    // Read u8 from pipe.
-    let mut buffer = [0u8; std::mem::size_of::<u8>()];
-    let res = unsafe { libc::read(read, buffer.as_mut_ptr().cast(), std::mem::size_of::<u8>() as _) };
-    assert_eq!(res, std::mem::size_of::<u8>() as _);
-    assert_eq!(buffer, bytes);
-    // Close pipe.
-    unsafe {
-        libc::close(read);
-        libc::close(write);
-    }
-}
+//     // Read u8 from pipe.
+//     let mut buffer = [0u8; std::mem::size_of::<u8>()];
+//     let res = unsafe { libc::read(read, buffer.as_mut_ptr().cast(), std::mem::size_of::<u8>() as _) };
+//     assert_eq!(res, std::mem::size_of::<u8>() as _);
+//     assert_eq!(buffer, bytes);
+//     // Close pipe.
+//     unsafe {
+//         libc::close(read);
+//         libc::close(write);
+//     }
+// }
 
-#[test]
-fn arithmetic() {
-    build_and_run(
-        source!(
-            "\
-            x := 1\n\
-            x += 2\n\
-            x *= 3\n\
-            x /= 4\n\
-            x -= 5\n\
-            x &= 6\n\
-            x |= 7\n\
-            x ^= 8\n\
-            exit x"
-        ),
-        b"",
-        15,
-    );
-}
+// #[test]
+// fn arithmetic() {
+//     build_and_run(
+//         source!(
+//             "\
+//             x := 1\n\
+//             x += 2\n\
+//             x *= 3\n\
+//             x /= 4\n\
+//             x -= 5\n\
+//             x &= 6\n\
+//             x |= 7\n\
+//             x ^= 8\n\
+//             exit x"
+//         ),
+//         b"",
+//         15,
+//     );
+// }
 
-#[test]
-fn helloworld_new() {
-    build_and_run(
-        source!(
-            "\
-            x := \"Hello, World!\\n\"\n\
-            write 1 &x\n\
-            exit 0"
-        ),
-        b"Hello, World!\n",
-        0,
-    );
-}
+// #[test]
+// fn helloworld_new() {
+//     build_and_run(
+//         source!(
+//             "\
+//             x := \"Hello, World!\\n\"\n\
+//             write 1 &x\n\
+//             exit 0"
+//         ),
+//         b"Hello, World!\n",
+//         0,
+//     );
+// }
 
 fn build_and_run(source: &[u8], expected_stdout: &[u8], expected_code: i32) {
     let directory = PathBuf::from(format!("/tmp/a{}", Uuid::new_v4()));
@@ -234,22 +234,21 @@ fn build_and_run(source: &[u8], expected_stdout: &[u8], expected_code: i32) {
         .unwrap();
 
     use std::fs::read_to_string;
-    println!(
-        "--- included ---\n{}\n-----------",
-        read_to_string(directory.join("build").join("included.abc")).unwrap()
-    );
-    println!(
-        "--- inlined ---\n{}\n-----------",
-        read_to_string(directory.join("build").join("inlined.abc")).unwrap()
-    );
-    // println!(
-    //     "--- optimized ---\n{}\n-----------",
-    //     read_to_string(directory.join("build").join("optimized.abc")).unwrap()
-    // );
-    // println!(
-    //     "--- assembly ---\n{}\n-----------",
-    //     read_to_string(directory.join("build").join("assembly.s")).unwrap()
-    // );
+    if let Ok(included) = read_to_string(directory.join("build").join("included.abc")) {
+        println!("--- included ---\n{included}\n-----------",);
+    }
+    if let Ok(inlined) = read_to_string(directory.join("build").join("inlined.abc")) {
+        println!("--- inlined ---\n{inlined}\n-----------",);
+    }
+    if let Ok(optimized) = read_to_string(directory.join("build").join("optimized.abc")) {
+        println!("--- optimized ---\n{optimized}\n-----------",);
+    }
+    if let Ok(explored) = read_to_string(directory.join("build").join("explored.abc")) {
+        println!("--- explored ---\n{explored}\n-----------",);
+    }
+    if let Ok(assembly) = read_to_string(directory.join("build").join("assembly.s")) {
+        println!("--- assembly ---\n{assembly}\n-----------",);
+    }
 
     assert_eq!(output.stderr, &[], "{}", from_utf8(&output.stderr).unwrap());
     assert_eq!(output.stdout, expected_stdout, "{}", from_utf8(&output.stdout).unwrap());

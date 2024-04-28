@@ -18,13 +18,11 @@ use std::path::PathBuf;
 mod ast;
 mod frontend;
 use frontend::*;
-mod middle;
-use middle::*;
 mod backend;
 use backend::*;
-mod draw_dag;
-
-mod new_middle;
+mod exploration;
+mod inlining;
+mod optimization;
 
 #[cfg(debug_assertions)]
 const LOOP_LIMIT: usize = 1000;
@@ -126,7 +124,7 @@ fn build(path: Option<PathBuf>) {
     let nodes = get_nodes(&mut iter).unwrap();
 
     // Inlines functions
-    let inlined = unsafe { inline_functions(nodes) };
+    let inlined = unsafe { inlining::inline_functions(nodes) };
     let inlined_string = display_ast(inlined);
     write_file(
         &project_path,
@@ -135,18 +133,23 @@ fn build(path: Option<PathBuf>) {
         &mut lock_file,
     );
 
-    // Exploration record
-    let exploration_dir = project_path.join(BUILD_DIR).join("exploration");
-    if !exploration_dir.exists() {
-        std::fs::create_dir(&exploration_dir).unwrap();
-    }
+    // Pre-exploration optimizations
+    unsafe { optimization::prex_optimization(inlined) }
+    let prex_optimization_string = display_ast(inlined);
+    write_file(
+        &project_path,
+        PathBuf::from("optimized").with_extension(LANGUAGE_EXTENSION),
+        prex_optimization_string.as_bytes(),
+        &mut lock_file,
+    );
 
-    let mut explorer = unsafe { new_middle::Explorer::new(inlined) };
+    // Explore variable space.
+    let mut explorer = unsafe { exploration::Explorer::new(inlined) };
     let mut i = 0;
     let explored = loop {
         explorer = match unsafe { explorer.next() } {
-            new_middle::ExplorationResult::Continue(e) => e,
-            new_middle::ExplorationResult::Done(e) => break e,
+            exploration::ExplorationResult::Continue(e) => e,
+            exploration::ExplorationResult::Done(e) => break e,
         };
 
         i += 1;
@@ -246,12 +249,12 @@ fn build(path: Option<PathBuf>) {
 
 fn run(path: Option<PathBuf>) {
     build(path.clone());
-    // let project_path = path.unwrap_or(PathBuf::from("./"));
-    // let binary_path = project_path.join("build").join("binary");
-    // let binary_path_cstring = std::ffi::CString::new(binary_path.display().to_string()).unwrap();
-    // unsafe {
-    //     libc::execv(binary_path_cstring.into_raw(), std::ptr::null());
-    // }
+    let project_path = path.unwrap_or(PathBuf::from("./"));
+    let binary_path = project_path.join("build").join("binary");
+    let binary_path_cstring = std::ffi::CString::new(binary_path.display().to_string()).unwrap();
+    unsafe {
+        libc::execv(binary_path_cstring.into_raw(), std::ptr::null());
+    }
 }
 
 #[allow(unreachable_code)]

@@ -1,4 +1,3 @@
-use std::iter::once;
 /// The AST maps closely to assembly for simplicity.
 use std::ptr::NonNull;
 
@@ -37,14 +36,18 @@ impl std::fmt::Display for Statement {
         match &self.op {
             Op::Assign => match self.arg.as_slice() {
                 [Value::Variable(variable), tail @ ..] => {
-                    write!(
-                        f,
-                        "{variable} := {}",
-                        tail.iter()
+                    let args = if tail.len() > 0 {
+                        let tail_args = tail
+                            .iter()
                             .map(|v| v.to_string())
                             .intersperse(String::from(" "))
-                            .collect::<String>()
-                    )
+                            .collect::<String>();
+                        format!(" = {tail_args}")
+                    } else {
+                        String::from("")
+                    };
+
+                    write!(f, "{variable}{args}")
                 }
                 _ => todo!(),
             },
@@ -70,20 +73,6 @@ impl std::fmt::Display for Statement {
                 _ => todo!(),
             },
             Op::Unreachable => write!(f, "unreachable"),
-            Op::Type => match self.arg.as_slice() {
-                [rhs] => write!(f, "{rhs}"),
-                [rhs, rhs_type] => write!(f, "{rhs} : {rhs_type}"),
-                [rhs, rhs_type, lhs, tail @ ..] => write!(
-                    f,
-                    "{rhs} : {rhs_type} := {}",
-                    once(lhs)
-                        .chain(tail.iter())
-                        .map(|x| x.to_string())
-                        .intersperse(String::from(" "))
-                        .collect::<String>()
-                ),
-                x @ _ => todo!("{x:?}"),
-            },
             Op::Def => match self.arg.as_slice() {
                 [x] => write!(f, "def {x}"),
                 _ => todo!(),
@@ -170,6 +159,12 @@ impl Value {
         }
     }
     pub fn variable_mut(&mut self) -> Option<&mut Variable> {
+        match self {
+            Self::Variable(variable) => Some(variable),
+            _ => None,
+        }
+    }
+    pub fn variable(&self) -> Option<&Variable> {
         match self {
             Self::Variable(variable) => Some(variable),
             _ => None,
@@ -391,12 +386,12 @@ impl Literal {
             _ => None,
         }
     }
-    pub fn string(&self) -> Option<&String> {
-        match self {
-            Self::String(string) => Some(string),
-            _ => None,
-        }
-    }
+    // pub fn string(&self) -> Option<&String> {
+    //     match self {
+    //         Self::String(string) => Some(string),
+    //         _ => None,
+    //     }
+    // }
 }
 
 impl std::fmt::Display for Literal {
@@ -496,9 +491,9 @@ impl Identifier {
     pub fn fn_in() -> Self {
         Self(Vec::from(b"in"))
     }
-    pub fn fn_out() -> Self {
-        Self(Vec::from(b"out"))
-    }
+    // pub fn fn_out() -> Self {
+    //     Self(Vec::from(b"out"))
+    // }
     pub fn new() -> Self {
         Self(Vec::new())
     }
@@ -742,7 +737,6 @@ pub enum Op {
     Call,
     // Assume(Cmp),
     Require(Cmp),
-    Type, // Type,
     Unreachable,
     SizeOf,
     Svc,

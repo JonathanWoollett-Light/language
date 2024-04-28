@@ -517,7 +517,7 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                         Some(b' ') => {
                             let variable_type = get_type(bytes);
                             Statement {
-                                op: Op::Type,
+                                op: Op::Assign,
                                 arg: vec![lhs, Value::Type(variable_type)],
                             }
                         }
