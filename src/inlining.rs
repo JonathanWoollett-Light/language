@@ -32,14 +32,18 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
     let mut maps = vec![HashMap::<Identifier, Identifier>::new()];
 
     while let Some(mut current) = stack.pop() {
+        // TODO We need a better way to mark end of functions when inlining. This approach doesn't
+        // work for idented functions which dont have a next.
+
         // When reaching the node after the last node from an inlined function the context switches back.
-        if let Some(last) = carry.last()
-            && *last == Some(current)
-        {
-            carry.pop().unwrap();
-            maps.pop().unwrap();
-            stack.push(current);
-            continue;
+        if let Some(c) = carry.last_mut() {
+            *c -= 1;
+            if *c == 0 {
+                carry.pop().unwrap();
+                maps.pop().unwrap();
+                stack.push(current);
+                continue;
+            }
         }
 
         let current_ref = current.as_mut();
@@ -156,7 +160,6 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                 };
 
                 // Push next node to the carry.
-                carry.push(current_ref.next);
                 stack.push(current);
 
                 // Replace the next node leading into the function.
@@ -165,7 +168,9 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
 
                 // The function stack contains clones of the functions nodes that are inlined.
                 let mut fn_stack = vec![(current, 0)];
+                let mut carry_counter = 0;
                 while let Some((mut fn_node, fn_depth)) = fn_stack.pop() {
+                    carry_counter += 1;
                     if let Some(child) = fn_node.as_ref().child {
                         // Clone child node.
                         let new_child_ptr = alloc(Layout::new::<NewNode>()).cast();
@@ -178,7 +183,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                                 next: child.as_ref().next,
                             },
                         );
-                        let mut new_child = NonNull::new(new_child_ptr).unwrap();
+                        let new_child = NonNull::new(new_child_ptr).unwrap();
                         assert_ne!(child, new_child);
                         // Point to new child.
                         fn_node.as_mut().child = Some(new_child);
@@ -197,7 +202,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                                 next: next.as_ref().next,
                             },
                         );
-                        let mut new_next = NonNull::new(new_next_ptr).unwrap();
+                        let new_next = NonNull::new(new_next_ptr).unwrap();
                         assert_ne!(next, new_next);
                         // Point to new next.
                         fn_node.as_mut().next = Some(new_next);
@@ -209,6 +214,9 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     }
                 }
                 assert_ne!(current.as_ref().next, fn_def.as_ref().child);
+
+                // Push carry node.
+                carry.push(carry_counter);
 
                 // eprintln!("{}",crate::display_ast_addresses(first));
                 // eprintln!("\n\ndefinitions\n{}",definitions.iter().copied().map(|def|format!("{}\n\n",crate::display_ast(def))).collect::<String>());

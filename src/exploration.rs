@@ -29,29 +29,99 @@ struct ExploreBranch {
     next: Option<Vec<NonNull<TreeEdge>>>,
 }
 
+// Deallocates `node` in the abstract syntax tree.
+unsafe fn dealloc_asn(node: NonNull<NewNode>) {
+    if let Some(pre) = node.as_ref().preceding {
+        match pre {
+            Preceding::Parent(mut parent) => {
+                parent.as_mut().child = node.as_ref().next;
+            }
+            Preceding::Previous(mut previous) => {
+                previous.as_mut().next = node.as_ref().next;
+            }
+        }
+    }
+    if let Some(mut next) = node.as_ref().next {
+        next.as_mut().preceding = node.as_ref().preceding;
+    }
+    if let Some(child) = node.as_ref().child {
+        dealloc_ast(child);
+    }
+
+    dealloc(node.as_ptr().cast(), Layout::new::<NewNode>());
+}
+
+/// Inline children from `node` in the abstract syntax tree.
+unsafe fn inline_children(mut node: NonNull<NewNode>) {
+    if let Some(mut child) = node.as_ref().child {
+        child.as_mut().preceding = Some(Preceding::Previous(node));
+        let mut front_child = child;
+        while let Some(next_child) = front_child.as_ref().next {
+            front_child = next_child;
+        }
+        front_child.as_mut().next = node.as_ref().next;
+
+        if let Some(mut next) = node.as_ref().next {
+            next.as_mut().preceding = Some(Preceding::Previous(front_child));
+        }
+
+        node.as_mut().next = Some(child);
+        node.as_mut().child = None;
+    }
+}
+
+/// Deallocates the abstract syntax tree starting at `node`.
+unsafe fn dealloc_ast(node: NonNull<NewNode>) {
+    if let Some(pre) = node.as_ref().preceding {
+        match pre {
+            Preceding::Parent(mut parent) => {
+                parent.as_mut().child = None;
+            }
+            Preceding::Previous(mut previous) => {
+                previous.as_mut().next = None;
+            }
+        }
+    }
+    let mut stack = vec![node];
+    while let Some(current) = stack.pop() {
+        // Push to stack.
+        if let Some(next) = current.as_ref().next {
+            stack.push(next);
+        }
+        if let Some(child) = current.as_ref().child {
+            stack.push(child);
+        }
+        // Deallocate.
+        dealloc(current.as_ptr().cast(), Layout::new::<NewNode>());
+    }
+}
+
 /// Handles exploring leaves where we know the statement doesn't require a precondition.
-unsafe fn handle_no_precond(mut old_leaf: NonNull<ExploreBranch>) -> NonNull<ExploreBranch> {
+unsafe fn handle_no_precond(mut old_leaf_ptr: NonNull<ExploreBranch>) -> NonNull<ExploreBranch> {
     let new_leaf = empty_nonnull();
 
     let edge = nonnull(TreeEdge {
         precond: None,
         next: TreeEdgeNext::new(new_leaf),
-        prev: old_leaf,
+        prev: old_leaf_ptr,
     });
+
+    let old_leaf = old_leaf_ptr.as_mut();
+    assert_eq!(old_leaf.asn.as_ref().child, None);
 
     // Write new leaf node.
     ptr::write(
         new_leaf.as_ptr(),
         ExploreBranch {
-            asn: old_leaf.as_ref().asn.as_ref().next.unwrap(),
+            asn: old_leaf.asn.as_ref().next.unwrap(),
             prev: Some(edge),
             next: None,
         },
     );
 
     // Write new branch node.
-    assert_eq!(old_leaf.as_ref().next, None);
-    old_leaf.as_mut().next = Some(vec![edge]);
+    assert_eq!(old_leaf.next, None);
+    old_leaf.next = Some(vec![edge]);
 
     return new_leaf;
 }
@@ -99,20 +169,158 @@ enum Link {
     Variable(Identifier),
 }
 
+#[derive(Debug)]
+enum Condition {
+    True,
+    False,
+    Either,
+}
+impl From<bool> for Condition {
+    fn from(x: bool) -> Self {
+        match x {
+            true => Condition::True,
+            false => Condition::False,
+        }
+    }
+}
+
+/// This type will get very complicated but for now for the simple problems its not so bad.
+#[derive(Debug)]
+struct VariableValue {
+    max: Option<i128>,
+    min: Option<i128>,
+    cast_type: Option<Type>,
+}
+impl From<&Value> for VariableValue {
+    fn from(value: &Value) -> Self {
+        match value {
+            Value::Literal(Literal::Integer(x)) => Self {
+                max: Some(*x),
+                min: Some(*x),
+                cast_type: None,
+            },
+            Value::Variable(Variable {
+                addressing: Addressing::Direct,
+                identifier,
+                index: None,
+                cast: None,
+            }) => Self {
+                max: None,
+                min: None,
+                cast_type: None,
+            },
+            _ => todo!(),
+        }
+    }
+}
+
+unsafe fn check_condition(lhs: &VariableValue, cmp: &Cmp, rhs: &VariableValue) -> Condition {
+    match cmp {
+        Cmp::Eq if lhs.max == lhs.min && rhs.max == rhs.min => Condition::from(rhs.max == lhs.max),
+        _ => todo!(),
+    }
+}
+
+unsafe fn update_value(statement: &Statement, value: &Value, variable_value: &mut VariableValue) {
+    let slice = statement.arg.as_slice();
+
+    let ident = match value {
+        Value::Literal(Literal::Integer(x)) => {
+            variable_value.max = Some(*x);
+            variable_value.min = Some(*x);
+            return;
+        }
+        Value::Variable(Variable {
+            addressing: Addressing::Direct,
+            identifier,
+            index: None,
+            cast: _,
+        }) => identifier,
+        _ => todo!(),
+    };
+
+    match statement.op {
+        Op::Assign => match slice {
+            [Value::Variable(Variable {
+                addressing: Addressing::Direct,
+                identifier,
+                index: None,
+                cast: _,
+            }), Value::Literal(Literal::Integer(x))] => {
+                if identifier == ident {
+                    variable_value.max = Some(*x);
+                    variable_value.min = Some(*x);
+                }
+            }
+            [Value::Variable(Variable {
+                addressing: Addressing::Direct,
+                identifier,
+                index: None,
+                cast: Some(Cast::As(cast_type)),
+            })] => variable_value.cast_type = Some(cast_type.clone()),
+            x @ _ => todo!("{x:?}"),
+        },
+        _ => todo!(),
+    }
+}
+
+unsafe fn evaluate_condition(
+    mut edge_opt: Option<NonNull<TreeEdge>>,
+    cmp: &Cmp,
+    lhs: &Value,
+    rhs: &Value,
+) -> Condition {
+    let mut lhs_value = VariableValue::from(lhs);
+    let mut rhs_value = VariableValue::from(rhs);
+
+    let mut i = 0;
+    while let Some(edge) = edge_opt {
+        assert!(i < 50);
+
+        let branch = edge.as_ref().prev;
+        let asn_statement = &branch.as_ref().asn.as_ref().statement;
+
+        update_value(asn_statement, &lhs, &mut lhs_value);
+        update_value(asn_statement, &rhs, &mut rhs_value);
+        match check_condition(&lhs_value, &cmp, &rhs_value) {
+            Condition::True => return Condition::True,
+            Condition::False => return Condition::False,
+            Condition::Either => {}
+        }
+
+        if let Some(precond) = &edge.as_ref().precond {
+            update_value(precond, &lhs, &mut lhs_value);
+            update_value(precond, &rhs, &mut rhs_value);
+            match check_condition(&lhs_value, &cmp, &rhs_value) {
+                Condition::True => return Condition::True,
+                Condition::False => return Condition::False,
+                Condition::Either => {}
+            }
+        }
+
+        edge_opt = branch.as_ref().prev;
+        i += 1;
+    }
+    Condition::Either
+}
+
 /// Finds the type for a variable by searching backwards through the exploration tree.
 unsafe fn find_variable_cast(start: NonNull<TreeEdge>, identifier: &Identifier) -> Option<Type> {
     fn check_map(map: &HashMap<Identifier, Link>, mut ident: Identifier) -> Option<Type> {
+        let mut i = 0;
         loop {
+            assert!(i < 50);
             ident = match map.get(&ident) {
                 None => break None,
                 Some(Link::Type(cast_type)) => break Some(cast_type.clone()),
                 Some(Link::Variable(variable_type)) => variable_type.clone(),
-            }
+            };
+            i += 1;
         }
     }
     unsafe fn type_statement(statement: &Statement, ident: &Identifier, map: &mut HashMap<Identifier, Link>) {
         let slice = statement.arg.as_slice();
-        match statement.op {
+        match &statement.op {
             Op::Assign => match slice {
                 [Value::Variable(Variable {
                     addressing: Addressing::Direct,
@@ -145,13 +353,17 @@ unsafe fn find_variable_cast(start: NonNull<TreeEdge>, identifier: &Identifier) 
                 [Value::Variable(_), Value::Literal(Literal::Integer(_))] => {}
                 _ => todo!(),
             },
-            _ => todo!(),
+            Op::If(_) => {}
+            x @ _ => todo!("{x:?}"),
         }
     }
 
     let mut edge_opt = Some(start);
     let mut map = HashMap::new();
+
+    let mut i = 0;
     while let Some(edge) = edge_opt {
+        assert!(i < 50);
         if let Some(precond) = &edge.as_ref().precond {
             type_statement(precond, identifier, &mut map);
             if let Some(t) = check_map(&map, identifier.clone()) {
@@ -165,6 +377,7 @@ unsafe fn find_variable_cast(start: NonNull<TreeEdge>, identifier: &Identifier) 
             return Some(t);
         }
         edge_opt = branch.as_ref().prev;
+        i += 1;
     }
     None
 }
@@ -272,9 +485,13 @@ impl Explorer {
     pub unsafe fn next(mut self) -> ExplorationResult {
         let Some(mut leaf_ptr) = self.stack.pop() else { todo!() };
 
-        let leaf = leaf_ptr.as_ref();
+        let leaf = leaf_ptr.as_mut();
         let statement = &leaf.asn.as_ref().statement;
         let slice = statement.arg.as_slice();
+
+        // eprintln!("\n\n{}\n\n", display_ast(self.front));
+        // eprintln!("statement: {statement}");
+
         match &statement.op {
             Op::Assign => {
                 assert_eq!(leaf.asn.as_ref().child, None);
@@ -398,6 +615,13 @@ impl Explorer {
             }
             Op::Unreachable => {
                 assert_eq!(slice, &[]);
+
+                // All nodes after an `unreachable` are unreachable so they can be removed.
+                assert_eq!(leaf.asn.as_ref().child, None);
+                if let Some(next) = leaf.asn.as_ref().next {
+                    dealloc_ast(next);
+                }
+
                 // To get this working, the cost function is 1 or 0. The 1st valid complete path
                 // found will be used.
 
@@ -572,6 +796,34 @@ impl Explorer {
 
                     let new_leaf = handle_no_precond(leaf_ptr);
                     self.stack.push(new_leaf);
+                    ExplorationResult::Continue(self)
+                }
+                _ => todo!(),
+            },
+            Op::If(cmp) => match slice {
+                [lhs, rhs] => {
+                    let cond = evaluate_condition(leaf.prev, cmp, lhs, rhs);
+                    let new_leaves = match cond {
+                        Condition::Either => todo!(),
+                        Condition::True => {
+                            inline_children(leaf.asn);
+                            let if_asn = leaf.asn;
+                            // It is okay to unwrap, as a program cannot end in an `if` and thus
+                            // must have following statements.
+                            leaf.asn = if_asn.as_ref().next.unwrap();
+                            dealloc_asn(if_asn);
+                            vec![leaf_ptr]
+                        }
+                        Condition::False => {
+                            let if_asn = leaf.asn;
+                            // It is okay to unwrap, as a program cannot end in an `if` and thus
+                            // must have following statements.
+                            leaf.asn = if_asn.as_ref().next.unwrap();
+                            dealloc_asn(if_asn);
+                            vec![leaf_ptr]
+                        }
+                    };
+                    self.stack.extend(new_leaves);
                     ExplorationResult::Continue(self)
                 }
                 _ => todo!(),

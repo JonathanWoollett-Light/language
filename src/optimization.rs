@@ -36,4 +36,4 @@ pub unsafe fn prex_optimization(root: NonNull<NewNode>) {
 }
 
 /// Post-exploration optimization.
-pub unsafe fn post_optimization(root: NonNull<NewNode>) {}
+pub unsafe fn post_optimization(_root: NonNull<NewNode>) {}

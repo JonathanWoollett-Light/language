@@ -86,35 +86,35 @@ fn variable_addition() {
     );
 }
 
-// #[test]
-// fn variable_if_false() {
-//     build_and_run(
-//         source!(
-//             "\
-//             x := 1\n\
-//             if x = 2\n\
-//             \x20   exit 1\n\
-//             exit 0"
-//         ),
-//         b"",
-//         0,
-//     );
-// }
+#[test]
+fn variable_if_false() {
+    build_and_run(
+        source!(
+            "\
+            x := 1\n\
+            if x = 2\n\
+            \x20   exit 1\n\
+            exit 0"
+        ),
+        b"",
+        0,
+    );
+}
 
-// #[test]
-// fn variable_if_true() {
-//     build_and_run(
-//         source!(
-//             "\
-//             x := 2\n\
-//             if x = 2\n\
-//             \x20   exit 1\n\
-//             exit 0"
-//         ),
-//         b"",
-//         1,
-//     );
-// }
+#[test]
+fn variable_if_true() {
+    build_and_run(
+        source!(
+            "\
+            x := 2\n\
+            if x = 2\n\
+            \x20   exit 1\n\
+            exit 0"
+        ),
+        b"",
+        1,
+    );
+}
 
 // #[test]
 // fn read() {

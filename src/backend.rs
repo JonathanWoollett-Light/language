@@ -81,7 +81,7 @@ pub unsafe fn instruction_from_node(
     #[cfg(debug_assertions)]
     let mut i = 0;
 
-    // The list of node that created new scopes and their scope endings.
+    // The list of nodes that created new scopes and their scope endings.
     let mut write_stack = Vec::new();
 
     while let Some(current) = stack.pop() {
@@ -427,7 +427,13 @@ pub unsafe fn instruction_from_node(
                 }
             };
             // If there is no parent the write stack should be empty.
-            debug_assert!((parent_opt.is_none() && write_stack.is_empty()) || parent_opt.is_some());
+            debug_assert!(
+                (parent_opt.is_none() && write_stack.is_empty()) || parent_opt.is_some(),
+                "({:?} && {:?}) || {:?}",
+                parent_opt.is_none(),
+                write_stack.is_empty(),
+                parent_opt.is_some()
+            );
             // Pop scopes from the write stack.
             if let Some(parent) = parent_opt {
                 while let Some((node, end)) = write_stack.pop() {

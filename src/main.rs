@@ -14,6 +14,7 @@ use ring::digest::{Context, Digest, SHA256};
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::ptr::NonNull;
 
 mod ast;
 mod frontend;
@@ -288,7 +289,7 @@ fn main() {
     }
 }
 
-fn display_ast(node: std::ptr::NonNull<crate::ast::NewNode>) -> String {
+fn display_ast(node: NonNull<crate::ast::NewNode>) -> String {
     unsafe {
         use std::fmt::Write;
         let mut stack = vec![(node, 0)];
@@ -308,7 +309,7 @@ fn display_ast(node: std::ptr::NonNull<crate::ast::NewNode>) -> String {
 }
 
 #[allow(dead_code)] // This is used for debugging
-fn display_ast_addresses(node: std::ptr::NonNull<crate::ast::NewNode>) -> String {
+fn display_ast_addresses(node: NonNull<crate::ast::NewNode>) -> String {
     unsafe {
         use std::fmt::Write;
         let mut stack = vec![(node, 0)];
