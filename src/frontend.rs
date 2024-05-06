@@ -13,38 +13,38 @@ use tracing::instrument;
 #[cfg_attr(test, instrument(level = "TRACE", skip(bytes)))]
 pub fn get_type<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Type {
     match bytes.next().map(Result::unwrap) {
-        Some(b'i') => match bytes.next().map(Result::unwrap) {
-            Some(b'8') => Type::I8,
+        Some(b'i') => Type::Integer(match bytes.next().map(Result::unwrap) {
+            Some(b'8') => IntegerType::I8,
             Some(b'1') => match bytes.next().map(Result::unwrap) {
-                Some(b'6') => Type::I16,
+                Some(b'6') => IntegerType::I16,
                 _ => panic!(),
             },
             Some(b'3') => match bytes.next().map(Result::unwrap) {
-                Some(b'2') => Type::I32,
+                Some(b'2') => IntegerType::I32,
                 _ => panic!(),
             },
             Some(b'6') => match bytes.next().map(Result::unwrap) {
-                Some(b'4') => Type::I64,
+                Some(b'4') => IntegerType::I64,
                 _ => panic!(),
             },
             _ => panic!(),
-        },
-        Some(b'u') => match bytes.next().map(Result::unwrap) {
-            Some(b'8') => Type::U8,
+        }),
+        Some(b'u') => Type::Integer(match bytes.next().map(Result::unwrap) {
+            Some(b'8') => IntegerType::U8,
             Some(b'1') => match bytes.next().map(Result::unwrap) {
-                Some(b'6') => Type::U16,
+                Some(b'6') => IntegerType::U16,
                 _ => panic!(),
             },
             Some(b'3') => match bytes.next().map(Result::unwrap) {
-                Some(b'2') => Type::U32,
+                Some(b'2') => IntegerType::U32,
                 _ => panic!(),
             },
             Some(b'6') => match bytes.next().map(Result::unwrap) {
-                Some(b'4') => Type::U64,
+                Some(b'4') => IntegerType::U64,
                 _ => panic!(),
             },
             _ => panic!(),
-        },
+        }),
         _ => panic!(),
     }
 }
@@ -534,10 +534,10 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                                             identifier,
                                             index: None,
                                             ..
-                                        }) if identifier == "sizeof" => {
+                                        }) if identifier == "typeof" => {
                                             let tail = get_values(bytes);
                                             Statement {
-                                                op: Op::SizeOf,
+                                                op: Op::TypeOf,
                                                 arg: once(lhs).chain(tail.iter().cloned()).collect(),
                                             }
                                         }

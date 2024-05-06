@@ -10,17 +10,8 @@ pub unsafe fn prex_optimization(root: NonNull<NewNode>) {
         match current.as_ref().statement.op {
             Op::Unreachable => {
                 assert_eq!(current.as_ref().child, None);
-                if let Some(next) = current.as_mut().next.take() {
-                    let mut dealloc_stack = vec![next];
-                    while let Some(dealloc_current) = dealloc_stack.pop() {
-                        if let Some(child) = dealloc_current.as_ref().child {
-                            dealloc_stack.push(child);
-                        }
-                        if let Some(next) = dealloc_current.as_ref().next {
-                            dealloc_stack.push(next);
-                        }
-                        dealloc(dealloc_current.as_ptr().cast(), Layout::new::<NewNode>())
-                    }
+                if let Some(next) = current.as_ref().next {
+                    crate::exploration::dealloc_ast(next);
                 }
             }
             _ => {

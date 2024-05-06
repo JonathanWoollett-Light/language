@@ -1,0 +1,19 @@
+def sizeof
+    t = typeof in
+    if t = u8:
+        out = 1
+    if t = u16:
+        out = 2
+    if t = u32:
+        out = 4
+    if t = u64:
+        out = 8
+    if t = i8:
+        out = 1
+    if t = i16:
+        out = 2
+    if t = i32:
+        out = 4
+    if t = i64:
+        out = 8
+    # TODO Handle arrays and references

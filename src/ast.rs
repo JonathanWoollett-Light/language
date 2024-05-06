@@ -60,8 +60,8 @@ impl std::fmt::Display for Statement {
                     .intersperse(String::from(" "))
                     .collect::<String>()
             ),
-            Op::SizeOf => match self.arg.as_slice() {
-                [lhs, rhs] => write!(f, "{lhs} := sizeof {rhs}"),
+            Op::TypeOf => match self.arg.as_slice() {
+                [lhs, rhs] => write!(f, "{lhs} := typeof {rhs}"),
                 _ => todo!(),
             },
             Op::Mov => match self.arg.as_slice() {
@@ -491,9 +491,9 @@ impl Identifier {
     pub fn fn_in() -> Self {
         Self(Vec::from(b"in"))
     }
-    // pub fn fn_out() -> Self {
-    //     Self(Vec::from(b"out"))
-    // }
+    pub fn fn_out() -> Self {
+        Self(Vec::from(b"out"))
+    }
     pub fn new() -> Self {
         Self(Vec::new())
     }
@@ -627,8 +627,69 @@ impl std::fmt::Display for Cast {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
+    Integer(IntegerType),
+    Array(Box<Array>),
+    Reference(Box<Type>),
+    TypeType
+}
+
+impl Default for Type {
+    fn default() -> Self { Self::Integer(IntegerType::default()) }
+}
+
+impl Type {
+    pub fn bytes(&self) -> usize {
+        use Type::*;
+        match self {
+            Integer(integer) => integer.bytes(),
+            Reference(_) => 0,
+            Array(array) => array.bytes(),
+            TypeType => 0,
+            
+        }
+    }
+    /// Returns `Some(Self)` if `self` is an integer type.
+    pub fn integer(&self) -> Option<&IntegerType> {
+        use Type::*;
+        match self {
+            Integer(integer) => Some(integer),
+            _ => None,
+        }
+    }
+    pub fn reference(&self) -> Option<&Box<Type>> {
+        use Type::*;
+        match self {
+            Reference(reference)  => Some(reference),
+            _ => None,
+        }
+    }
+}
+
+impl PartialEq<IntegerType> for Type {
+    fn eq(&self, other: &IntegerType) -> bool {
+        match self {
+            Self::Integer(integer) => integer == other,
+            _ => false,
+        }
+    }
+}
+
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use Type::*;
+        match self {
+            Integer(integer) => write!(f, "{integer}"),
+            Array(array) => write!(f, "{array}"),
+            Reference(reference) => write!(f, "&{reference}"),
+            TypeType => write!(f, "type"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub enum IntegerType {
     #[default]
     U8,
     U16,
@@ -638,41 +699,36 @@ pub enum Type {
     I16,
     I32,
     I64,
-    #[allow(dead_code)]
-    Array(Box<Array>),
-    Reference,
 }
 
-impl Type {
+impl IntegerType {
     pub fn bytes(&self) -> usize {
+        use IntegerType::*;
         match self {
-            Self::Reference => 0,
-            Self::U8 => 1,
-            Self::U16 => 2,
-            Self::U32 => 4,
-            Self::U64 => 8,
-            Self::I8 => 1,
-            Self::I16 => 2,
-            Self::I32 => 4,
-            Self::I64 => 8,
-            Self::Array(array) => array.bytes(),
+            U8 => 1,
+            U16 => 2,
+            U32 => 4,
+            U64 => 8,
+            I8 => 1,
+            I16 => 2,
+            I32 => 4,
+            I64 => 8,
         }
     }
 }
 
-impl std::fmt::Display for Type {
+impl std::fmt::Display for IntegerType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use IntegerType::*;
         match self {
-            Self::U8 => write!(f, "u8"),
-            Self::U16 => write!(f, "u16"),
-            Self::U32 => write!(f, "u32"),
-            Self::U64 => write!(f, "u64"),
-            Self::I8 => write!(f, "i8"),
-            Self::I16 => write!(f, "i16"),
-            Self::I32 => write!(f, "i32"),
-            Self::I64 => write!(f, "i64"),
-            Self::Array(array) => write!(f, "{array}"),
-            _ => todo!(),
+            U8 => write!(f, "u8"),
+            U16 => write!(f, "u16"),
+            U32 => write!(f, "u32"),
+            U64 => write!(f, "u64"),
+            I8 => write!(f, "i8"),
+            I16 => write!(f, "i16"),
+            I32 => write!(f, "i32"),
+            I64 => write!(f, "i64"),
         }
     }
 }
@@ -738,7 +794,7 @@ pub enum Op {
     // Assume(Cmp),
     Require(Cmp),
     Unreachable,
-    SizeOf,
+    TypeOf,
     Svc,
     Mov,
 }

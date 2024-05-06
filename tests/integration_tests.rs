@@ -14,7 +14,7 @@ const SYSCALLS: &str = "./syscalls.abc";
 
 macro_rules! source {
     ($source: expr) => {
-        format!("include {SYSCALLS}\n{}", $source).as_bytes()
+        format!("include {SYSCALLS}\n\n{}", $source).as_bytes()
     };
 }
 
@@ -116,32 +116,47 @@ fn variable_if_true() {
     );
 }
 
-// #[test]
-// fn read() {
-//     // Create pipe
-//     let mut pipe_out = [0, 0];
-//     let res = unsafe { libc::pipe(pipe_out.as_mut_ptr()) };
-//     assert_eq!(res, 0);
-//     let [read, write] = pipe_out;
-//     // Write u8 to pipe.
-//     let data = 27u8;
-//     let bytes = data.to_ne_bytes();
-//     let res = unsafe { libc::write(write, bytes.as_ptr().cast(), std::mem::size_of::<u8>() as _) };
-//     assert_eq!(res, std::mem::size_of::<u8>() as _);
+#[test]
+fn exit_typeof() {
+    build_and_run(
+        source!(
+            "\
+            x := typeof y\n\
+            if x = u8\n\
+            \x20   exit 1\n\
+            exit 0"
+        ),
+        b"",
+        1,
+    );
+}
 
-//     let source_string = format!(
-//         "\
-//         x := read {read}\n\
-//         exit x"
-//     );
-//     build_and_run(source!(source_string), b"", 27);
+#[test]
+fn read() {
+    // Create pipe
+    let mut pipe_out = [0, 0];
+    let res = unsafe { libc::pipe(pipe_out.as_mut_ptr()) };
+    assert_eq!(res, 0);
+    let [read, write] = pipe_out;
+    // Write u8 to pipe.
+    let data = 27u8;
+    let bytes = data.to_ne_bytes();
+    let res = unsafe { libc::write(write, bytes.as_ptr().cast(), std::mem::size_of::<u8>() as _) };
+    assert_eq!(res, std::mem::size_of::<u8>() as _);
 
-//     // Close pipe.
-//     unsafe {
-//         libc::close(read);
-//         libc::close(write);
-//     }
-// }
+    let source_string = format!(
+        "\
+        x := read {read}\n\
+        exit x"
+    );
+    build_and_run(source!(source_string), b"", 27);
+
+    // Close pipe.
+    unsafe {
+        libc::close(read);
+        libc::close(write);
+    }
+}
 
 // #[test]
 // fn read_write() {

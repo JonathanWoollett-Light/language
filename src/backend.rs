@@ -120,7 +120,7 @@ pub unsafe fn instruction_from_node(
                     index: None,
                     cast: _,
                 }), Value::Literal(Literal::Integer(y))] => match type_data.get(identifier).unwrap() {
-                    Type::U8 => write!(
+                    Type::Integer(IntegerType::U8) => write!(
                         assembly,
                         "\
                             ldr x0, ={identifier}\n\
@@ -129,7 +129,7 @@ pub unsafe fn instruction_from_node(
                         "
                     )
                     .unwrap(),
-                    Type::U64 => write!(
+                    Type::Integer(IntegerType::U64) => write!(
                         assembly,
                         "\
                             ldr x0, ={identifier}\n\
@@ -150,7 +150,7 @@ pub unsafe fn instruction_from_node(
                     let Type::Array(box Array(vec)) = type_data.get(identifier).unwrap() else {
                         panic!("Can't assign string to non-U8 array")
                     };
-                    assert!(vec.iter().all(|t| *t == Type::U8));
+                    assert!(vec.iter().all(|t| *t == Type::Integer(IntegerType::U8)));
                     assert_eq!(vec.len(), bytes.len());
 
                     // Loads the address of the array.
@@ -201,7 +201,7 @@ pub unsafe fn instruction_from_node(
                 })] => {
                     let rhs_type = type_data.get(rhs_identifier).unwrap();
                     match rhs_type {
-                        Type::U8 => {
+                        Type::Integer(IntegerType::U8) => {
                             // Load data and store data in new location.
                             write!(
                                 assembly,
@@ -225,7 +225,7 @@ pub unsafe fn instruction_from_node(
                     index: None,
                     cast: _,
                 }), rest @ ..] => match type_data.get(identifier).unwrap() {
-                    Type::Array(box Array(vec)) if vec.iter().all(|t| *t == Type::U8) => {
+                    Type::Array(box Array(vec)) if vec.iter().all(|t| *t == Type::Integer(IntegerType::U8)) => {
                         assert_eq!(vec.len(), rest.len());
 
                         // Loads the address of the array.
@@ -275,7 +275,7 @@ pub unsafe fn instruction_from_node(
                     index: None,
                     cast: _,
                 }), Value::Literal(Literal::Integer(y))] => match type_data.get(identifier).unwrap() {
-                    Type::U8 => write!(
+                    Type::Integer(IntegerType::U8) => write!(
                         &mut assembly,
                         "\
                             ldr x0, ={identifier}\n\
@@ -285,7 +285,7 @@ pub unsafe fn instruction_from_node(
                         "
                     )
                     .unwrap(),
-                    Type::U64 => write!(
+                    Type::Integer(IntegerType::U64) => write!(
                         &mut assembly,
                         "\
                             ldr x0, ={identifier}\n\
@@ -306,7 +306,7 @@ pub unsafe fn instruction_from_node(
                     index: None,
                     cast: _,
                 }), Value::Literal(Literal::Integer(y))] => match type_data.get(identifier).unwrap() {
-                    Type::U8 => write!(
+                    Type::Integer(IntegerType::U8) => write!(
                         &mut assembly,
                         "\
                             ldr x0, ={identifier}\n\
@@ -316,7 +316,7 @@ pub unsafe fn instruction_from_node(
                         "
                     )
                     .unwrap(),
-                    Type::U64 => write!(
+                    Type::Integer(IntegerType::U64) => write!(
                         &mut assembly,
                         "\
                             ldr x0, ={identifier}\n\
@@ -368,7 +368,7 @@ pub unsafe fn instruction_from_node(
                     index: None,
                     cast: _,
                 })] => match type_data.get(identifier).unwrap() {
-                    Type::U8 => {
+                    Type::Integer(IntegerType::U8) => {
                         // Load data and store data in new location.
                         write!(
                             assembly,

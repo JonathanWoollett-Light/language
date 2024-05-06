@@ -71,7 +71,7 @@ unsafe fn inline_children(mut node: NonNull<NewNode>) {
 }
 
 /// Deallocates the abstract syntax tree starting at `node`.
-unsafe fn dealloc_ast(node: NonNull<NewNode>) {
+pub unsafe fn dealloc_ast(node: NonNull<NewNode>) {
     if let Some(pre) = node.as_ref().preceding {
         match pre {
             Preceding::Parent(mut parent) => {
@@ -382,20 +382,14 @@ unsafe fn find_variable_cast(start: NonNull<TreeEdge>, identifier: &Identifier) 
     None
 }
 
-#[derive(Debug, Eq, PartialEq)]
-enum IntegerType {
-    U8,
-    U16,
-    U32,
-    U64,
-    I8,
-    I16,
-    I32,
-    I64,
+/// When no infomation is known about a variable we explore the possible types returned here.
+fn default_possible_types() -> Vec<Type> {
+    use IntegerType::*;
+    vec![I64, I32, I16, I8, U64, U32, U16, U8].into_iter().map(Type::Integer).collect()
 }
 
-// For a given integer value return all types that can contain it.
-fn containing_types(x: i128) -> Vec<IntegerType> {
+/// For a given integer value return all types that can contain it.
+fn possible_integer_types(x: i128) -> Vec<Type> {
     use IntegerType::*;
     const I64_MIN: i128 = i64::MIN as i128;
     const I32_MIN: i128 = i32::MIN as i128;
@@ -425,43 +419,57 @@ fn containing_types(x: i128) -> Vec<IntegerType> {
         U32_EDGE..I64_EDGE => vec![I64, U64],
         I64_EDGE..U64_EDGE => vec![U64],
         _ => panic!(),
-    }
-}
-
-impl From<IntegerType> for Type {
-    fn from(x: IntegerType) -> Type {
-        match x {
-            IntegerType::U8 => Type::U8,
-            IntegerType::U16 => Type::U16,
-            IntegerType::U32 => Type::U32,
-            IntegerType::U64 => Type::U64,
-            IntegerType::I8 => Type::I8,
-            IntegerType::I16 => Type::I16,
-            IntegerType::I32 => Type::I32,
-            IntegerType::I64 => Type::I64,
-        }
-    }
-}
-impl TryFrom<Type> for IntegerType {
-    type Error = ();
-    fn try_from(x: Type) -> Result<Self, Self::Error> {
-        match x {
-            Type::U8 => Ok(IntegerType::U8),
-            Type::U16 => Ok(IntegerType::U16),
-            Type::U32 => Ok(IntegerType::U32),
-            Type::U64 => Ok(IntegerType::U64),
-            Type::I8 => Ok(IntegerType::I8),
-            Type::I16 => Ok(IntegerType::I16),
-            Type::I32 => Ok(IntegerType::I32),
-            Type::I64 => Ok(IntegerType::I64),
-            _ => Err(()),
-        }
-    }
+    }.into_iter().map(Type::Integer).collect()
 }
 
 pub enum ExplorationResult {
     Continue(Explorer),
     Done(NonNull<NewNode>),
+}
+
+unsafe fn explore_types(possible: Vec<Type>, mut leaf_ptr: NonNull<ExploreBranch>, lhs: &Variable) -> Vec<NonNull<ExploreBranch>> {
+    // For each possible cast, create a leaf node.
+    let (next, new_leaves) = possible
+        .into_iter()
+        .map(|p| {
+            // Allocate new leaf.
+            let new_leaf = empty_nonnull();
+
+            // Create precondition.
+            let precond = Statement {
+                op: Op::Assign,
+                arg: vec![Value::Variable(Variable {
+                    cast: Some(Cast::As(Type::from(p))),
+                    ..lhs.clone()
+                })],
+            };
+
+            // Create edge.
+            let edge = nonnull(TreeEdge {
+                precond: Some(precond),
+                next: TreeEdgeNext::new(new_leaf),
+                prev: leaf_ptr,
+            });
+
+            // Allocate new leaf.
+            ptr::write(
+                new_leaf.as_ptr(),
+                ExploreBranch {
+                    asn: leaf_ptr.as_ref().asn.as_ref().next.unwrap(),
+                    prev: Some(edge),
+                    next: None,
+                },
+            );
+
+            // Return branch next.
+            (edge, new_leaf)
+        })
+        .unzip::<_, _, Vec<_>, Vec<_>>();
+
+    assert_eq!(leaf_ptr.as_ref().next, None);
+    leaf_ptr.as_mut().next = Some(next);
+
+    new_leaves
 }
 
 impl Explorer {
@@ -490,7 +498,7 @@ impl Explorer {
         let slice = statement.arg.as_slice();
 
         // eprintln!("\n\n{}\n\n", display_ast(self.front));
-        // eprintln!("statement: {statement}");
+        eprintln!("statement: {statement}");
 
         match &statement.op {
             Op::Assign => {
@@ -513,53 +521,7 @@ impl Explorer {
                         let new_leaves = match cast_opt {
                             // This will only arrise when the variable hasn't been previously defined,
                             // in this case we need to explore possible types.
-                            None => {
-                                // Get all possible integer types.
-                                let possible = containing_types(*x);
-
-                                // For each possible cast, create a leaf node.
-                                let (next, new_leaves) = possible
-                                    .into_iter()
-                                    .map(|p| {
-                                        // Allocate new leaf.
-                                        let new_leaf = empty_nonnull();
-
-                                        // Create precondition.
-                                        let precond = Statement {
-                                            op: Op::Assign,
-                                            arg: vec![Value::Variable(Variable {
-                                                cast: Some(Cast::As(Type::from(p))),
-                                                ..lhs.clone()
-                                            })],
-                                        };
-
-                                        // Create edge.
-                                        let edge = nonnull(TreeEdge {
-                                            precond: Some(precond),
-                                            next: TreeEdgeNext::new(new_leaf),
-                                            prev: leaf_ptr,
-                                        });
-
-                                        // Allocate new leaf.
-                                        ptr::write(
-                                            new_leaf.as_ptr(),
-                                            ExploreBranch {
-                                                asn: leaf.asn.as_ref().next.unwrap(),
-                                                prev: Some(edge),
-                                                next: None,
-                                            },
-                                        );
-
-                                        // Return branch next.
-                                        (edge, new_leaf)
-                                    })
-                                    .unzip::<_, _, Vec<_>, Vec<_>>();
-
-                                assert_eq!(leaf_ptr.as_ref().next, None);
-                                leaf_ptr.as_mut().next = Some(next);
-
-                                new_leaves
-                            }
+                            None => explore_types(possible_integer_types(*x), leaf_ptr, lhs),
                             // TODO: Check if the assigned value fits in the cast type, if it does do
                             // nothing, if it doesn't add to the stack to explore the types it could fit in
                             Some(cast) => todo!(),
@@ -573,26 +535,34 @@ impl Explorer {
                             ..
                         },
                     ), Value::Variable(
-                        rhs @ Variable {
-                            addressing: Addressing::Direct,
+                        Variable {
+                            addressing: rhs_addressing,
                             identifier: rhs_identifier,
                             ..
                         },
                     )] => {
-                        // TODO: If this fails at some point maybe it should be
-                        // `find_variable_cast(p, lhs_identifier)`.
-                        //
-                        // There will be a type at this point, we can check this but it doesn't
-                        // require any pre-conditional statement.
-                        assert!(match &lhs.cast {
+                        let cast_opt = match &lhs.cast {
                             Some(Cast::As(cast_type)) => Some(cast_type.clone()),
                             Some(Cast::Prev) => todo!(),
-                            None => leaf.prev.and_then(|p| find_variable_cast(p, rhs_identifier)),
-                        }
-                        .is_some());
+                            None => leaf
+                                .prev
+                                .and_then(|p| find_variable_cast(p, rhs_identifier))
+                                .map(|rhs_type| match rhs_addressing {
+                                    Addressing::Direct => rhs_type,
+                                    Addressing::Reference => Type::Reference(Box::new(rhs_type)),
+                                    Addressing::Dereference => todo!(),
+                                }),
+                        };
 
-                        let new_leaf = handle_no_precond(leaf_ptr);
-                        self.stack.push(new_leaf);
+                        // Based on the variables casted type
+                        let new_leaves = match cast_opt {
+                            // This will only arrise when the variable hasn't been previously defined,
+                            // in this case we need to explore possible types.
+                            None => explore_types(default_possible_types(), leaf_ptr, lhs),
+                            Some(cast) => vec![handle_no_precond(leaf_ptr)],
+                        };
+
+                        self.stack.extend(new_leaves);
                     }
                     x @ _ => todo!("{x:?}"),
                 }
@@ -759,13 +729,13 @@ impl Explorer {
                     }
                     .unwrap();
 
-                    let possible = containing_types(*x);
-                    match IntegerType::try_from(cast_opt).map(|t| possible.contains(&t)) {
-                        Ok(true) => {
+                    let possible = possible_integer_types(*x);
+                    match cast_opt.integer().map(|t| possible.iter().any(|p| p == t)) {
+                        Some(true) => {
                             let new_leaf = handle_no_precond(leaf_ptr);
                             self.stack.push(new_leaf);
                         }
-                        Ok(false) | Err(_) => todo!(),
+                        Some(false) | None => todo!(),
                     }
                     ExplorationResult::Continue(self)
                 }
@@ -776,7 +746,7 @@ impl Explorer {
                         ..
                     },
                 ), Value::Variable(
-                    rhs @ Variable {
+                    Variable {
                         addressing: Addressing::Direct,
                         identifier: rhs_identifier,
                         ..
@@ -828,6 +798,64 @@ impl Explorer {
                 }
                 _ => todo!(),
             },
+            Op::TypeOf => match slice {
+                [Value::Variable(
+                    Variable {
+                        addressing: Addressing::Direct,
+                        identifier: lhs_identifier,
+                        cast: lhs_cast,
+                        ..
+                    },
+                ), Value::Variable(
+                    rhs @ Variable {
+                        addressing: rhs_addressing,
+                        identifier: rhs_identifier,
+                        cast: rhs_cast,
+                        ..
+                    },
+                )] => {
+                    // The type of the left-hande-side can only be a `Type` type.
+                    assert!(match lhs_cast {
+                        Some(Cast::As(cast_type)) => match cast_type {
+                            Type::TypeType => true,
+                            _ => false,
+                        },
+                        Some(Cast::Prev) => false,
+                        None => true
+                    });
+
+                    let rhs_cast_opt = match &rhs_cast {
+                        Some(Cast::As(cast_type)) => Some(match rhs_addressing {
+                            Addressing::Direct => cast_type.clone(),
+                            // You can only cast a reference to a reference of the equivalent depth
+                            // e.g. you can cast `&&u8` to `&&i8` but not to `i8` or `&i8`.
+                            Addressing::Reference => todo!(),
+                            Addressing::Dereference => todo!(),
+                        }),
+                        Some(Cast::Prev) => todo!(),
+                        None => leaf
+                            .prev
+                            .and_then(|p| find_variable_cast(p, rhs_identifier))
+                            .map(|rhs_type| match rhs_addressing {
+                                Addressing::Direct => rhs_type,
+                                Addressing::Reference => Type::Reference(Box::new(rhs_type)),
+                                Addressing::Dereference => rhs_type.reference().unwrap().as_ref().clone(),
+                            }),
+                    };
+
+                    // Based on the variables casted type
+                    let new_leaves = match rhs_cast_opt {
+                        // This will only arrise when the variable hasn't been previously defined,
+                        // in this case we need to explore possible types.
+                        None => explore_types(default_possible_types(), leaf_ptr, rhs),
+                        Some(cast) => vec![handle_no_precond(leaf_ptr)],
+                    };
+
+                    self.stack.extend(new_leaves);
+                    ExplorationResult::Continue(self)
+                }
+                x @ _ => todo!("{x:?}"),
+            }
             x @ _ => todo!("{x:?}"),
         }
     }
