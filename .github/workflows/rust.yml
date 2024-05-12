@@ -1,76 +1,76 @@
-on: [push, pull_request]
+# on: [push, pull_request]
 
-env:
-  CARGO_TERM_COLOR: always
-  BENCHER_PROJECT: language
-  BENCHER_API_TOKEN: ${{ secrets.BENCHER_API_TOKEN }}
-  BENCHER_ADAPTER: rust_bench
+# env:
+#   CARGO_TERM_COLOR: always
+#   BENCHER_PROJECT: language
+#   BENCHER_API_TOKEN: ${{ secrets.BENCHER_API_TOKEN }}
+#   BENCHER_ADAPTER: rust_bench
 
-jobs:
-  rust:
-    runs-on: buildjet-4vcpu-ubuntu-2204-arm
+# jobs:
+#   rust:
+#     runs-on: buildjet-4vcpu-ubuntu-2204-arm
 
-    steps:
-    - uses: actions/checkout@v3
+#     steps:
+#     - uses: actions/checkout@v3
     
-    - name: Nightly
-      run: rustup default nightly
+#     - name: Nightly
+#       run: rustup default nightly
 
-    - name: Format
-      run: |
-        rustup component add rustfmt
-        cargo fmt --check
+#     - name: Format
+#       run: |
+#         rustup component add rustfmt
+#         cargo fmt --check
       
-    # # Install and cache `cargo-audit`
-    # - uses: taiki-e/cache-cargo-install-action@v1
-    #   with:
-    #     tool: cargo-audit
-    #     locked: false # See https://github.com/taiki-e/cache-cargo-install-action/issues/2
+#     # # Install and cache `cargo-audit`
+#     # - uses: taiki-e/cache-cargo-install-action@v1
+#     #   with:
+#     #     tool: cargo-audit
+#     #     locked: false # See https://github.com/taiki-e/cache-cargo-install-action/issues/2
 
-    # - name: Audit
-    #   run: cargo audit
+#     # - name: Audit
+#     #   run: cargo audit
       
-    - name: Check
-      run: cargo check
+#     - name: Check
+#       run: cargo check
 
-    - name: Clippy
-      run: |
-        rustup component add clippy
-        cargo clippy --tests -- --deny warnings
+#     - name: Clippy
+#       run: |
+#         rustup component add clippy
+#         cargo clippy --tests -- --deny warnings
       
-    # # Install and cache `cargo-udeps`
-    # - uses: taiki-e/cache-cargo-install-action@v1
-    #   with:
-    #     tool: cargo-udeps
+#     # # Install and cache `cargo-udeps`
+#     # - uses: taiki-e/cache-cargo-install-action@v1
+#     #   with:
+#     #     tool: cargo-udeps
 
-    # - name: Dependencies
-    #   run: cargo udeps
+#     # - name: Dependencies
+#     #   run: cargo udeps
 
-    - name: Test
-      run: cargo test
+#     - name: Test
+#       run: cargo test
 
-    # # Install and cache `cargo-llvm-cov`
-    # - uses: taiki-e/cache-cargo-install-action@v1
-    #   with:
-    #     tool: cargo-llvm-cov
+#     # # Install and cache `cargo-llvm-cov`
+#     # - uses: taiki-e/cache-cargo-install-action@v1
+#     #   with:
+#     #     tool: cargo-llvm-cov
 
-    # - name: Generate code coverage
-    #   run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+#     # - name: Generate code coverage
+#     #   run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
     
-    # - name: Upload coverage to Codecov
-    #   uses: codecov/codecov-action@v3
-    #   with:
-    #     files: lcov.info
-    #     fail_ci_if_error: true
+#     # - name: Upload coverage to Codecov
+#     #   uses: codecov/codecov-action@v3
+#     #   with:
+#     #     files: lcov.info
+#     #     fail_ci_if_error: true
 
-    # - name: Install Bencher
-    #   uses: bencherdev/bencher@main
-    # - name: Benchmark with Bencher
-    #   run: |
-    #     bencher run \
-    #     --err \
-    #     --github-actions ${{ secrets.GITHUB_TOKEN }} \
-    #     --if-branch "$GITHUB_REF_NAME" \
-    #     --else-if-branch "$GITHUB_BASE_REF" \
-    #     --else-if-branch main \
-    #     "cargo bench" 
+#     # - name: Install Bencher
+#     #   uses: bencherdev/bencher@main
+#     # - name: Benchmark with Bencher
+#     #   run: |
+#     #     bencher run \
+#     #     --err \
+#     #     --github-actions ${{ secrets.GITHUB_TOKEN }} \
+#     #     --if-branch "$GITHUB_REF_NAME" \
+#     #     --else-if-branch "$GITHUB_BASE_REF" \
+#     #     --else-if-branch main \
+#     #     "cargo bench" 

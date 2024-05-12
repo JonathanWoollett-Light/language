@@ -18,7 +18,7 @@
         .assembly {
             font-size: 14px;
             overflow-y: auto;
-            max-height: 300px;
+            max-height: 262px;
         }
     </style>
   </head>
@@ -32,6 +32,7 @@
                 <li><a href="https://github.com/JonathanWoollett-Light/language">GitHub</a></li>
             </ul>
         </nav>
+        <h4>🚧Given the early state of development anything and everything might not work🚧</h4>
         <ul>
             <li><b>Less keywords than C.</b></li>
             <li><b>No stack overflow.</b></li>
@@ -44,9 +45,9 @@
         <h3>Hello, World!</h3>
         <div class="grid">
             <div>
-                <h5>Language</h5>
-                <p class="code">include https://raw.githubusercontent.com/JonathanWoollett-Light/language/master/syscalls.lang<br>x := "Hello, World!\n"<br>write 1 &x<br>exit 0</p>
-                <p class="code">language new hello-world<br>cd hello-world<br>language build<br>cat ./build/assembly.s</p>
+                <h5>Placeholder</h5>
+                <p class="code">include https://placeholder/syscalls.lang<br>write stdout "Hello, World!\n"<br>exit 0</p>
+                <p class="code">placeholder new hello-world<br>cd hello-world<br>placeholder build<br>cat ./build/assembly.s</p>
                 <p class="code assembly">.global _start<br>_start:<br>mov x8, #64<br>mov x0, #1<br>ldr x1, =a<br>mov x2, #14<br>svc #0<br>mov x8, #93<br>mov x0, #0<br>svc #0<br>.data<br>a: .byte 72,101,108,108,111,44,32,87,111,114,108,100,33,10</p>
             </div>
             <div>
@@ -63,13 +64,11 @@
             <li><span class="code">break</span>: Jumps out of the current <span class="code">loop</span>.</li>
             <li><span class="code">def</span>: <a href="https://www.w3schools.com/python/python_functions.asp">Python's <span class="code">def</span></a> without the <span class="code">:</span>.</li>
             <li><span class="code">in</span>: The arguments given to a function.</li>
-            <li><span class="code">out</span>: The return of a function.</li>
             <li><span class="code">require</span>: A condition to prove with formal verification at compile-time.</li>
             <li><span class="code">assume</span>: A condition assumed to be true at compile-time.</li>
             <li><span class="code">typeof</span>: Returns the type of a value.</li>
             <li><span class="code">unreachable</span>: Marks the end of execution, all following statements are unreachable.</li>
-            <li><span class="code">mov</span>: Moves a value into a register.</li>
-            <li><span class="code">svc</span>: Supervisor Call causes an exception to be taken to EL1.</li>
+            <li><span class="code">asm</span>: The prefix for a line with in-line assembly e.g. <span class="code">asm mov x0, 1</span>.</li>
         </ol>
         <h3>Tentative keywords</h3>
         <ol>
@@ -77,63 +76,8 @@
             <li><span class="code">assert</span>: A condition that calls <span class="code">exit</span> if false at run-time.</li>
             <li><span class="code">verify</span>: Like <span class="code">require</span> but does not exhaustively check the condition. <span class="code">verify x < 2</span> will apply a number of steps of gradient descent to search for the minium of <span class="code">x</span> to verify the condition. While this is not formal verification it provides an effective and almost always correct mechanism to test conditions at compile time that would be too computationally expensive to exhaustively prove.</li>
             <li><span class="code">abstain</span>: Resets the understood domain of a variable at compile to any value.</li>
+            <li><span class="code">clone</span>: Marks the split of execution into multiple threads.</li>
         </ol>
-        <h3>Examples</h3>
-        <div class="grid">
-            <div><p>Source</p></div>
-            <div><p>Optimized</p></div>
-            <div><p>Assembly</p></div>
-        </div>
-        <div class="grid">
-            <div><p class="code">exit 0</p></div>
-            <div><p class="code">exit 0</p></div>
-            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #0<br>svc #0</p></div>
-        </div>
-        <div class="grid">
-            <div><p class="code">exit 1<br>exit 2</p></div>
-            <div><p class="code">exit 1</p></div>
-            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #1<br>svc #0</p></div>
-        </div>
-        <div class="grid">
-            <div><p class="code">x := 1<br>exit 0</p></div>
-            <div><p class="code">exit 0</p></div>
-            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #0<br>svc #0</p></div>
-        </div>
-        <div class="grid">
-            <div><p class="code">x := 1<br>exit x</p></div>
-            <div><p class="code">exit 1</p></div>
-            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #1<br>svc #0</p></div>
-        </div>
-        <div class="grid">
-            <div><p class="code">x := 1<br>x += 1<br>exit x</p></div>
-            <div><p class="code">exit 2</p></div>
-            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #2<br>svc #0</p></div>
-        </div>
-        <div class="grid">
-            <div><p class="code">x := 1<br>if x = 2<br>    exit 1<br>exit 0</p></div>
-            <div><p class="code">exit 0</p></div>
-            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #0<br>svc #0</p></div>
-        </div>
-        <div class="grid">
-            <div><p class="code">x := 2<br>if x = 2<br>    exit 1<br>exit 0</p></div>
-            <div><p class="code">exit 1</p></div>
-            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #93<br>mov x0, #1<br>svc #0</p></div>
-        </div>
-        <div class="grid">
-            <div><p class="code">x := read 0<br>exit x</p></div>
-            <div><p class="code">x := read u8 0<br>exit x</p></div>
-            <div><p class="code assembly">.global _start<br>_start:<br>mov x8, #63<br>mov x0, #0<br>ldr x1, =x<br>mov x2, #1<br>svc #0<br>mov x8, #93<br>ldr x0, =x<br>ldrb w0, [x0]<br>svc #0<br>.bss<br>x: .skip 1</p></div>
-        </div>
-        <div class="grid">
-            <div><p class="code">x := read 0<br>write 1 x<br>exit 0</p></div>
-            <div><p class="code">x := read u8 0<br>write 1 x<br>exit 0</p></div>
-            <div><p class="code assembly">.global _start<br>start:<br>mov x8, #63<br>mov x0, #0<br>ldr x1, =x<br>mov x2, #1<br>svc #0<br>mov x8, #64<br>mov x0, #1<br>ldr x1, =x<br>mov x2, #1<br>svc #0<br>mov x8, #93<br>mov x0, #0<br>svc #0<br>.bss<br>x: .skip 1</p></div>
-        </div>
-        <div class="grid">
-            <div><p class="code">def add<br>    out := in[0] + in[1]<br>x := add 1 2<br>write 1 x<br>require x = 3<br>assume x = 4<br>require x = 4<br>assert x = 4</p></div>
-            <div><p class="code">write 1 3</p></div>
-            <div><p></p></div>
-        </div>
     </main>
   </body>
 </html>

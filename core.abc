@@ -1,19 +1,108 @@
+assume type_integer = 0
+assume type_array = 1
+assume type_reference = 2
+assume type_type = 3
+
+assume type_integer_u8 = 0
+assume type_integer_u16 = 1
+assume type_integer_u32 = 2
+assume type_integer_u64 = 3
+assume type_integer_i8 = 4
+assume type_integer_i16 = 5
+assume type_integer_i32 = 6
+assume type_integer_i64 = 7
+
+assume value_literal = 0
+assume value_variable = 1
+assume value_type = 2
+assume value_register = 3
+
+def :=
+    t := typeof in
+    require t = type_array
+    n := len in
+    require n = 2
+
+    assume lhs = in[0]
+    assume rhs = in[1]
+
+    assume lhst = typeof lhs
+    assume rhst = typeof rhs
+    require lhst = rhst
+
+    assume lhsv = valueof lhs
+    assume rhsv = valueof rhs
+    require lhsv = value_variable
+
+    if rhsv = value_literal
+        if rhst = type_integer_u8
+            asm ldr x0, =lhs
+            asm movb w1, rhs
+            asm strb w1, [x0]
+        if rhst = type_integer_u16
+            # ...
+        # ...
+    # ...
+
+def +=
+    t := typeof in
+    require t = type_array
+    n := len in
+    require n = 2
+
+    lhs := in[0]
+    rhs := in[1]
+
+    lhsv := valueof lhs
+    rhsv := valueof rhs
+    require lhsv = value_variable
+
+    lhst := typeof lhs
+    rhst := typeof rhs
+    require lhst = rhst
+
+    if rhsv = value_literal
+        if lhst[0] = type_integer
+            if lhst[1] = type_integer_u8
+                asm ldr x0, =lhs
+                asm ldrb w1, [x0]
+                asm add w1, rhs
+                asm strb w1, [x0]
+            if lhst[1] = type_integer_u16
+                # ...
+            # ...
+        # ...
+    if rhsv = variable
+        if lhst = u8
+            # ...
+        # ...
+    # ...
+
 def sizeof
-    t = typeof in
-    if t = u8:
-        out = 1
-    if t = u16:
-        out = 2
-    if t = u32:
-        out = 4
-    if t = u64:
-        out = 8
-    if t = i8:
-        out = 1
-    if t = i16:
-        out = 2
-    if t = i32:
-        out = 4
-    if t = i64:
-        out = 8
+    t := typeof in
+    require t = type_array
+    n := len in
+    require n = 2
+
+    lhs = in[0]
+    rhs = in[1]
+    lhst = typeof lhs
+    
+    if lhst[0] = type_integer
+        if lhst[1] = type_integer_u8:
+            lhs := 1
+        if lhst[1] = type_integer_u16:
+            lhs := 2
+        if lhst[1] = type_integer_u32:
+            lhs := 4
+        if lhst[1] = type_integer_u64:
+            lhs := 8
+        if lhst[1] = type_integer_i8:
+            lhs := 1
+        if lhst[1] = type_integer_i16:
+            lhs := 2
+        if lhst[1] = type_integer_i32:
+            lhs := 4
+        if lhst[1] = type_integer_i64:
+            lhs := 8
     # TODO Handle arrays and references

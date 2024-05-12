@@ -1,5 +1,9 @@
 include ./core.abc
 
+stdin := 0
+stdout := 1
+stderr := 2
+
 def exit
     mov x8 93
     mov x0 in
@@ -17,8 +21,8 @@ def write
     svc 0
 
 def read
-    fd := in
-    ptr := &out
+    fd := in[1]
+    ptr := &in[0]
     len := sizeof *ptr
     mov x8 63
     mov x0 fd
