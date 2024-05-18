@@ -6,3 +6,5 @@
 Like some of those other languages with cool features, but actually easy to use.
 
 No human being alive thinks like how a functional language is written. No matter how many new functional languages PhD publish.
+
+Functional languages do not spark joy.
