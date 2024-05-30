@@ -4,7 +4,7 @@ use std::alloc::Layout;
 use std::ptr::NonNull;
 
 // Pre-exploration optimization.
-pub unsafe fn prex_optimization(root: NonNull<NewNode>) {
+pub unsafe fn prex_optimization(root: NonNull<AstNode>) {
     let mut stack = vec![root];
     while let Some(mut current) = stack.pop() {
         match current.as_ref().statement.op {
@@ -27,4 +27,4 @@ pub unsafe fn prex_optimization(root: NonNull<NewNode>) {
 }
 
 /// Post-exploration optimization.
-pub unsafe fn post_optimization(_root: NonNull<NewNode>) {}
+pub unsafe fn post_optimization(_root: NonNull<AstNode>) {}

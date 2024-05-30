@@ -6,6 +6,7 @@ use std::io::Read;
 use std::iter::once;
 use std::iter::Peekable;
 use std::ptr::{self, NonNull};
+use std::collections::HashMap;
 
 #[cfg(test)]
 use tracing::instrument;
@@ -308,11 +309,11 @@ pub fn get_values<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Vec<Value> {
 }
 
 #[cfg_attr(test, instrument(level = "TRACE", skip(bytes)))]
-pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Option<NonNull<NewNode>> {
+pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Option<NonNull<AstNode>> {
     let mut indent = 0;
 
     let mut first = None;
-    let mut new_parent_stack: Vec<NonNull<NewNode>> = Vec::new();
+    let mut new_parent_stack: Vec<NonNull<AstNode>> = Vec::new();
 
     // TODO Is this comment still valid?
     // Due to how we handle parsing, variable identifiers cannot be defined with the starting
@@ -371,8 +372,14 @@ pub fn get_nodes<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Option<NonNull<NewN
 
         // Wrap the statement in a node.
         let mut new_node = unsafe {
-            let ptr = alloc::alloc(alloc::Layout::new::<NewNode>()).cast::<NewNode>();
-            ptr::write(ptr, NewNode::new(statement));
+            let ptr = alloc::alloc(alloc::Layout::new::<AstNode>()).cast::<AstNode>();
+            let node = AstNode {
+                line: Line::Statement(statement),
+                preceding: None,
+                child: None,
+                next: None,
+            };
+            ptr::write(ptr, node);
             NonNull::new(ptr).unwrap()
         };
 
@@ -428,62 +435,65 @@ pub fn get_cmp<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Cmp {
 pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
     let variable = get_variable(bytes);
 
-    match (variable.identifier.0.as_slice(), &variable.index) {
-        // Loop
-        (b"loop", None) => Statement {
-            op: Op::Loop,
-            arg: get_values(bytes),
-        },
-        // If
-        (b"if", None) => {
-            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
-            let lhs = get_value(bytes);
-            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
-            let op = Op::If(get_cmp(bytes));
-            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
-            let rhs = get_value(bytes);
-            let arg = vec![lhs, rhs];
-            Statement { op, arg }
-        }
-        (b"break", None) => Statement {
-            op: Op::Break,
-            arg: Vec::new(),
-        },
-        (b"require", None) => {
-            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
-            let lhs = get_value(bytes);
-            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
-            let op = Op::Require(get_cmp(bytes));
-            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
-            let rhs = get_value(bytes);
-            let arg = vec![lhs, rhs];
-            Statement { op, arg }
-        }
-        (b"unreachable", None) => Statement {
-            op: Op::Unreachable,
-            arg: Vec::new(),
-        },
-        (b"def", None) => {
-            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
-            let ident = get_variable(bytes);
-            Statement {
-                op: Op::Def,
-                arg: vec![Value::Variable(ident)],
-            }
-        }
-        (b"svc", None) => {
-            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
-            Statement {
-                op: Op::Svc,
+    match variable {
+        Variable { addressing: Addressing::Direct, identifier, index: None, cast: None } => match identifier.0.as_slice() {
+            // Loop
+            b"loop" => Statement {
+                op: Op::Loop,
                 arg: get_values(bytes),
+            },
+            // If
+            b"if" => {
+                assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+                let lhs = get_value(bytes);
+                assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+                let op = Op::If(get_cmp(bytes));
+                assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+                let rhs = get_value(bytes);
+                let arg = vec![lhs, rhs];
+                Statement { op, arg }
             }
-        }
-        (b"mov", None) => {
-            assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
-            Statement {
-                op: Op::Mov,
-                arg: get_values(bytes),
+            b"break" => Statement {
+                op: Op::Break,
+                arg: Vec::new(),
+            },
+            b"require" => {
+                assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+                let lhs = get_value(bytes);
+                assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+                let op = Op::Require(get_cmp(bytes));
+                assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+                let rhs = get_value(bytes);
+                let arg = vec![lhs, rhs];
+                Statement { op, arg }
             }
+            b"unreachable" => Statement {
+                op: Op::Unreachable,
+                arg: Vec::new(),
+            },
+            b"def" => {
+                assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+                let ident = get_variable(bytes);
+                Statement {
+                    op: Op::Def,
+                    arg: vec![Value::Variable(ident)],
+                }
+            }
+            b"svc" => {
+                assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+                Statement {
+                    op: Op::Svc,
+                    arg: get_values(bytes),
+                }
+            }
+            b"mov" => {
+                assert_eq!(bytes.next().map(Result::unwrap), Some(b' '));
+                Statement {
+                    op: Op::Mov,
+                    arg: get_values(bytes),
+                }
+            }
+            _ => todo!()
         }
         _ => {
             let lhs: Value = Value::Variable(variable);
@@ -586,41 +596,6 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                     arg: std::iter::once(lhs).chain(get_values(bytes)).collect(),
                 },
             }
-        }
-    }
-}
-
-pub fn get_includes(source: &mut Vec<u8>) {
-    let mut i = 0;
-    const INCLUDE: &[u8] = b"include ";
-    while i < source.len() - INCLUDE.len() {
-        let j = i + INCLUDE.len();
-        if &source[i..j] == INCLUDE {
-            let mut k = j;
-            loop {
-                k += 1;
-                match source.get(k) {
-                    Some(b'\n') => break,
-                    Some(_) => continue,
-                    None => panic!(),
-                }
-            }
-
-            // let paths = std::fs::read_dir("./").unwrap();
-            // for path in paths {
-            //     eprintln!("Name: {}", path.unwrap().path().display())
-            // }
-
-            let str = std::str::from_utf8(&source[j..k]).unwrap();
-            // eprintln!("str: {str:?}");
-            let text = if let Some(b"http") = source.get(j..j + 4) {
-                reqwest::blocking::get(str).unwrap().text().unwrap()
-            } else {
-                std::fs::read_to_string(str).unwrap()
-            };
-            source.splice(i..k, text.bytes());
-        } else {
-            i += 1;
         }
     }
 }

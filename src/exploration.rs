@@ -19,18 +19,19 @@ use std::collections::HashSet;
 use std::ptr;
 use std::ptr::NonNull;
 use std::rc::Rc;
+use crate::nonnull;
 
 #[derive(Debug)]
 struct ExploreBranch {
     /// Abstract Syntax Node
-    asn: NonNull<NewNode>,
+    asn: NonNull<AstNode>,
     prev: Option<NonNull<TreeEdge>>,
     // None means we haven't set the values to explore, an empty vec means we have explored all values.
     next: Option<Vec<NonNull<TreeEdge>>>,
 }
 
 // Deallocates `node` in the abstract syntax tree.
-unsafe fn dealloc_asn(node: NonNull<NewNode>) {
+unsafe fn dealloc_asn(node: NonNull<AstNode>) {
     if let Some(pre) = node.as_ref().preceding {
         match pre {
             Preceding::Parent(mut parent) => {
@@ -48,11 +49,11 @@ unsafe fn dealloc_asn(node: NonNull<NewNode>) {
         dealloc_ast(child);
     }
 
-    dealloc(node.as_ptr().cast(), Layout::new::<NewNode>());
+    dealloc(node.as_ptr().cast(), Layout::new::<AstNode>());
 }
 
 /// Inline children from `node` in the abstract syntax tree.
-unsafe fn inline_children(mut node: NonNull<NewNode>) {
+unsafe fn inline_children(mut node: NonNull<AstNode>) {
     if let Some(mut child) = node.as_ref().child {
         child.as_mut().preceding = Some(Preceding::Previous(node));
         let mut front_child = child;
@@ -71,7 +72,7 @@ unsafe fn inline_children(mut node: NonNull<NewNode>) {
 }
 
 /// Deallocates the abstract syntax tree starting at `node`.
-pub unsafe fn dealloc_ast(node: NonNull<NewNode>) {
+pub unsafe fn dealloc_ast(node: NonNull<AstNode>) {
     if let Some(pre) = node.as_ref().preceding {
         match pre {
             Preceding::Parent(mut parent) => {
@@ -92,7 +93,7 @@ pub unsafe fn dealloc_ast(node: NonNull<NewNode>) {
             stack.push(child);
         }
         // Deallocate.
-        dealloc(current.as_ptr().cast(), Layout::new::<NewNode>());
+        dealloc(current.as_ptr().cast(), Layout::new::<AstNode>());
     }
 }
 
@@ -424,7 +425,7 @@ fn possible_integer_types(x: i128) -> Vec<Type> {
 
 pub enum ExplorationResult {
     Continue(Explorer),
-    Done(NonNull<NewNode>),
+    Done(NonNull<AstNode>),
 }
 
 unsafe fn explore_types(possible: Vec<Type>, mut leaf_ptr: NonNull<ExploreBranch>, lhs: &Variable) -> Vec<NonNull<ExploreBranch>> {
@@ -473,7 +474,7 @@ unsafe fn explore_types(possible: Vec<Type>, mut leaf_ptr: NonNull<ExploreBranch
 }
 
 impl Explorer {
-    pub unsafe fn new(root: NonNull<NewNode>) -> Self {
+    pub unsafe fn new(root: NonNull<AstNode>) -> Self {
         let ptr = alloc(Layout::new::<ExploreBranch>()).cast();
         ptr::write(
             ptr,
@@ -860,7 +861,7 @@ impl Explorer {
         }
     }
 
-    unsafe fn resolve(self) -> NonNull<NewNode> {
+    unsafe fn resolve(self) -> NonNull<AstNode> {
         let Self { stack, front } = self;
         assert_eq!(stack, []);
         let front_ast = front.as_ref().asn;
@@ -878,10 +879,10 @@ impl Explorer {
             // If there is a preconditional statement, insert this into the AST.
             if let Some(precond) = &edge_ptr.as_ref().precond {
                 let mut asn_ptr = next.asn;
-                let new_asn_ptr = alloc(Layout::new::<NewNode>()).cast();
+                let new_asn_ptr = alloc(Layout::new::<AstNode>()).cast();
                 ptr::write(
                     new_asn_ptr,
-                    NewNode {
+                    AstNode {
                         statement: precond.clone(),
                         preceding: asn_ptr.as_ref().preceding,
                         child: None,
@@ -928,6 +929,3 @@ unsafe fn empty_nonnull<T>() -> NonNull<T> {
     NonNull::new(alloc(Layout::new::<T>()).cast::<T>()).unwrap()
 }
 
-fn nonnull<T>(x: T) -> NonNull<T> {
-    NonNull::new(Box::into_raw(Box::new(x))).unwrap()
-}

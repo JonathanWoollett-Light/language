@@ -5,7 +5,7 @@ use std::fmt::Write;
 
 use std::ptr::NonNull;
 
-pub fn assembly_from_node(nodes: NonNull<NewNode>) -> String {
+pub fn assembly_from_node(nodes: NonNull<AstNode>) -> String {
     let mut data = String::new();
     let mut bss = String::new();
     let mut block_counter = 0;
@@ -68,7 +68,7 @@ pub fn assembly_from_node(nodes: NonNull<NewNode>) -> String {
 // }
 
 pub unsafe fn instruction_from_node(
-    nodes: NonNull<NewNode>,
+    nodes: NonNull<AstNode>,
     _data: &mut String,
     bss: &mut String,
     block_counter: &mut usize,

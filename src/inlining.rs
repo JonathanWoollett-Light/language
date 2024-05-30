@@ -7,7 +7,7 @@ use std::iter::once;
 use std::ptr;
 use std::ptr::NonNull;
 
-pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
+pub unsafe fn inline_functions(node: NonNull<AstNode>) -> NonNull<AstNode> {
     let mut first = node;
 
     // The map from function identifiers to the first node of their definition.
@@ -173,10 +173,10 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     carry_counter += 1;
                     if let Some(child) = fn_node.as_ref().child {
                         // Clone child node.
-                        let new_child_ptr = alloc(Layout::new::<NewNode>()).cast();
+                        let new_child_ptr = alloc(Layout::new::<AstNode>()).cast();
                         ptr::write(
                             new_child_ptr,
-                            NewNode {
+                            AstNode {
                                 statement: child.as_ref().statement.clone(),
                                 preceding: Some(Preceding::Parent(fn_node)),
                                 child: child.as_ref().child,
@@ -192,10 +192,10 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                     }
                     if let Some(next) = fn_node.as_ref().next {
                         // Clone next node.
-                        let new_next_ptr = alloc(Layout::new::<NewNode>()).cast();
+                        let new_next_ptr = alloc(Layout::new::<AstNode>()).cast();
                         ptr::write(
                             new_next_ptr,
-                            NewNode {
+                            AstNode {
                                 statement: next.as_ref().statement.clone(),
                                 preceding: Some(Preceding::Previous(fn_node)),
                                 child: next.as_ref().child,
@@ -276,10 +276,10 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         carry_counter += 1;
                         if let Some(child) = fn_node.as_ref().child {
                             // Clone child node.
-                            let new_child_ptr = alloc(Layout::new::<NewNode>()).cast();
+                            let new_child_ptr = alloc(Layout::new::<AstNode>()).cast();
                             ptr::write(
                                 new_child_ptr,
-                                NewNode {
+                                AstNode {
                                     statement: child.as_ref().statement.clone(),
                                     preceding: Some(Preceding::Parent(fn_node)),
                                     child: child.as_ref().child,
@@ -295,10 +295,10 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
                         }
                         if let Some(next) = fn_node.as_ref().next {
                             // Clone next node.
-                            let new_next_ptr = alloc(Layout::new::<NewNode>()).cast();
+                            let new_next_ptr = alloc(Layout::new::<AstNode>()).cast();
                             ptr::write(
                                 new_next_ptr,
-                                NewNode {
+                                AstNode {
                                     statement: next.as_ref().statement.clone(),
                                     preceding: Some(Preceding::Previous(fn_node)),
                                     child: next.as_ref().child,
@@ -350,7 +350,7 @@ pub unsafe fn inline_functions(node: NonNull<NewNode>) -> NonNull<NewNode> {
             if let Some(next) = def_node.as_ref().next {
                 def_stack.push(next);
             }
-            dealloc(def_node.as_ptr().cast(), Layout::new::<NewNode>());
+            dealloc(def_node.as_ptr().cast(), Layout::new::<AstNode>());
         }
     }
     first

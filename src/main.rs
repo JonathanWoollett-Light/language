@@ -6,6 +6,7 @@
 #![feature(box_patterns)]
 #![feature(exclusive_range_pattern)]
 #![feature(array_chunks)]
+#![feature(split_at_checked)]
 
 extern crate test;
 
@@ -17,16 +18,34 @@ use std::path::PathBuf;
 use std::ptr::NonNull;
 
 mod ast;
+
+mod macros;
+
 mod frontend;
 use frontend::*;
+
 mod backend;
 use backend::*;
+
 mod exploration;
+
 mod inlining;
+
 mod optimization;
+
+mod including;
+
+// #[cfg(target_arch = "aarch64")]
+mod aarch64;
+// #[cfg(target_arch = "aarch64")]
+pub use aarch64::ParseInstructionError;
 
 #[cfg(debug_assertions)]
 const LOOP_LIMIT: usize = 1000;
+
+pub fn nonnull<T>(x: T) -> NonNull<T> {
+    NonNull::new(Box::into_raw(Box::new(x))).unwrap()
+}
 
 enum Args {
     Build(Option<PathBuf>),
@@ -109,12 +128,23 @@ fn build(path: Option<PathBuf>) {
         .unwrap();
     writeln!(&mut lock_file, "file,hash").unwrap();
 
-    // Includes dependencies
+    // Load code into bytes vector.
     let mut bytes = source.into_bytes();
-    get_includes(&mut bytes);
+
+    // Includes dependencies
+    including::get_includes(&mut bytes);
     write_file(
         &project_path,
         PathBuf::from("included").with_extension(LANGUAGE_EXTENSION),
+        &bytes,
+        &mut lock_file,
+    );
+
+    // Find and replace macros
+    macros::resolve_macros(&mut bytes);
+    write_file(
+        &project_path,
+        PathBuf::from("macros").with_extension(LANGUAGE_EXTENSION),
         &bytes,
         &mut lock_file,
     );
@@ -133,6 +163,8 @@ fn build(path: Option<PathBuf>) {
         inlined_string.as_bytes(),
         &mut lock_file,
     );
+
+    // Convert `loop`s and `if`s to inline assembly.
 
     // Pre-exploration optimizations
     unsafe { optimization::prex_optimization(inlined) }
@@ -289,7 +321,7 @@ fn main() {
     }
 }
 
-fn display_ast(node: NonNull<crate::ast::NewNode>) -> String {
+fn display_ast(node: NonNull<crate::ast::AstNode>) -> String {
     unsafe {
         use std::fmt::Write;
         let mut stack = vec![(node, 0)];
@@ -309,7 +341,7 @@ fn display_ast(node: NonNull<crate::ast::NewNode>) -> String {
 }
 
 #[allow(dead_code)] // This is used for debugging
-fn display_ast_addresses(node: NonNull<crate::ast::NewNode>) -> String {
+fn display_ast_addresses(node: NonNull<crate::ast::AstNode>) -> String {
     unsafe {
         use std::fmt::Write;
         let mut stack = vec![(node, 0)];

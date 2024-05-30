@@ -1,54 +1,156 @@
-assume type_integer = 0
-assume type_array = 1
-assume type_reference = 2
-assume type_type = 3
+macro type_integer 0
+macro type_array 1
+macro type_reference 2
+macro type_type 3
+macro type_null 4
+macro type_bool 5
 
-assume type_integer_u8 = 0
-assume type_integer_u16 = 1
-assume type_integer_u32 = 2
-assume type_integer_u64 = 3
-assume type_integer_i8 = 4
-assume type_integer_i16 = 5
-assume type_integer_i32 = 6
-assume type_integer_i64 = 7
+macro type_integer_u8 0
+macro type_integer_u16 1
+macro type_integer_u32 2
+macro type_integer_u64 3
+macro type_integer_i8 4
+macro type_integer_i16 5
+macro type_integer_i32 6
+macro type_integer_i64 7
 
-assume value_literal = 0
-assume value_variable = 1
-assume value_type = 2
-assume value_register = 3
+macro value_literal 0
+macro value_variable 1
+macro value_type 2
+macro value_register  3
 
+# making `if` and `loop` functions requires adding the ability for functions to
+# manipualte the AST under them, so for now they are intrinsics until this
+# functionality can be generically ironed out.
+
+# assignment `:=` is also an intrinsic.
+
+# `len` returns the number of items in an array, `0` for `null` and `1` for every other type.
+
+# Compares 2 values and sets `x0` to `1` if they equal or sets `out` to `0` if they are not equal.
+def =
+    # Require the given type is an array.
+    asm mov x0, type_array
+    asm mov x1, typeof in
+    asm cmp x0, x1
+    asm bne failure
+
+    # Require the given array has 2 elements.
+    asm mov x0, len in
+    asm mov x1, 2
+    asm cmp x0, x1
+    asm bne failure
+
+    # When lhs is u8
+    asm mov x0, typeof in[0]
+    asm mov x1, type_integer_u8
+    asm cmp x0, x1
+    asm bne lhs_not_u8
+
+    # rhs must be u8
+    asm mov x0, typeof in[1]
+    asm mov x1, type_integer_u8
+    asm cmp x0, x1
+    asm bne failure
+
+    # When lhs is literal
+    asm mov x0, valueof in[0]
+    asm mov x1, value_literal
+    asm cmp x0, x1
+    asm bne lhs_not_literal_u8
+
+    # When rhs is literal
+    asm mov x0, valueof in[1]
+    asm mov x1, value_literal
+    asm cmp x0, x1
+    asm bne rhs_not_literal_u8
+
+    # Output must be a variable
+    asm mov x0, valueof out
+    asm mov x1, value_variable
+    asm cmp x0, x1
+    asm bne failure
+
+    # Output must be a bool
+    asm mov x0, typeof out
+    asm mov x1, type_bool
+    asm cmp x0, x1
+    asm bne failure
+
+    # When lhs is a liteal u8 and rhs is a literal u8
+    asm mov x0, in[0]
+    asm mov x1, in[1]
+    asm cmp, x0, x1
+
+    # Set out
+    asm ldr x0, =out
+    asm movb, w1, 0
+    asm bne, not_equal
+    asm movb, w1, 1
+    asm not_equal:
+    asm strb w1, [x0]
+    asm b, success
+    
+    asm rhs_not_literal_u8:
+    # todo
+
+    asm lhs_not_literal_u8:
+    # todo
+
+    asm lhs_not_u8:
+    # todo
+
+    # If requirements are not met hit failure case.
+    asm failure:
+    fail
+    asm success:
+
+# If `in` is false, fails.
+def require
+    # `in` must be a `bool`
+    asm mov x0, typeof in
+    asm mov x1, type_bool
+    asm cmp x0, x1
+    asm bne, failure
+
+    # `in` must be a variable
+    asm mov x0, valueof in
+    asm mov x1, value_variable
+    asm cmp x0, x1
+    asm bne, failure
+
+    # `in` must be equal to `1`
+    asm ldr x0, =in
+    asm ldrb w0, [x0]
+    asm movb w1, 1
+    asm cmp w0, w1
+    asm be, success
+
+    asm failure:
+    fail
+    asm success:
+
+# Assigns rhs to lhs.
 def :=
-    t := typeof in
-    require t = type_array
-    n := len in
-    require n = 2
+    require typeof in = type_array
+    require len in = 1
 
-    assume lhs = in[0]
-    assume rhs = in[1]
+    require typeof in[0] = typeof in[1]
+    require valueof in[0] = value_variable
 
-    assume lhst = typeof lhs
-    assume rhst = typeof rhs
-    require lhst = rhst
-
-    assume lhsv = valueof lhs
-    assume rhsv = valueof rhs
-    require lhsv = value_variable
-
-    if rhsv = value_literal
-        if rhst = type_integer_u8
-            asm ldr x0, =lhs
+    if valueof in[1] = value_literal
+        if typeof in[1] = type_integer_u8
+            asm ldr x0, =in[0]
             asm movb w1, rhs
             asm strb w1, [x0]
-        if rhst = type_integer_u16
+        if typeof in[1] = type_integer_u16
             # ...
         # ...
     # ...
 
 def +=
-    t := typeof in
-    require t = type_array
-    n := len in
-    require n = 2
+    require typeof in = type_array
+    require len in = 2
 
     lhs := in[0]
     rhs := in[1]

@@ -1,31 +1,31 @@
 include ./core.abc
 
-stdin := 0
-stdout := 1
-stderr := 2
+macro stdin 0
+macro stdout 1
+macro stderr 2
 
 def exit
-    mov x8 93
-    mov x0 in
-    svc 0
+    asm mov x8 93
+    asm mov x0 in
+    asm svc 0
     unreachable
 
 def write
     fd := in[0]
     ptr := in[1]
     len := sizeof *ptr
-    mov x8 64
-    mov x0 fd
-    mov x1 ptr
-    mov x2 len
-    svc 0
+    asm mov x8 64
+    asm mov x0 fd
+    asm mov x1 ptr
+    asm mov x2 len
+    asm svc 0
 
 def read
     fd := in[1]
     ptr := &in[0]
     len := sizeof *ptr
-    mov x8 63
-    mov x0 fd
-    mov x1 ptr
-    mov x2 len
-    svc 0
+    asm mov x8 63
+    asm mov x0 fd
+    asm mov x1 ptr
+    asm mov x2 len
+    asm svc 0

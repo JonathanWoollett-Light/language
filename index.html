@@ -59,14 +59,15 @@
         </div>
         <h3>Keywords</h3>
         <ol>
-            <li><span class="code">if</span>: <a href="https://www.w3schools.com/python/gloss_python_if_statement.asp">Python's <span class="code">if</span></a> without the <span class="code">:</span>.</li>
+            <li><span class="code">if</span>:  If <span class="code">x0</span> contains <span class="code">1</span> runs the indented code.</li>
             <li><span class="code">loop</span>: <a href="https://doc.rust-lang.org/rust-by-example/flow_control/loop.html">Rust's <span class="code">loop</span></a> without the brackets.</li>
             <li><span class="code">break</span>: Jumps out of the current <span class="code">loop</span>.</li>
             <li><span class="code">def</span>: <a href="https://www.w3schools.com/python/python_functions.asp">Python's <span class="code">def</span></a> without the <span class="code">:</span>.</li>
             <li><span class="code">in</span>: The arguments given to a function.</li>
-            <li><span class="code">require</span>: A condition to prove with formal verification at compile-time.</li>
-            <li><span class="code">assume</span>: A condition assumed to be true at compile-time.</li>
-            <li><span class="code">typeof</span>: Returns the type of a value.</li>
+            <li><span class="code">fail</span>: If reachable triggers a failure in formal verification.</li>
+            <li><span class="code">assume</span>: Mark code which will be passed to formal verification but excluded at run-time e.g. <span class="code">x %= 4</span> tells the verifier <span class="code">{ 0 ≤ x &lt 4 }</span>.</li>
+            <li><span class="code">typeof</span>: Get the type of a value.</li>
+            <li><span class="code">valueof</span>: Get the value of a value.</li>
             <li><span class="code">unreachable</span>: Marks the end of execution, all following statements are unreachable.</li>
             <li><span class="code">asm</span>: The prefix for a line with in-line assembly e.g. <span class="code">asm mov x0, 1</span>.</li>
         </ol>
@@ -77,6 +78,8 @@
             <li><span class="code">verify</span>: Like <span class="code">require</span> but does not exhaustively check the condition. <span class="code">verify x < 2</span> will apply a number of steps of gradient descent to search for the minium of <span class="code">x</span> to verify the condition. While this is not formal verification it provides an effective and almost always correct mechanism to test conditions at compile time that would be too computationally expensive to exhaustively prove.</li>
             <li><span class="code">abstain</span>: Resets the understood domain of a variable at compile to any value.</li>
             <li><span class="code">clone</span>: Marks the split of execution into multiple threads.</li>
+            <li><span class="code">ast</span>: Gets the AST of code indented under a function call.</li>
+            <li><span class="code">inline</span>: Inline an AST as if it where source code at this location.</li>
         </ol>
     </main>
   </body>

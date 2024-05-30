@@ -3,73 +3,44 @@ use std::ptr::NonNull;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Preceding {
-    Parent(NonNull<NewNode>),
-    Previous(NonNull<NewNode>),
+    Parent(NonNull<AstNode>),
+    Previous(NonNull<AstNode>),
 }
 
 #[derive(Debug)]
-pub struct NewNode {
-    pub statement: Statement,
+pub struct AstNode {
+    pub line: Line,
     pub preceding: Option<Preceding>,
-    pub child: Option<NonNull<NewNode>>,
-    pub next: Option<NonNull<NewNode>>,
+    pub child: Option<NonNull<AstNode>>,
+    pub next: Option<NonNull<AstNode>>,
 }
-impl NewNode {
-    pub fn new(statement: Statement) -> Self {
-        Self {
-            statement,
-            preceding: None,
-            child: None,
-            next: None,
-        }
-    }
+
+// #[cfg(target_arch = "aarch64")]
+pub use crate::aarch64::Instruction;
+
+#[derive(Debug, Clone)]
+pub enum Line {
+    Assembly(Instruction),
+    Source(Statement)
 }
 
 #[derive(Debug, Eq, PartialEq, Default, Clone)]
 pub struct Statement {
     pub op: Op,
-    pub arg: Arg,
+    pub expression: Nested,
+    pub out: Option<String>
 }
 
 impl std::fmt::Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match &self.op {
-            Op::Assign => match self.arg.as_slice() {
-                [Value::Variable(variable), tail @ ..] => {
-                    let args = if tail.len() > 0 {
-                        let tail_args = tail
-                            .iter()
-                            .map(|v| v.to_string())
-                            .intersperse(String::from(" "))
-                            .collect::<String>();
-                        format!(" = {tail_args}")
-                    } else {
-                        String::from("")
-                    };
-
-                    write!(f, "{variable}{args}")
-                }
-                _ => todo!(),
-            },
             Op::Call => write!(
                 f,
                 "{}",
-                self.arg
-                    .iter()
-                    .map(|v| v.to_string())
-                    .intersperse(String::from(" "))
-                    .collect::<String>()
+                self.expression
             ),
             Op::TypeOf => match self.arg.as_slice() {
                 [lhs, rhs] => write!(f, "{lhs} := typeof {rhs}"),
-                _ => todo!(),
-            },
-            Op::Mov => match self.arg.as_slice() {
-                [lhs, rhs] => write!(f, "mov {lhs} {rhs}"),
-                _ => todo!(),
-            },
-            Op::Svc => match self.arg.as_slice() {
-                [value] => write!(f, "svc {value}"),
                 _ => todo!(),
             },
             Op::Unreachable => write!(f, "unreachable"),
@@ -77,66 +48,11 @@ impl std::fmt::Display for Statement {
                 [x] => write!(f, "def {x}"),
                 _ => todo!(),
             },
-            Op::If(Cmp::Eq) => match self.arg.as_slice() {
-                [lhs, rhs] => write!(f, "if {lhs} = {rhs}"),
-                _ => todo!(),
-            },
-            Op::Add => match self.arg.as_slice() {
-                [a, b, c] => write!(f, "{a} := {b} + {c}"),
-                _ => todo!(),
-            },
-            Op::Sub => match self.arg.as_slice() {
-                [a, b, c] => write!(f, "{a} := {b} - {c}"),
-                _ => todo!(),
-            },
-            Op::Div => match self.arg.as_slice() {
-                [a, b, c] => write!(f, "{a} := {b} / {c}"),
-                _ => todo!(),
-            },
-            Op::Mul => match self.arg.as_slice() {
-                [a, b, c] => write!(f, "{a} := {b} * {c}"),
-                _ => todo!(),
-            },
-            Op::Or => match self.arg.as_slice() {
-                [a, b, c] => write!(f, "{a} := {b} | {c}"),
-                _ => todo!(),
-            },
-            Op::And => match self.arg.as_slice() {
-                [a, b, c] => write!(f, "{a} := {b} & {c}"),
-                _ => todo!(),
-            },
-            Op::Xor => match self.arg.as_slice() {
-                [a, b, c] => write!(f, "{a} := {b} ^ {c}"),
-                _ => todo!(),
-            },
-            Op::AddAssign => match self.arg.as_slice() {
-                [a, b] => write!(f, "{a} += {b}"),
-                _ => todo!(),
-            },
-            Op::SubAssign => match self.arg.as_slice() {
-                [a, b] => write!(f, "{a} -= {b}"),
-                _ => todo!(),
-            },
-            Op::DivAssign => match self.arg.as_slice() {
-                [a, b] => write!(f, "{a} /= {b}"),
-                _ => todo!(),
-            },
-            Op::MulAssign => match self.arg.as_slice() {
-                [a, b] => write!(f, "{a} *= {b}"),
-                _ => todo!(),
-            },
-            Op::OrAssign => match self.arg.as_slice() {
-                [a, b] => write!(f, "{a} |= {b}"),
-                _ => todo!(),
-            },
-            Op::AndAssign => match self.arg.as_slice() {
-                [a, b] => write!(f, "{a} &= {b}"),
-                _ => todo!(),
-            },
-            Op::XorAssign => match self.arg.as_slice() {
-                [a, b] => write!(f, "{a} ^= {b}"),
-                _ => todo!(),
-            },
+            Op::If => write!(f, "if {}", self.arg
+                .iter()
+                .map(|v| v.to_string())
+                .intersperse(String::from(" "))
+                .collect::<String>()),
             x @ _ => todo!("{x:?}"),
         }
     }
@@ -574,35 +490,6 @@ impl std::fmt::Display for Offset {
     }
 }
 
-impl Op {
-    pub fn arithmetic_assign(x: u8) -> Option<Self> {
-        match x {
-            b'+' => Some(Self::AddAssign),
-            b'-' => Some(Self::SubAssign),
-            b'*' => Some(Self::MulAssign),
-            b'/' => Some(Self::DivAssign),
-            b'%' => Some(Self::RemAssign),
-            b'&' => Some(Self::AndAssign),
-            b'|' => Some(Self::OrAssign),
-            b'^' => Some(Self::XorAssign),
-            _ => None,
-        }
-    }
-    pub fn arithmetic(x: u8) -> Option<Self> {
-        match x {
-            b'+' => Some(Self::Add),
-            b'-' => Some(Self::Sub),
-            b'*' => Some(Self::Mul),
-            b'/' => Some(Self::Div),
-            b'%' => Some(Self::Rem),
-            b'&' => Some(Self::And),
-            b'|' => Some(Self::Or),
-            b'^' => Some(Self::Xor),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Cast {
     /// E.g. `x: i32`
@@ -756,45 +643,57 @@ impl std::fmt::Display for Array {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub enum Cmp {
-    Gt,
-    Lt,
-    #[default]
-    Eq,
-    Ge,
-    Le,
-}
-
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum Op {
-    #[default]
-    Assign,
-    AddAssign,
-    SubAssign,
-    MulAssign,
-    DivAssign,
-    RemAssign,
-    AndAssign,
-    OrAssign,
-    XorAssign,
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-    And,
-    Or,
-    Xor,
-    If(Cmp),
+    If,
     Loop,
     Break,
     Def,
+    #[default]
     Call,
-    // Assume(Cmp),
-    Require(Cmp),
+    Assume,
+    Fail,
     Unreachable,
     TypeOf,
-    Svc,
-    Mov,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Expression {
+    op: String,
+    rhs: Arg,
+    lhs: Nested
+}
+
+impl std::fmt::Display for Expression {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{} {} {}", self.rhs
+        .iter()
+        .map(|v| v.to_string())
+        .intersperse(String::from(" "))
+        .collect::<String>(),self.op,self.lhs)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Nested {
+    Expression(Box<Expression>),
+    Values(Arg)
+}
+
+impl std::fmt::Display for Nested {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Expression(expression) => write!(f, "{expression}"),
+            Self::Values(arg) => write!(f, "{}", arg
+            .iter()
+            .map(|v| v.to_string())
+            .intersperse(String::from(" "))
+            .collect::<String>())
+        }
+        
+    }
+}
+
+impl Default for Nested {
+    fn default() -> Self { Self::Values(Arg::default()) }
 }
