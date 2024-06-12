@@ -21,8 +21,7 @@ mod ast;
 
 mod macros;
 
-mod frontend;
-use frontend::*;
+mod parsing;
 
 mod backend;
 use backend::*;
@@ -38,7 +37,7 @@ mod including;
 // #[cfg(target_arch = "aarch64")]
 mod aarch64;
 // #[cfg(target_arch = "aarch64")]
-pub use aarch64::ParseInstructionError;
+pub use aarch64::*;
 
 #[cfg(debug_assertions)]
 const LOOP_LIMIT: usize = 1000;
@@ -150,9 +149,11 @@ fn build(path: Option<PathBuf>) {
     );
 
     // Parses AST
-    let reader = std::io::BufReader::new(bytes.as_slice());
-    let mut iter = reader.bytes().peekable();
-    let nodes = get_nodes(&mut iter).unwrap();
+    let nodes_opt = unsafe { parsing::parse_ast(std::mem::transmute(bytes.as_slice())).unwrap() };
+
+    let Some(nodes) = nodes_opt else {
+        return;
+    };
 
     // Inlines functions
     let inlined = unsafe { inlining::inline_functions(nodes) };

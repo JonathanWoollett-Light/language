@@ -21,8 +21,8 @@ pub unsafe fn inline_functions(node: NonNull<AstNode>) -> NonNull<AstNode> {
     let mut identifier_iterator = (0..).map(|index| {
         Identifier(
             (0..index / N)
-                .map(|_| b'z')
-                .chain(std::iter::once((index % N) + b'a'))
+                .map(|_| 'z')
+                .chain(std::iter::once(char::from_u32(((index % N) + b'a') as u32).unwrap()))
                 .collect::<Vec<_>>(),
         )
     });

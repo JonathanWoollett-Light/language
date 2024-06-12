@@ -1,12 +1,12 @@
 use crate::ast::*;
 use crate::LOOP_LIMIT;
 use std::alloc;
+use std::collections::HashMap;
 use std::io::Bytes;
 use std::io::Read;
 use std::iter::once;
 use std::iter::Peekable;
 use std::ptr::{self, NonNull};
-use std::collections::HashMap;
 
 #[cfg(test)]
 use tracing::instrument;
@@ -436,7 +436,12 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
     let variable = get_variable(bytes);
 
     match variable {
-        Variable { addressing: Addressing::Direct, identifier, index: None, cast: None } => match identifier.0.as_slice() {
+        Variable {
+            addressing: Addressing::Direct,
+            identifier,
+            index: None,
+            cast: None,
+        } => match identifier.0.as_slice() {
             // Loop
             b"loop" => Statement {
                 op: Op::Loop,
@@ -493,8 +498,8 @@ pub fn get_statement<R: Read>(bytes: &mut Peekable<Bytes<R>>) -> Statement {
                     arg: get_values(bytes),
                 }
             }
-            _ => todo!()
-        }
+            _ => todo!(),
+        },
         _ => {
             let lhs: Value = Value::Variable(variable);
             assert_eq!(

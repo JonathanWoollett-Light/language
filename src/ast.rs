@@ -21,41 +21,7 @@ pub use crate::aarch64::Instruction;
 #[derive(Debug, Clone)]
 pub enum Line {
     Assembly(Instruction),
-    Source(Statement)
-}
-
-#[derive(Debug, Eq, PartialEq, Default, Clone)]
-pub struct Statement {
-    pub op: Op,
-    pub expression: Nested,
-    pub out: Option<String>
-}
-
-impl std::fmt::Display for Statement {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match &self.op {
-            Op::Call => write!(
-                f,
-                "{}",
-                self.expression
-            ),
-            Op::TypeOf => match self.arg.as_slice() {
-                [lhs, rhs] => write!(f, "{lhs} := typeof {rhs}"),
-                _ => todo!(),
-            },
-            Op::Unreachable => write!(f, "unreachable"),
-            Op::Def => match self.arg.as_slice() {
-                [x] => write!(f, "def {x}"),
-                _ => todo!(),
-            },
-            Op::If => write!(f, "if {}", self.arg
-                .iter()
-                .map(|v| v.to_string())
-                .intersperse(String::from(" "))
-                .collect::<String>()),
-            x @ _ => todo!("{x:?}"),
-        }
-    }
+    Source(Expression),
 }
 
 pub type Arg = Vec<Value>;
@@ -334,7 +300,7 @@ pub struct Variable {
     /// The variable identifier e.g `x` in `&x`.
     pub identifier: Identifier,
     /// The index operation e.g. `[1]` in `x[1]`.
-    pub index: Option<Box<Index>>,
+    pub index: Option<Box<Offset>>,
     /// The cast e.g. `:i32` in `x:i32`.
     pub cast: Option<Cast>,
 }
@@ -344,6 +310,17 @@ impl From<Identifier> for Variable {
         Self {
             addressing: Addressing::Direct,
             identifier,
+            index: None,
+            cast: None,
+        }
+    }
+}
+
+impl From<&[char]> for Variable {
+    fn from(chars: &[char]) -> Self {
+        Self {
+            addressing: Addressing::Direct,
+            identifier: Identifier::from(chars),
             index: None,
             cast: None,
         }
@@ -395,7 +372,7 @@ impl From<&str> for Variable {
     }
 }
 #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Default, Hash)]
-pub struct Identifier(pub Vec<u8>);
+pub struct Identifier(pub Vec<char>);
 
 impl PartialEq<&str> for Identifier {
     fn eq(&self, other: &&str) -> bool {
@@ -413,14 +390,20 @@ impl Identifier {
     pub fn new() -> Self {
         Self(Vec::new())
     }
-    pub fn push(&mut self, x: u8) {
+    pub fn push(&mut self, x: char) {
         self.0.push(x);
     }
 }
 
 impl From<&str> for Identifier {
     fn from(s: &str) -> Self {
-        Self(Vec::from(s.as_bytes()))
+        Self(s.chars().collect())
+    }
+}
+
+impl From<&[char]> for Identifier {
+    fn from(s: &[char]) -> Self {
+        Self(Vec::from(s))
     }
 }
 
@@ -434,21 +417,6 @@ impl std::fmt::Debug for Identifier {
 impl std::fmt::Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", std::str::from_utf8(&self.0).unwrap())
-    }
-}
-
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
-pub enum Index {
-    Slice(Slice),
-    Offset(Offset),
-}
-
-impl std::fmt::Display for Index {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Self::Slice(slice) => write!(f, "{slice}"),
-            Self::Offset(offset) => write!(f, "{offset}"),
-        }
     }
 }
 
@@ -519,11 +487,14 @@ pub enum Type {
     Integer(IntegerType),
     Array(Box<Array>),
     Reference(Box<Type>),
-    TypeType
+    TypeType,
+    Boolean
 }
 
 impl Default for Type {
-    fn default() -> Self { Self::Integer(IntegerType::default()) }
+    fn default() -> Self {
+        Self::Integer(IntegerType::default())
+    }
 }
 
 impl Type {
@@ -534,7 +505,7 @@ impl Type {
             Reference(_) => 0,
             Array(array) => array.bytes(),
             TypeType => 0,
-            
+            Boolean => 1,
         }
     }
     /// Returns `Some(Self)` if `self` is an integer type.
@@ -548,7 +519,7 @@ impl Type {
     pub fn reference(&self) -> Option<&Box<Type>> {
         use Type::*;
         match self {
-            Reference(reference)  => Some(reference),
+            Reference(reference) => Some(reference),
             _ => None,
         }
     }
@@ -571,6 +542,7 @@ impl std::fmt::Display for Type {
             Array(array) => write!(f, "{array}"),
             Reference(reference) => write!(f, "&{reference}"),
             TypeType => write!(f, "type"),
+            Boolean => write!(f,"bool")
         }
     }
 }
@@ -644,56 +616,53 @@ impl std::fmt::Display for Array {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub enum Op {
-    If,
-    Loop,
-    Break,
-    Def,
-    #[default]
-    Call,
-    Assume,
-    Fail,
-    Unreachable,
-    TypeOf,
-}
-
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Expression {
-    op: String,
-    rhs: Arg,
-    lhs: Nested
+    pub op: Identifier,
+    pub lhs: Arg,
+    pub rhs: Nested,
+    pub out: Option<Variable>,
 }
 
 impl std::fmt::Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{} {} {}", self.rhs
-        .iter()
-        .map(|v| v.to_string())
-        .intersperse(String::from(" "))
-        .collect::<String>(),self.op,self.lhs)
+        write!(
+            f,
+            "{} {} {}",
+            self.lhs
+                .iter()
+                .map(|v| v.to_string())
+                .intersperse(String::from(" "))
+                .collect::<String>(),
+            self.op,
+            self.rhs,
+        )
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Nested {
     Expression(Box<Expression>),
-    Values(Arg)
+    Values(Arg),
 }
 
 impl std::fmt::Display for Nested {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Expression(expression) => write!(f, "{expression}"),
-            Self::Values(arg) => write!(f, "{}", arg
-            .iter()
-            .map(|v| v.to_string())
-            .intersperse(String::from(" "))
-            .collect::<String>())
+            Self::Values(arg) => write!(
+                f,
+                "{}",
+                arg.iter()
+                    .map(|v| v.to_string())
+                    .intersperse(String::from(" "))
+                    .collect::<String>()
+            ),
         }
-        
     }
 }
 
 impl Default for Nested {
-    fn default() -> Self { Self::Values(Arg::default()) }
+    fn default() -> Self {
+        Self::Values(Arg::default())
+    }
 }

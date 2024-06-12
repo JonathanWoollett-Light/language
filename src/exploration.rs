@@ -1,6 +1,7 @@
 #![allow(warnings)]
 
 use crate::ast::*;
+use crate::nonnull;
 use itertools::Itertools;
 use num_traits::bounds::Bounded;
 use num_traits::identities::One;
@@ -19,7 +20,6 @@ use std::collections::HashSet;
 use std::ptr;
 use std::ptr::NonNull;
 use std::rc::Rc;
-use crate::nonnull;
 
 #[derive(Debug)]
 struct ExploreBranch {
@@ -386,7 +386,10 @@ unsafe fn find_variable_cast(start: NonNull<TreeEdge>, identifier: &Identifier) 
 /// When no infomation is known about a variable we explore the possible types returned here.
 fn default_possible_types() -> Vec<Type> {
     use IntegerType::*;
-    vec![I64, I32, I16, I8, U64, U32, U16, U8].into_iter().map(Type::Integer).collect()
+    vec![I64, I32, I16, I8, U64, U32, U16, U8]
+        .into_iter()
+        .map(Type::Integer)
+        .collect()
 }
 
 /// For a given integer value return all types that can contain it.
@@ -420,7 +423,10 @@ fn possible_integer_types(x: i128) -> Vec<Type> {
         U32_EDGE..I64_EDGE => vec![I64, U64],
         I64_EDGE..U64_EDGE => vec![U64],
         _ => panic!(),
-    }.into_iter().map(Type::Integer).collect()
+    }
+    .into_iter()
+    .map(Type::Integer)
+    .collect()
 }
 
 pub enum ExplorationResult {
@@ -428,7 +434,11 @@ pub enum ExplorationResult {
     Done(NonNull<AstNode>),
 }
 
-unsafe fn explore_types(possible: Vec<Type>, mut leaf_ptr: NonNull<ExploreBranch>, lhs: &Variable) -> Vec<NonNull<ExploreBranch>> {
+unsafe fn explore_types(
+    possible: Vec<Type>,
+    mut leaf_ptr: NonNull<ExploreBranch>,
+    lhs: &Variable,
+) -> Vec<NonNull<ExploreBranch>> {
     // For each possible cast, create a leaf node.
     let (next, new_leaves) = possible
         .into_iter()
@@ -535,13 +545,11 @@ impl Explorer {
                             identifier: lhs_identifier,
                             ..
                         },
-                    ), Value::Variable(
-                        Variable {
-                            addressing: rhs_addressing,
-                            identifier: rhs_identifier,
-                            ..
-                        },
-                    )] => {
+                    ), Value::Variable(Variable {
+                        addressing: rhs_addressing,
+                        identifier: rhs_identifier,
+                        ..
+                    })] => {
                         let cast_opt = match &lhs.cast {
                             Some(Cast::As(cast_type)) => Some(cast_type.clone()),
                             Some(Cast::Prev) => todo!(),
@@ -746,13 +754,11 @@ impl Explorer {
                         identifier: lhs_identifier,
                         ..
                     },
-                ), Value::Variable(
-                    Variable {
-                        addressing: Addressing::Direct,
-                        identifier: rhs_identifier,
-                        ..
-                    },
-                )] => {
+                ), Value::Variable(Variable {
+                    addressing: Addressing::Direct,
+                    identifier: rhs_identifier,
+                    ..
+                })] => {
                     // TODO: If this fails at some point maybe it should be
                     // `find_variable_cast(p, lhs_identifier)`.
                     //
@@ -800,14 +806,12 @@ impl Explorer {
                 _ => todo!(),
             },
             Op::TypeOf => match slice {
-                [Value::Variable(
-                    Variable {
-                        addressing: Addressing::Direct,
-                        identifier: lhs_identifier,
-                        cast: lhs_cast,
-                        ..
-                    },
-                ), Value::Variable(
+                [Value::Variable(Variable {
+                    addressing: Addressing::Direct,
+                    identifier: lhs_identifier,
+                    cast: lhs_cast,
+                    ..
+                }), Value::Variable(
                     rhs @ Variable {
                         addressing: rhs_addressing,
                         identifier: rhs_identifier,
@@ -822,7 +826,7 @@ impl Explorer {
                             _ => false,
                         },
                         Some(Cast::Prev) => false,
-                        None => true
+                        None => true,
                     });
 
                     let rhs_cast_opt = match &rhs_cast {
@@ -856,7 +860,7 @@ impl Explorer {
                     ExplorationResult::Continue(self)
                 }
                 x @ _ => todo!("{x:?}"),
-            }
+            },
             x @ _ => todo!("{x:?}"),
         }
     }
@@ -928,4 +932,3 @@ impl Explorer {
 unsafe fn empty_nonnull<T>() -> NonNull<T> {
     NonNull::new(alloc(Layout::new::<T>()).cast::<T>()).unwrap()
 }
-
