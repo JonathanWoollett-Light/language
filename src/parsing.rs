@@ -15,10 +15,23 @@ enum ParseAstError {
     Line(ParseLineError),
 }
 
+/// Returns the set of intrinsic functions.
+fn default_definitions() -> HashSet<Identifier> {
+    // `def` is specially handled so doesn't need to be here.
+    [
+        "assume",
+        "fail",
+        "loop",
+        "break",
+        "if",
+        "valueof",
+        "unreachable"
+    ].into_iter().map(Identifier::from).collect::<HashSet<_>>()
+}
+
 pub unsafe fn parse_ast(chars: &[char]) -> Result<Option<NonNull<AstNode>>, ParseAstError> {
-    let mut definitions = HashSet::new();
+    let mut definitions = default_definitions();
     let mut first = OnceCell::new();
-    let mut last = None;
     let mut i = 0;
     // The stack of parent nodes e.g.
     // ```
@@ -27,7 +40,7 @@ pub unsafe fn parse_ast(chars: &[char]) -> Result<Option<NonNull<AstNode>>, Pars
     //         c
     // ```
     // forms `[a,b,c]`.
-    let mut parent_stack = Vec::new();
+    let mut parent_stack = Vec::<NonNull<AstNode>>::new();
 
     #[cfg(debug_assertions)]
     let mut limit = 0..LOOP_LIMIT;
@@ -79,7 +92,7 @@ pub unsafe fn parse_ast(chars: &[char]) -> Result<Option<NonNull<AstNode>>, Pars
         i += line_length;
 
         let line = parse_line(line_characters, &mut definitions).map_err(ParseAstError::Line)?;
-        let node = NonNull::new(Box::into_raw(Box::new(AstNode {
+        let mut node = NonNull::new(Box::into_raw(Box::new(AstNode {
             line,
             preceding: None,
             child: None,
@@ -89,7 +102,7 @@ pub unsafe fn parse_ast(chars: &[char]) -> Result<Option<NonNull<AstNode>>, Pars
 
         // Insert into the AST.
         let tabs = div_rem(spaces, 4).ok_or(ParseAstError::IndentationSpacing)?;
-        let after = split_off_checked(&mut parent_stack, tabs).ok_or(ParseAstError::IndetationDepth)?;
+        let mut after = split_off_checked(&mut parent_stack, tabs).ok_or(ParseAstError::IndetationDepth)?;
         if let Some(previous) = after.first_mut() {
             assert_eq!(previous.as_mut().next, None);
             previous.as_mut().next = Some(node);
@@ -116,7 +129,7 @@ enum ParseLineError {
 
 pub fn parse_line(chars: &[char], definitions: &mut HashSet<Identifier>) -> Result<Line, ParseLineError> {
     let line = if let Some((lhs, rhs)) = chars.split_at_checked(3)
-        && lhs == ['a','s','m']
+        && lhs == ['a', 's', 'm']
     {
         Line::Assembly(crate::parse_instruction(rhs).map_err(ParseLineError::Instruction)?)
     } else {
@@ -127,35 +140,39 @@ pub fn parse_line(chars: &[char], definitions: &mut HashSet<Identifier>) -> Resu
 
 #[derive(Debug, Error)]
 enum ParseExpressionError {
+    #[error("Failed to parse definition expression.")]
+    Def,
     #[error("Empty statement")]
     Empty,
-    #[error("Badly formed definition")]
-    Def,
     #[error("Failed to parse variable: {0}")]
     Variable(ParseVariableError),
     #[error("Failed to parse value: {0}")]
-    Value(ParseValueError)
+    Value(ParseValueError),
 }
+
 
 pub fn parse_expression(
     chars: &[char],
     definitions: &mut HashSet<Identifier>,
 ) -> Result<Expression, ParseExpressionError> {
-    let mut values = chars.split(|c|*c==' ').collect::<Vec<_>>();
+    let mut values = chars.split(|c| *c == ' ').collect::<Vec<_>>();
 
-    if let Some(['d','e','f']) = values.first() {
+    // Since `def`s define operands we need to handle this case specifically so the operands get added to the definitions set for future statements.
+    if let Some(['d', 'e', 'f']) = values.first() {
         let [_, key] = values.as_slice() else {
             return Err(ParseExpressionError::Def);
         };
         definitions.insert(Identifier::from(*key));
         return Ok(Expression {
-            op: Identifier::from(['d','e','f'].as_slice()),
+            op: Identifier::from(['d', 'e', 'f'].as_slice()),
             lhs: Arg::new(),
             rhs: Nested::Values(vec![Value::Variable(Variable::from(*key))]),
             out: None,
         });
     }
 
+    // Each expression can define 1 output for the outermost expression.
+    // The outputs for nested expressions are auto generated.
     let out = match values.as_slice() {
         [.., a, b] if *a == ['@'] => {
             let var = parse_variable(b).map_err(ParseExpressionError::Variable)?;
@@ -191,16 +208,15 @@ pub fn parse_expression(
             section.push(parse_value(value).map_err(ParseExpressionError::Value)?);
         }
     }
-
-    todo!()
+    let mut partial = partial_opt.ok_or(ParseExpressionError::Empty)?;
+    partial.lhs = section;
+    Ok(partial)
 }
-
-
 
 #[derive(Debug, Error)]
 enum ParseValueError {
     #[error("Generic failure")]
-    Generic
+    Generic,
 }
 
 pub fn parse_value(chars: &[char]) -> Result<Value, ParseValueError> {
@@ -230,7 +246,6 @@ pub fn parse_variable(chars: &[char]) -> Result<Variable, ParseVariableError> {
     };
 
     let mut index = None;
-    let mut cast = None;
 
     #[cfg(debug_assertions)]
     let mut limit = 0..LOOP_LIMIT;
@@ -247,20 +262,13 @@ pub fn parse_variable(chars: &[char]) -> Result<Variable, ParseVariableError> {
                     .skip(i)
                     .find_map(|(j, c)| (*c == ']').then_some(j))
                     .ok_or(ParseVariableError::NonTerminatedIndex)?;
-                index = Some(parse_offset(&chars[i..n]).map_err(ParseVariableError::Offset)?);
-                cast = match chars.get(n + 1) {
-                    Some(':') => Some(parse_type(&chars[n + 2..])?),
-                    None => None,
-                    _ => return Err(()),
-                };
-                break;
-            }
-            ':' => {
-                cast = Some(parse_type(&chars[i..]).map_err(ParseVariableError::Type)?);
+                index = Some(Box::new(
+                    parse_offset(&chars[i..n]).map_err(ParseVariableError::Offset)?,
+                ));
                 break;
             }
             _ => {
-                identifier.push(c);
+                identifier.push(*c);
             }
         }
     }
@@ -269,24 +277,24 @@ pub fn parse_variable(chars: &[char]) -> Result<Variable, ParseVariableError> {
         addressing,
         identifier,
         index,
-        cast,
     })
 }
 
-
 #[derive(Debug, Error)]
 enum ParseOffsetError {
+    #[error("Empty set cannot be parsed.")]
+    Empty,
     #[error("Failed to parse integer.")]
     Integer,
     #[error("Failed tp parse variable: {0}")]
-    Variable(Box<ParseVariableError>)
+    Variable(Box<ParseVariableError>),
 }
 
 pub fn parse_offset(chars: &[char]) -> Result<Offset, ParseOffsetError> {
     #[cfg(debug_assertions)]
     let mut limit = 0..LOOP_LIMIT;
     const BASE: u32 = 10;
-    let first = chars.get(0).ok_or(())?;
+    let first = chars.get(0).ok_or(ParseOffsetError::Empty)?;
     if let Some(mut digit) = first.to_digit(BASE) {
         let mut iter = chars[1..].iter();
         loop {
@@ -300,7 +308,9 @@ pub fn parse_offset(chars: &[char]) -> Result<Offset, ParseOffsetError> {
         Ok(Offset::Integer(digit as u64))
     } else {
         // TODO This uses recursion, fix this so it doesn't use recursion.
-        Ok(Offset::Variable(parse_variable(chars).map_err(|err|ParseOffsetError::Variable(Box::new(err)))?))
+        Ok(Offset::Variable(
+            parse_variable(chars).map_err(|err| ParseOffsetError::Variable(Box::new(err)))?,
+        ))
     }
 }
 
@@ -312,34 +322,10 @@ fn div_rem(rhs: usize, lhs: usize) -> Option<usize> {
 }
 /// [`slice::split_at`] has [`slice::split_at_checked`] this is the equivalent
 /// for [`Vec::split_off`].
-fn split_off_checked(vec: &mut Vec<T>, index: usize) -> Option<Vec<T>> {
+fn split_off_checked<T>(vec: &mut Vec<T>, index: usize) -> Option<Vec<T>> {
     if index > vec.len() {
         None
     } else {
-        Some(vec.split_at(index))
+        Some(vec.split_off(index))
     }
-}
-
-#[derive(Debug, Error)]
-#[error("Failed to parse type.")]
-struct ParseTypeError;
-
-pub fn parse_type(chars: &[char]) -> Result<Type,ParseTypeError> {
-    let 
-    loop {
-        match chars {
-            ['i','8'] => Ok(Type::Integer(IntegerType::I8)),
-            ['i','1','6'] => Ok(Type::Integer(IntegerType::I16)),
-            ['i','3','2'] => Ok(Type::Integer(IntegerType::I32)),
-            ['i','6','4'] => Ok(Type::Integer(IntegerType::I64)),
-            ['u','8'] => Ok(Type::Integer(IntegerType::I8)),
-            ['u','1','6'] => Ok(Type::Integer(IntegerType::U16)),
-            ['u','3','2'] => Ok(Type::Integer(IntegerType::U32)),
-            ['u','6','4'] => Ok(Type::Integer(IntegerType::U64)),
-            ['b','o','o','l'] => Ok(Type::Boolean),
-            ['&', tail @ ..] => 
-            _ => Err(ParseTypeError)
-        }
-    }
-    
 }

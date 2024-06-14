@@ -23,12 +23,13 @@ mod macros;
 
 mod parsing;
 
-mod backend;
-use backend::*;
+// mod backend;
 
-mod exploration;
+// mod exploration;
 
 mod inlining;
+
+mod temporary_intrinsics;
 
 mod optimization;
 
@@ -157,6 +158,10 @@ fn build(path: Option<PathBuf>) {
 
     // Inlines functions
     let inlined = unsafe { inlining::inline_functions(nodes) };
+
+    // Convert `loop`s and `if`s to inline assembly.
+    let inlined = unsafe { temporary_intrinsics::inline(nodes) };
+
     let inlined_string = display_ast(inlined);
     write_file(
         &project_path,
@@ -164,8 +169,6 @@ fn build(path: Option<PathBuf>) {
         inlined_string.as_bytes(),
         &mut lock_file,
     );
-
-    // Convert `loop`s and `if`s to inline assembly.
 
     // Pre-exploration optimizations
     unsafe { optimization::prex_optimization(inlined) }
@@ -177,27 +180,27 @@ fn build(path: Option<PathBuf>) {
         &mut lock_file,
     );
 
-    // Explore variable space.
-    let mut explorer = unsafe { exploration::Explorer::new(inlined) };
-    let mut i = 0;
-    let explored = loop {
-        explorer = match unsafe { explorer.next() } {
-            exploration::ExplorationResult::Continue(e) => e,
-            exploration::ExplorationResult::Done(e) => break e,
-        };
+    // // Explore variable space.
+    // let mut explorer = unsafe { exploration::Explorer::new(inlined) };
+    // let mut i = 0;
+    // let explored = loop {
+    //     explorer = match unsafe { explorer.next() } {
+    //         exploration::ExplorationResult::Continue(e) => e,
+    //         exploration::ExplorationResult::Done(e) => break e,
+    //     };
 
-        i += 1;
-        assert!(i < 50);
-    };
-    let explored_string = display_ast(explored);
-    write_file(
-        &project_path,
-        PathBuf::from("explored").with_extension(LANGUAGE_EXTENSION),
-        explored_string.as_bytes(),
-        &mut lock_file,
-    );
+    //     i += 1;
+    //     assert!(i < 50);
+    // };
+    // let explored_string = display_ast(explored);
+    // write_file(
+    //     &project_path,
+    //     PathBuf::from("explored").with_extension(LANGUAGE_EXTENSION),
+    //     explored_string.as_bytes(),
+    //     &mut lock_file,
+    // );
 
-    // Optimize source
+    // // Optimize source
     // let optimized = unsafe { optimize(explored) };
     // let optimized_string = display_ast(optimized);
     // write_file(
@@ -207,78 +210,78 @@ fn build(path: Option<PathBuf>) {
     //     &mut lock_file,
     // );
 
-    // Construct assembly
-    let assembly = assembly_from_node(explored);
-    let assembly_path = PathBuf::from("assembly").with_extension("s");
-    write_file(
-        &project_path,
-        assembly_path.clone(),
-        assembly.as_bytes(),
-        &mut lock_file,
-    );
+    // // Construct assembly
+    // let assembly = assembly_from_node(explored);
+    // let assembly_path = PathBuf::from("assembly").with_extension("s");
+    // write_file(
+    //     &project_path,
+    //     assembly_path.clone(),
+    //     assembly.as_bytes(),
+    //     &mut lock_file,
+    // );
 
-    // Make object file
-    let object_path = project_path.join("build").join("object").with_extension("o");
-    let object_output = std::process::Command::new("as")
-        .args([
-            "-o",
-            &object_path.display().to_string(),
-            &project_path.join("build").join(assembly_path).display().to_string(),
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(
-        object_output.stdout,
-        [],
-        "{}",
-        std::str::from_utf8(&object_output.stdout).unwrap()
-    );
-    assert_eq!(
-        object_output.stderr,
-        [],
-        "{}",
-        std::str::from_utf8(&object_output.stderr).unwrap()
-    );
-    assert_eq!(object_output.status.code(), Some(0));
-    // Write object hash
-    let mut object_buffer = Vec::new();
-    let mut object_file = OpenOptions::new().read(true).open(&object_path).unwrap();
-    object_file.read_to_end(&mut object_buffer).unwrap();
-    let object_hash = HEXUPPER.encode(sha256_digest(object_buffer.as_slice()).unwrap().as_ref());
-    let object_file_name = object_path.file_stem().unwrap();
-    writeln!(&mut lock_file, "{},{object_hash}", object_file_name.to_str().unwrap()).unwrap();
+    // // Make object file
+    // let object_path = project_path.join("build").join("object").with_extension("o");
+    // let object_output = std::process::Command::new("as")
+    //     .args([
+    //         "-o",
+    //         &object_path.display().to_string(),
+    //         &project_path.join("build").join(assembly_path).display().to_string(),
+    //     ])
+    //     .output()
+    //     .unwrap();
+    // assert_eq!(
+    //     object_output.stdout,
+    //     [],
+    //     "{}",
+    //     std::str::from_utf8(&object_output.stdout).unwrap()
+    // );
+    // assert_eq!(
+    //     object_output.stderr,
+    //     [],
+    //     "{}",
+    //     std::str::from_utf8(&object_output.stderr).unwrap()
+    // );
+    // assert_eq!(object_output.status.code(), Some(0));
+    // // Write object hash
+    // let mut object_buffer = Vec::new();
+    // let mut object_file = OpenOptions::new().read(true).open(&object_path).unwrap();
+    // object_file.read_to_end(&mut object_buffer).unwrap();
+    // let object_hash = HEXUPPER.encode(sha256_digest(object_buffer.as_slice()).unwrap().as_ref());
+    // let object_file_name = object_path.file_stem().unwrap();
+    // writeln!(&mut lock_file, "{},{object_hash}", object_file_name.to_str().unwrap()).unwrap();
 
-    // Make binary file
-    let binary_path = project_path.join("build").join("binary");
-    let binary_output = std::process::Command::new("ld")
-        .args([
-            "-s",
-            "-o",
-            &binary_path.display().to_string(),
-            &object_path.display().to_string(),
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(
-        binary_output.stdout,
-        [],
-        "{}",
-        std::str::from_utf8(&binary_output.stdout).unwrap()
-    );
-    assert_eq!(
-        binary_output.stderr,
-        [],
-        "{}",
-        std::str::from_utf8(&binary_output.stderr).unwrap()
-    );
-    assert_eq!(binary_output.status.code(), Some(0));
-    // Write binary hash
-    let mut binary_buffer = Vec::new();
-    let mut binary_file = OpenOptions::new().read(true).open(&binary_path).unwrap();
-    binary_file.read_to_end(&mut binary_buffer).unwrap();
-    let binary_hash = HEXUPPER.encode(sha256_digest(binary_buffer.as_slice()).unwrap().as_ref());
-    let binary_file_name = binary_path.file_stem().unwrap();
-    writeln!(&mut lock_file, "{},{binary_hash}", binary_file_name.to_str().unwrap()).unwrap();
+    // // Make binary file
+    // let binary_path = project_path.join("build").join("binary");
+    // let binary_output = std::process::Command::new("ld")
+    //     .args([
+    //         "-s",
+    //         "-o",
+    //         &binary_path.display().to_string(),
+    //         &object_path.display().to_string(),
+    //     ])
+    //     .output()
+    //     .unwrap();
+    // assert_eq!(
+    //     binary_output.stdout,
+    //     [],
+    //     "{}",
+    //     std::str::from_utf8(&binary_output.stdout).unwrap()
+    // );
+    // assert_eq!(
+    //     binary_output.stderr,
+    //     [],
+    //     "{}",
+    //     std::str::from_utf8(&binary_output.stderr).unwrap()
+    // );
+    // assert_eq!(binary_output.status.code(), Some(0));
+    // // Write binary hash
+    // let mut binary_buffer = Vec::new();
+    // let mut binary_file = OpenOptions::new().read(true).open(&binary_path).unwrap();
+    // binary_file.read_to_end(&mut binary_buffer).unwrap();
+    // let binary_hash = HEXUPPER.encode(sha256_digest(binary_buffer.as_slice()).unwrap().as_ref());
+    // let binary_file_name = binary_path.file_stem().unwrap();
+    // writeln!(&mut lock_file, "{},{binary_hash}", binary_file_name.to_str().unwrap()).unwrap();
 }
 
 fn run(path: Option<PathBuf>) {

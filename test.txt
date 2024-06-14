@@ -1,0 +1,9 @@
+a := b - c + d
+
+c + d @ x
+b - x @ y
+a := z @ null
+
+a := b - c + d @ null
+
+a := b - c + d @ null

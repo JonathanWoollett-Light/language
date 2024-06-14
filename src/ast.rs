@@ -301,8 +301,6 @@ pub struct Variable {
     pub identifier: Identifier,
     /// The index operation e.g. `[1]` in `x[1]`.
     pub index: Option<Box<Offset>>,
-    /// The cast e.g. `:i32` in `x:i32`.
-    pub cast: Option<Cast>,
 }
 
 impl From<Identifier> for Variable {
@@ -311,7 +309,6 @@ impl From<Identifier> for Variable {
             addressing: Addressing::Direct,
             identifier,
             index: None,
-            cast: None,
         }
     }
 }
@@ -322,7 +319,6 @@ impl From<&[char]> for Variable {
             addressing: Addressing::Direct,
             identifier: Identifier::from(chars),
             index: None,
-            cast: None,
         }
     }
 }
@@ -488,7 +484,7 @@ pub enum Type {
     Array(Box<Array>),
     Reference(Box<Type>),
     TypeType,
-    Boolean
+    Boolean,
 }
 
 impl Default for Type {
@@ -542,7 +538,7 @@ impl std::fmt::Display for Type {
             Array(array) => write!(f, "{array}"),
             Reference(reference) => write!(f, "&{reference}"),
             TypeType => write!(f, "type"),
-            Boolean => write!(f,"bool")
+            Boolean => write!(f, "bool"),
         }
     }
 }

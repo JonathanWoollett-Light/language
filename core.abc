@@ -16,8 +16,6 @@ macro type_integer_i64 7
 
 macro value_literal 0
 macro value_variable 1
-macro value_type 2
-macro value_register  3
 
 # making `if` and `loop` functions requires adding the ability for functions to
 # manipualte the AST under them, so for now they are intrinsics until this
