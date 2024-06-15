@@ -2,18 +2,84 @@ use crate::ast::*;
 use std::alloc::alloc;
 use std::alloc::dealloc;
 use std::alloc::Layout;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::iter::once;
 use std::ptr;
 use std::ptr::NonNull;
+use std::rc::Rc;
+
+unsafe fn update_variables(
+    args: &mut Vec<Value>,
+    map: &mut HashMap<Identifier, Identifier>,
+    identifier_iterator: &mut impl Iterator<Item = Identifier>,
+) {
+    for variable in args.iter_mut().filter_map(Value::variable_mut) {
+        let new_identifier = map
+            .entry(variable.identifier.clone())
+            .or_insert_with(|| identifier_iterator.next().unwrap());
+        variable.identifier = new_identifier.clone();
+    }
+}
+
+type IdentifierMap = Rc<RefCell<HashMap<Identifier, Identifier>>>;
+
+unsafe fn inline_expression(
+    _child: &mut Option<(NonNull<AstNode>, IdentifierMap)>,
+    next: &mut VecDeque<(NonNull<AstNode>, IdentifierMap)>,
+    (mut current, map): (NonNull<AstNode>, IdentifierMap),
+    mut identifier_iterator: &mut impl Iterator<Item = Identifier>,
+) {
+    let current_mut = current.as_mut();
+    let Line::Source(Expression { lhs, rhs, op, .. }) = &mut current_mut.line else {
+        todo!()
+    };
+
+    let rhs = match rhs {
+        Nested::Expression(box expr) => {
+            let out = Variable::from(identifier_iterator.next().unwrap());
+            let mut new_expr = expr.clone();
+            new_expr.out = Some(out.clone());
+            let ptr = alloc(Layout::new::<AstNode>()).cast();
+            ptr::write(
+                ptr,
+                AstNode {
+                    line: Line::Source(new_expr),
+                    preceding: current_mut.preceding,
+                    child: None,
+                    next: Some(current),
+                },
+            );
+            let new_node = NonNull::new(ptr).unwrap();
+            if let Some(preceding) = current_mut.preceding {
+                match preceding {
+                    Preceding::Parent(mut parent) => {
+                        parent.as_mut().child = Some(new_node);
+                    }
+                    Preceding::Previous(mut previous) => {
+                        previous.as_mut().next = Some(new_node);
+                    }
+                }
+            }
+            current_mut.preceding = Some(Preceding::Previous(new_node));
+            *rhs = Nested::Values(vec![Value::Variable(out)]);
+            next.push_front((new_node, map.clone()));
+            return;
+        }
+        Nested::Values(values) => values,
+    };
+
+    // Update variable names
+    update_variables(lhs, &mut *map.borrow_mut(), &mut identifier_iterator);
+    update_variables(rhs, &mut *map.borrow_mut(), &mut identifier_iterator);
+}
 
 pub unsafe fn inline_functions(node: NonNull<AstNode>) -> NonNull<AstNode> {
-    let mut first = node;
-
     // The map from function identifiers to the first node of their definition.
     let mut functions = HashMap::new();
 
-    // We collect the function definitions we find to ultimately dealloc.
+    // The collection of function definitions so they can be deallocated.
     let mut definitions = Vec::new();
 
     // Generates unique identifiers.
@@ -27,13 +93,59 @@ pub unsafe fn inline_functions(node: NonNull<AstNode>) -> NonNull<AstNode> {
         )
     });
 
-    let mut stack = vec![node];
-    let mut carry = Vec::new();
-    let mut maps = vec![HashMap::<Identifier, Identifier>::new()];
+    let mut first = node;
+    let mut child = None;
+    let mut next = VecDeque::from([(node, IdentifierMap::default())]);
+
+    while let Some(item @ (mut current, map)) = child.take().or_else(|| next.pop_front()) {
+        let current_mut = current.as_mut();
+        let Line::Source(Expression { op, .. }) = &mut current_mut.line else {
+            todo!()
+        };
+
+        // If the rhs is a nested expression unroll this.
+        match op.as_string().as_str() {
+            "break" => unreachable!(),
+            // Since `valueof` is used to get the AST structure from some given code it shouldn't
+            // unroll becuase this would change the returned structure.
+            "valueof" => {
+                child = current_mut.child.map(|c| (c, map.clone()));
+                if let Some(n) = current_mut.next {
+                    next.push_front((n, map.clone()));
+                }
+                continue;
+            }
+            // Assume should contain a singlely nested expression and when unrolling for doubly
+            // nested expression these unrolled expressions should still be prefixed with `assume`
+            // and thus single nested.
+            "assume" => {
+                todo!()
+            }
+            "if" => {
+                inline_expression(&mut child, &mut next, item, &mut identifier_iterator);
+                todo!();
+            }
+            "loop" => {
+                inline_expression(&mut child, &mut next, item, &mut identifier_iterator);
+                todo!();
+            }
+            "def" => {
+                inline_expression(&mut child, &mut next, item, &mut identifier_iterator);
+                todo!();
+            }
+            "fail" => {
+                inline_expression(&mut child, &mut next, item, &mut identifier_iterator);
+                todo!();
+            }
+            _ => {
+                inline_expression(&mut child, &mut next, item, &mut identifier_iterator);
+            }
+        };
+    }
 
     while let Some(mut current) = stack.pop() {
         // TODO We need a better way to mark end of functions when inlining. This approach doesn't
-        // work for idented functions which dont have a next.
+        // work for indented functions which dont have a next.
 
         // When reaching the node after the last node from an inlined function the context switches back.
         if let Some(c) = carry.last_mut() {
@@ -64,21 +176,53 @@ pub unsafe fn inline_functions(node: NonNull<AstNode>) -> NonNull<AstNode> {
         //         .collect::<std::collections::BTreeMap<_, _>>()
         // );
 
-        // Update variables.
-        let args = current_ref.statement.arg.as_mut_slice();
-        for variable in args.iter_mut().filter_map(Value::variable_mut) {
-            let variable_map = maps.get_mut(carry.len()).unwrap();
-            if variable_map.len() > 10 {
-                panic!();
+        match &mut current_ref.line {
+            Line::Assembly(assembly) => todo!(),
+            Line::Source(Expression { lhs, rhs, .. }) => {
+                // If rhs is a nested expression unroll it and place it as the next item in the stack.
+                let rhs = match rhs {
+                    Nested::Expression(box expr) => {
+                        let out = Variable::from(identifier_iterator.next().unwrap());
+                        let ptr = alloc(Layout::new::<AstNode>()).cast();
+                        ptr::write(
+                            ptr,
+                            AstNode {
+                                line: Line::Source(Expression {
+                                    out: Some(out),
+                                    ..*expr
+                                }),
+                                preceding: current_ref.preceding,
+                                child: None,
+                                next: Some(current),
+                            },
+                        );
+                        let new_node = NonNull::new(ptr).unwrap();
+                        if let Some(preceding) = current_ref.preceding {
+                            match preceding {
+                                Preceding::Parent(parent) => {
+                                    parent.as_mut().child = Some(new_node);
+                                }
+                                Preceding::Previous(previous) => {
+                                    previous.as_mut().next = Some(new_node);
+                                }
+                            }
+                        }
+                        current_ref.preceding = Some(Preceding::Previous(new_node));
+                        *rhs = Nested::Values(vec![Value::Variable(out)]);
+                        stack.push(new_node);
+                        continue;
+                    }
+                    Nested::Values(values) => values,
+                };
+
+                // Update variable names
+                let map = maps.get_mut(carry.len()).unwrap();
+                update_variables(lhs, map, &mut identifier_iterator);
+                update_variables(rhs, map, &mut identifier_iterator);
+
+                // Handle continuation
             }
-
-            let new_identifier = variable_map
-                .entry(variable.identifier.clone())
-                .or_insert_with(|| identifier_iterator.next().unwrap());
-            variable.identifier = new_identifier.clone();
         }
-
-        // eprintln!("{}", current_ref.statement);
 
         // Handle continuation.
         let args = current_ref.statement.arg.as_mut_slice();

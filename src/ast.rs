@@ -370,12 +370,6 @@ impl From<&str> for Variable {
 #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Default, Hash)]
 pub struct Identifier(pub Vec<char>);
 
-impl PartialEq<&str> for Identifier {
-    fn eq(&self, other: &&str) -> bool {
-        self.0 == other.as_bytes()
-    }
-}
-
 impl Identifier {
     pub fn fn_in() -> Self {
         Self(Vec::from(b"in"))
@@ -388,6 +382,9 @@ impl Identifier {
     }
     pub fn push(&mut self, x: char) {
         self.0.push(x);
+    }
+    pub fn as_string(&self) -> String {
+        self.0.iter().collect()
     }
 }
 

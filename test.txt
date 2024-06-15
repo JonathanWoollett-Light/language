@@ -7,3 +7,25 @@ a := z @ null
 a := b - c + d @ null
 
 a := b - c + d @ null
+
+// --------
+a := 2
+
+
+
+a := alloc 
+//
+alloc @ x
+a := x
+
+
+
+x = [addr data, [type num, [addr, len]]]
+
+
+Type = [integer, address]
+enum Type {
+    List(Vec<Type>),
+    u8,
+    u16
+}

@@ -18,15 +18,10 @@ enum ParseAstError {
 /// Returns the set of intrinsic functions.
 fn default_definitions() -> HashSet<Identifier> {
     // `def` is specially handled so doesn't need to be here.
-    [
-        "assume",
-        "fail",
-        "loop",
-        "break",
-        "if",
-        "valueof",
-        "unreachable"
-    ].into_iter().map(Identifier::from).collect::<HashSet<_>>()
+    ["assume", "fail", "loop", "break", "if", "valueof", "unreachable"]
+        .into_iter()
+        .map(Identifier::from)
+        .collect::<HashSet<_>>()
 }
 
 pub unsafe fn parse_ast(chars: &[char]) -> Result<Option<NonNull<AstNode>>, ParseAstError> {
@@ -149,7 +144,6 @@ enum ParseExpressionError {
     #[error("Failed to parse value: {0}")]
     Value(ParseValueError),
 }
-
 
 pub fn parse_expression(
     chars: &[char],
