@@ -32,7 +32,7 @@
                 <li><a href="https://github.com/JonathanWoollett-Light/language">GitHub</a></li>
             </ul>
         </nav>
-        <h4>🚧Given the early state of development anything and everything might not work🚧</h4>
+        <h4>🚧Anything and everything might not work and much isn't yet implemented🚧</h4>
         <ul>
             <li><b>Fewer keywords than C.</b> <i>"An idiot admires complexity, a genius admires simplicity"</i> - Terry A Davis</li>
             <li><b>Infallible type inference</b> unlike <a href="https://www.rust-lang.org/">Rust</a> which constantly fails to infer type infomation.</li>
@@ -63,27 +63,45 @@
         </div>
         <h3>Keywords</h3>
         <ol>
-            <li><span class="code">if</span>:  <a href="https://doc.rust-lang.org/rust-by-example/flow_control/if_else.html">Rust's <span class="code">if</span></a> without the brackets*.</li>
-            <li><span class="code">loop</span>: <a href="https://doc.rust-lang.org/rust-by-example/flow_control/loop.html">Rust's <span class="code">loop</span></a> without the brackets*.</li>
-            <li><span class="code">break</span>: Jumps out of the current <span class="code">loop</span>*.</li>
-            <li><span class="code">def</span>: <a href="https://www.w3schools.com/python/python_functions.asp">Python's <span class="code">def</span></a> without the <span class="code">:</span>.</li>
-            <li><span class="code">in</span>: The arguments given to a function**.</li>
+            <li><span class="code">if</span>:  <a href="https://doc.rust-lang.org/rust-by-example/flow_control/if_else.html">Rust's <span class="code">if</span></a> without the brackets<sup>1</sup>.</li>
+            <li><span class="code">loop</span>: <a href="https://doc.rust-lang.org/rust-by-example/flow_control/loop.html">Rust's <span class="code">loop</span></a> without the brackets<sup>1</sup>.</li>
+            <li><span class="code">break</span>: Jumps out of the current <span class="code">loop</span><sup>1</sup>.</li>
+            <li><span class="code">def</span>: <a href="https://www.w3schools.com/python/python_functions.asp">Python's <span class="code">def</span></a> without the <span class="code">:</span><sup>2</sup>.</li>
+            <li><span class="code">in</span>: The arguments given to a function<sup>3</sup>.</li>
             <li><span class="code">out</span>: The output given to a function. <span class="code">a := b - c + d</span> after unrolling and type inference is equivalent to <p class="code">c + d @ x<br>b - x @ y<br>a := y @ null</p><span class="code">@</span> can only be defined on the outermost expression in a line, the outputs of nested expression are used to chain the expressions together.</li>
             <li><span class="code">fail</span>: If reachable triggers a failure in formal verification.</li>
             <li><span class="code">assume</span>: Mark code which will be passed to formal verification but excluded at run-time. <span class="code">assume x %= 4</span> tells the verifier <span class="code">{ 0 ≤ x &lt 4 }</span>.</li>
-            <li><span class="code">valueof</span>: Gets the value of a value.<p class="code">a := valueof 1 // a = value_literal = 0<br>b := valueof c // b = value_variable (1)</p></li>
+            <li><span class="code">valueof</span>: Gets the value of a value.<p class="code">a := valueof 1 // a = value_literal = 0<br>b := valueof c // b = value_variable = 1</p></li>
             <li><span class="code">unreachable</span>: Marks the end of execution, all following statements are unreachable.</li>
             <li><span class="code">macro</span>: Similar to <a href="https://gcc.gnu.org/onlinedocs/cpp/Macros.html">macros in C</a>. Macro evaluation happens before the AST is parsed and simply performs a find and replace on the text contents of source files. Since <span class="code">:=</span> is a function, <span class="code">macro</span> is how constants used in the definition of <span class="code">:=</span> are defined. Unless writing your own core, you should never need to use this.</li>
             <li><span class="code">asm</span>: The prefix for a line with in-line assembly e.g. <span class="code">asm mov x0, 1</span>.</li>
+            <li><span class="code">section</span>: Defines the valid address space.<p class="code">section 100 200 read // read 100 to 200<br>section 300 400 write // write 300 to 400<br>section 500 600 readwrite // read+write 500 to 600</p>
         </ol>
-        <p>* <span class="code">if</span>, <span class="code">loop</span> and <span class="code">break</span> will be removed as intrinsics and added to the core library as functions when the compiler is re-written in the language. At this point functions will be able to mutate their child AST. This will enable equivalent support to <a href="https://doc.rust-lang.org/reference/procedural-macros.html">procedural macros found in other languages</a> but better.</p>
-        <p>** I'm thinking about splitting <span class="code">in</span> into <span class="code">lhs</span> and <span class="code">rhs</span> as this will make all input patterns differentiable to a function. Currently with <span class="code">in</span> when you have a function <span class="code">my_function</span> calling it with <span class="code">a my_function b</span> or <span class="code">my_function a b</span> appears identical to the function.</p>
-        <h3>Tentative keywords</h3>
+        <h4>Notes</h4>
         <ol>
-            <li><span class="code">assert</span>: A condition that calls <span class="code">exit</span> if false at run-time. This will tie into some mechanism to auto-generate unique error codes.</li>
-            <li><span class="code">verify</span>: Like <span class="code">require</span> but does not exhaustively check the condition. <span class="code">verify x < 2</span> will apply a number of steps of gradient descent to search for the minium of <span class="code">x</span> to verify the condition. While this is not formal verification it provides an effective and almost always correct mechanism to test conditions at compile time that would be too computationally expensive to exhaustively prove.</li>
-            <li><span class="code">clone</span>: Marks the split of execution into multiple threads.</li>
-            <li><span class="code">ast</span>: Gets the AST of code indented under a function call. This can then be edited so a function may perform the role of a procedural macro.</li>
+            <li>
+                <span class="code">if</span>, <span class="code">loop</span> and <span class="code">break</span>
+                will be removed as intrinsics and added to the core library as functions when the compiler is re-written in the language.
+                At this point functions will be able to mutate their child AST. This will enable equivalent support to
+                <a href="https://doc.rust-lang.org/reference/procedural-macros.html">procedural macros found in other languages</a> but better.
+            </li>
+            <li>I'm not commited to using <span class="code">def</span> as the function keyword. I'm considering <span class="code">fn</span>.</li>
+            <li>
+                I'm thinking about splitting <span class="code">in</span> into <span class="code">lhs</span> and
+                <span class="code">rhs</span> as this will make all input patterns differentiable to a function.
+                Currently with <span class="code">in</span> when you have a function <span class="code">my_function</span>
+                calling it with <span class="code">a my_function b</span> or <span class="code">my_function a b</span>
+                appears identical to the function.
+            </li>
+        </ol>
+        
+        <h4>Features that might require new keywords</h4>
+        <ol>
+            <li>Generation of unique errors codes.</li>
+            <li>Defered logging.</li>
+            <li>Non-exhaustive checking. E.g. use gradient descent to search for a minimium to check.</li>
+            <li>Starting new threads during execution. The current assumption is based on bare-metal where the program begins with all hardware threads running.</li>
+            <li>Functions mutating the AST like procedural macros.</li>
         </ol>
     </main>
   </body>
