@@ -102,7 +102,7 @@
             <li>Defered logging.</li>
             <li>Non-exhaustive checking. E.g. use gradient descent to search for a minimium to check.</li>
             <li>Starting new threads during execution. The current assumption is based on bare-metal where the program begins with all hardware threads running.</li>
-            <li>Functions mutating the AST like procedural macros.</li>
+            <li>Functions mutating the AST like procedural macros. This would be a massive usability improvement over traditional macros and even procedural macros, in essence it would allow every function to access a pointer to its location in the current AST and then edit it dynamically making all functions more powerful than the most powerful macros in other languages. This is accomplished through the formal verification mechanism which can check that all paths resolve to the same AST.</li>
         </ol>
     </main>
   </body>
